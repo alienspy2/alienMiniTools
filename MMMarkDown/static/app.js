@@ -36,8 +36,6 @@ const elements = {
   zoomInBtn: document.getElementById("zoom-in"),
   zoomOutBtn: document.getElementById("zoom-out"),
   zoomFitBtn: document.getElementById("zoom-fit"),
-  selectedName: document.getElementById("selected-name"),
-  selectedFile: document.getElementById("selected-file"),
   stateFile: document.getElementById("state-file"),
   toast: document.getElementById("toast"),
   newChildBtn: document.getElementById("new-child-btn"),
@@ -731,15 +729,9 @@ function render() {
 }
 
 function renderSidePanel() {
-  const nodes = state.data?.nodes || {};
-  const node = nodes[state.selectedId];
-  if (!node) {
-    elements.selectedName.textContent = "-";
-    elements.selectedFile.textContent = "-";
+  if (!state.data) {
     return;
   }
-  elements.selectedName.textContent = node.name;
-  elements.selectedFile.textContent = node.file_abs || node.file || "-";
 }
 
 function centerOnSelected(positions, offsetX, offsetY) {
@@ -1005,6 +997,18 @@ function bindEvents() {
   on(elements.zoomOutBtn, "click", zoomOut);
   on(elements.zoomFitBtn, "click", zoomToFit);
   on(document, "keydown", handleKeyDown);
+  document.querySelectorAll(".panel-toggle").forEach((button) => {
+    on(button, "click", () => {
+      const target = button.dataset.panelToggle;
+      const panel = document.querySelector(`.panel[data-panel=\"${target}\"]`);
+      if (!panel) {
+        return;
+      }
+      const nextCollapsed = !panel.classList.contains("panel--collapsed");
+      panel.classList.toggle("panel--collapsed", nextCollapsed);
+      button.textContent = nextCollapsed ? "Expand" : "Collapse";
+    });
+  });
 }
 bindEvents();
 

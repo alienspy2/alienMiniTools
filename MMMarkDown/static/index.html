@@ -8,23 +8,17 @@
   </head>
   <body>
     <div class="app">
-      <header class="topbar">
-        <div class="brand">MMMarkDown</div>
-        <div class="status">
-          <div id="state-file">State: -</div>
-        </div>
-      </header>
       <main class="main">
         <section class="map-panel">
-          <div class="map-header">
-            <div class="map-title">Mind Map</div>
-            <div class="map-actions">
-              <button id="new-child-btn">New child</button>
-              <button id="rename-btn" class="secondary">Rename</button>
-              <button id="open-btn" class="ghost">Open in Editor</button>
-              <button id="refresh-summaries-btn" class="ghost">전체 다시 요약하기 (테스트)</button>
-              <button id="realign-folders-btn" class="ghost">폴더 구조 정렬 (테스트)</button>
-            </div>
+          <div class="status status--floating">
+            <div id="state-file">State: -</div>
+          </div>
+          <div class="map-actions">
+            <button id="new-child-btn">New child</button>
+            <button id="rename-btn" class="secondary">Rename</button>
+            <button id="open-btn" class="ghost">Open in Editor</button>
+            <button id="refresh-summaries-btn" class="ghost">Refresh summaries (test)</button>
+            <button id="realign-folders-btn" class="ghost">Align folders (test)</button>
           </div>
           <div id="map-scroll">
             <div id="map-viewport">
@@ -40,43 +34,46 @@
             </div>
             <svg id="minimap"></svg>
           </div>
-        </section>
-        <aside>
-          <div class="panel">
-            <h2>Selected Node</h2>
-            <div id="selected-name">-</div>
-            <div class="meta" id="selected-file">-</div>
-          </div>
-          <div class="panel">
-            <h2>Editor</h2>
-            <div class="editor-row">
-              <label class="meta" for="editor-select">Markdown editor</label>
-              <select id="editor-select">
-                <option value="vscode">VS Code</option>
-                <option value="typora">Typora</option>
-                <option value="marktext">MarkText</option>
-                <option value="obsidian">Obsidian</option>
-                <option value="notepad++">Notepad++</option>
-                <option value="notepad">Notepad</option>
-              </select>
+          <aside class="side-panel">
+            <div class="panel panel--collapsible" data-panel="tools">
+              <div class="panel-header">
+                <h2 class="panel-title">Tools</h2>
+                <button class="panel-toggle" data-panel-toggle="tools" type="button">Collapse</button>
+              </div>
+              <div class="panel-content">
+                <div class="panel-section">
+                  <div class="panel-section__title">Editor</div>
+                  <div class="editor-row">
+                    <label class="meta" for="editor-select">Markdown editor</label>
+                    <select id="editor-select">
+                      <option value="vscode">VS Code</option>
+                      <option value="typora">Typora</option>
+                      <option value="marktext">MarkText</option>
+                      <option value="obsidian">Obsidian</option>
+                      <option value="notepad++">Notepad++</option>
+                      <option value="notepad">Notepad</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="panel-section">
+                  <div class="panel-section__title">Shortcuts</div>
+                  <div class="meta"><span class="kbd">Insert</span>New child node</div>
+                  <div class="meta"><span class="kbd">Tab</span>New sibling node</div>
+                  <div class="meta"><span class="kbd">Shift</span>+<span class="kbd">&uarr;</span>Move node up</div>
+                  <div class="meta"><span class="kbd">Shift</span>+<span class="kbd">&darr;</span>Move node down</div>
+                  <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">X</span>Cut node</div>
+                  <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">V</span>Paste node</div>
+                  <div class="meta"><span class="kbd">F</span>Focus node</div>
+                  <div class="meta"><span class="kbd">Del</span>Delete node</div>
+                  <div class="meta"><span class="kbd">MMB</span>Drag Pan</div>
+                  <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">Wheel</span>Zoom</div>
+                  <div class="meta"><span class="kbd">F2</span>Open file in editor</div>
+                  <div class="meta"><span class="kbd">Enter</span>Open file in editor</div>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="panel">
-            <h2>Shortcuts</h2>
-            <div class="meta"><span class="kbd">Insert</span>New child node</div>
-            <div class="meta"><span class="kbd">Tab</span>New sibling node</div>
-            <div class="meta"><span class="kbd">Shift</span>+<span class="kbd">↑</span>Move node up</div>
-            <div class="meta"><span class="kbd">Shift</span>+<span class="kbd">↓</span>Move node down</div>
-            <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">X</span>Cut node</div>
-            <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">V</span>Paste node</div>
-            <div class="meta"><span class="kbd">F</span>Focus node</div>
-            <div class="meta"><span class="kbd">Del</span>Delete node</div>
-            <div class="meta"><span class="kbd">MMB</span>Drag Pan</div>
-            <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">Wheel</span>Zoom</div>
-            <div class="meta"><span class="kbd">F2</span>Open file in editor</div>
-            <div class="meta"><span class="kbd">Enter</span>Open file in editor</div>
-          </div>
-        </aside>
+          </aside>
+        </section>
       </main>
     </div>
     <div id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
