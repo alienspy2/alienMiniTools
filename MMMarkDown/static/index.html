@@ -1,0 +1,79 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MMMarkDown</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">MMMarkDown</div>
+        <div class="status">
+          <div id="state-file">State: -</div>
+        </div>
+      </header>
+      <main class="main">
+        <section class="map-panel">
+          <div class="map-header">
+            <div class="map-title">Mind Map</div>
+            <div class="map-actions">
+              <button id="new-child-btn">New child</button>
+              <button id="rename-btn" class="secondary">Rename</button>
+              <button id="open-btn" class="ghost">Open in VS Code</button>
+            </div>
+          </div>
+          <div id="map-scroll">
+            <div id="map-viewport">
+              <svg id="links"></svg>
+              <div id="map"></div>
+            </div>
+          </div>
+          <div class="minimap">
+            <div class="minimap-controls">
+              <button id="zoom-in" class="mini-btn">+</button>
+              <button id="zoom-out" class="mini-btn">-</button>
+              <button id="zoom-fit" class="mini-btn">Fit</button>
+            </div>
+            <svg id="minimap"></svg>
+          </div>
+        </section>
+        <aside>
+          <div class="panel">
+            <h2>Selected Node</h2>
+            <div id="selected-name">-</div>
+            <div class="meta" id="selected-file">-</div>
+          </div>
+          <div class="panel">
+            <h2>Shortcuts</h2>
+            <div class="meta"><span class="kbd">Insert</span>New child node</div>
+            <div class="meta"><span class="kbd">Tab</span>New sibling node</div>
+            <div class="meta"><span class="kbd">Shift</span>+<span class="kbd">↑</span>Move node up</div>
+            <div class="meta"><span class="kbd">Shift</span>+<span class="kbd">↓</span>Move node down</div>
+            <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">X</span>Cut node</div>
+            <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">V</span>Paste node</div>
+            <div class="meta"><span class="kbd">F</span>Focus node</div>
+            <div class="meta"><span class="kbd">Del</span>Delete node</div>
+            <div class="meta"><span class="kbd">MMB</span>Drag Pan</div>
+            <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">Wheel</span>Zoom</div>
+            <div class="meta"><span class="kbd">F2</span>Open file in VS Code</div>
+            <div class="meta"><span class="kbd">Enter</span>Open file in VS Code</div>
+          </div>
+        </aside>
+      </main>
+    </div>
+    <div id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal">
+        <div id="modal-title" class="modal-title">Node name</div>
+        <input id="modal-input" type="text" autocomplete="off" />
+        <div class="modal-actions">
+          <button id="modal-cancel" class="secondary">Cancel</button>
+          <button id="modal-ok">OK</button>
+        </div>
+      </div>
+    </div>
+    <div id="toast"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

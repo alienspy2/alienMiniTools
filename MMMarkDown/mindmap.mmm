@@ -1,0 +1,95 @@
+﻿{
+  "version": 1,
+  "root": "d673b081-0f9b-4501-9212-aca2a3a74f86",
+  "nodes": {
+    "d673b081-0f9b-4501-9212-aca2a3a74f86": {
+      "id": "d673b081-0f9b-4501-9212-aca2a3a74f86",
+      "name": "Root.md",
+      "file": "MDDoc/Root.md",
+      "summary": "이 문서는 메인 페이지 소개 및 문서 정리의 시작점을 나타낸다. 위키 사용의 불편함을 언급하며, 여기서부터 관련 내용을 체계적으로 관리할 계획임을 보여준다. 따라서 이 문서가 이후 문서의 기반이 될 것이다.",
+      "content_hash": "e5ab10ab38c90c295469a520d5003765cd4f6b1e2339b7be5962e9e235e9b155",
+      "summary_updated": "2025-12-26T18:46:16Z",
+      "summary_error": ""
+    },
+    "6dcac426-fb21-4885-8ca4-9ad4811a711f": {
+      "id": "6dcac426-fb21-4885-8ca4-9ad4811a711f",
+      "name": "aaa.md",
+      "file": "MDDoc/aaa.md",
+      "summary": "텍스트 중심 정보 정리와 시각적 연결을 원하는 사용자에게 적합한 도구를 비교 분석한 자료입니다. 특히 Draw.io는 인터넷 연결 없이 로컬에서 작동하는 오픈소스 다이어그램 도구로, 마인드맵, 순서도 등 다양한 정교한 도식화가 가능합니다. AFFiNE, Excalidraw, Logseq 등 다른 도구들과 비교했을 때 Miro와 유사한 캔버스형 인터페이스를 제공하며, 각 도구의 특징과 장점을 고려하여 자신에게 맞는 도구를 선택할 수 있습니다.",
+      "content_hash": "7d8818e6eb9472ac42509ca0bf0952ed678f503eee8d1f26b1f5973f9d705252",
+      "summary_updated": "2025-12-26T17:21:24Z",
+      "summary_error": ""
+    },
+    "43a12d95-8754-46a7-9a64-906fc142db8a": {
+      "id": "43a12d95-8754-46a7-9a64-906fc142db8a",
+      "name": "bbb.md",
+      "file": "MDDoc/bbb.md",
+      "summary": "테스트 실행 중 'mecab' 모듈을 찾을 수 없어 에러가 발생했습니다. 이 경우, 'hexgrad/Kokoro-82M'을 기본 저장소 ID로 사용하고 있으며, 'repo_id'를 명시적으로 전달하여 경고를 억제할 수 있습니다. 만약 'kfemale'이 404 에러를 발생시킨다면 'kf_fenix'로 변경해 보세요.",
+      "content_hash": "6b7bd4ced75da12496e2d464e0b697b369070ca044fe808ba2bb6ba92130fae1",
+      "summary_updated": "2025-12-26T17:31:56Z",
+      "summary_error": ""
+    },
+    "f4272cdc-c868-4c6b-9ca8-be008dd82960": {
+      "id": "f4272cdc-c868-4c6b-9ca8-be008dd82960",
+      "name": "ddd.md",
+      "file": "MDDoc/ddd.md",
+      "summary": "이 마크다운은 MMMarkDown라는 마인드 맵 서버의 설정과 코드를 요약합니다. 이 서버는 마크다운 파일을 기반으로 작동하며, 웹 인터페이스를 통해 파일을 관리하고, Ollama 모델을 활용하여 마인드 맵의 내용을 요약합니다. 주요 기능은 다음과 같습니다.\n\n*   **설정**: 서버 설정은 명령줄 인수를 통해 설정됩니다.  `host` (기본값: 127.0.0.1), `port` (기본값: 8000), `state` 파일 경로(기본값: mindmap.mmm)가 설정됩니다.  또한 Ollama 모델 (기본값: gemma3:4b), 요약 프롬프트, 요약 빈도, 요약 타임아웃, 자동 재로드 기능 등이 환경 변수를 통해 설정됩니다.\n*   **파일 관리**: 마인드 맵 파일(MDDoc 폴더에 저장)을 생성, 수정, 삭제하고, Node 이름 유효성 검사를 수행합니다.\n*   **요약**: Ollama 모델을 사용하여 마인드 맵의 내용을 한국어로 요약합니다. 요약 빈도를 설정하여 주기적으로 요약 업데이트를 수행합니다.\n*   **웹 인터페이스**:  `argparse`를 사용하여 명령줄 인터페이스를 제공하고, `http.server`를 사용하여 웹 서버를 구축합니다.\n*   **자동 재로드**: 코드가 변경될 때 자동으로 서버를 재시작하여 변경 사항을 적용합니다.\n*   **클라이언트 구성**: 클라이언트 측에서 사용할 state 파일을 명시적으로 설정할 수 있습니다.\n\n요약: 이 코드는 마인드 맵을 관리하고 요약하는 웹 서버를 구현합니다. 마인드 맵 파일 관리, Ollama를 활용한 요약 기능, 자동 재로드 기능, 그리고 명령줄 인터페이스를 제공합니다.",
+      "content_hash": "d05f1ddfab1118382004f0fd3a4f11735b6fc3d75a6cd317ccdb5c3105d451dc",
+      "summary_updated": "2025-12-26T18:43:39Z",
+      "summary_error": ""
+    },
+    "e698272b-97d2-4ebc-a8db-b03a1006f317": {
+      "id": "e698272b-97d2-4ebc-a8db-b03a1006f317",
+      "name": "eee.md",
+      "file": "MDDoc/eee.md",
+      "summary": "",
+      "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary_updated": "2025-12-26T18:44:03Z",
+      "summary_error": ""
+    },
+    "8ccc41d2-b623-43af-86f9-b96a3a4376d5": {
+      "id": "8ccc41d2-b623-43af-86f9-b96a3a4376d5",
+      "name": "fff.md",
+      "file": "MDDoc/fff.md",
+      "summary": "",
+      "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary_updated": "2025-12-26T18:44:06Z",
+      "summary_error": ""
+    },
+    "458be88d-ecbf-48c0-a53e-bd79ee4a5670": {
+      "id": "458be88d-ecbf-48c0-a53e-bd79ee4a5670",
+      "name": "ggg.md",
+      "file": "MDDoc/ggg.md",
+      "summary": "",
+      "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary_updated": "2025-12-26T18:44:09Z",
+      "summary_error": ""
+    }
+  },
+  "edges": [
+    {
+      "from": "d673b081-0f9b-4501-9212-aca2a3a74f86",
+      "to": "6dcac426-fb21-4885-8ca4-9ad4811a711f"
+    },
+    {
+      "from": "6dcac426-fb21-4885-8ca4-9ad4811a711f",
+      "to": "43a12d95-8754-46a7-9a64-906fc142db8a"
+    },
+    {
+      "from": "d673b081-0f9b-4501-9212-aca2a3a74f86",
+      "to": "f4272cdc-c868-4c6b-9ca8-be008dd82960"
+    },
+    {
+      "from": "d673b081-0f9b-4501-9212-aca2a3a74f86",
+      "to": "e698272b-97d2-4ebc-a8db-b03a1006f317"
+    },
+    {
+      "from": "d673b081-0f9b-4501-9212-aca2a3a74f86",
+      "to": "8ccc41d2-b623-43af-86f9-b96a3a4376d5"
+    },
+    {
+      "from": "d673b081-0f9b-4501-9212-aca2a3a74f86",
+      "to": "458be88d-ecbf-48c0-a53e-bd79ee4a5670"
+    }
+  ]
+}

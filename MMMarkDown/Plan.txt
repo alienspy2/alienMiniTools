@@ -1,0 +1,14 @@
+﻿* mind map 형태로 시작
+
+- python 으로 web app 으로 서빙. local 에 파일을 저장할 것이기 때문에. local 에서만 접속
+- node 당 MD 파일 하나씩 생성.
+- 모든 MD 파일들은 ./MDDoc 안에 넣는다.
+- node 이름 = MD 파일 이름
+- node summary 는 MD 파일 저장시, 파일의 내용을 자동으로 local ollama gemma3:4b 로 요약. async 로 동작. 파일이 바뀌지 않았을 때에는 다시 요약하지 않음.
+- node 끼리의 연결 정보, node summary 등의 정보는 filename.mmm 으로 저장. json 사용
+- node 선택하고 F2 나 enter 를 누르면 내용 편집
+- insert 누르면 하위 node 생성.
+- MD 파일 편집기는 일단 vs code 사용
+
+
+
