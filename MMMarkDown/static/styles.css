@@ -178,6 +178,7 @@ button.ghost:hover {
 .node {
   --tx: 0px;
   --ty: 0px;
+  --cy: 0px;
   position: absolute;
   width: var(--node-width);
   min-height: var(--node-height);
@@ -190,12 +191,12 @@ button.ghost:hover {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
-  transform: translate(var(--tx), var(--ty));
+  transform: translate(var(--tx), calc(var(--ty) + var(--cy)));
   transition: transform 0.28s ease, border 0.2s ease, box-shadow 0.2s ease;
 }
 
 .node:hover {
-  transform: translate(var(--tx), calc(var(--ty) - 2px));
+  transform: translate(var(--tx), calc(var(--ty) + var(--cy) - 2px));
 }
 
 .node--selected {
@@ -219,6 +220,36 @@ button.ghost:hover {
   -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.node--compact {
+  min-height: 72px;
+  padding: 10px 12px;
+}
+
+.node-toggle {
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translate(50%, -50%);
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--accent-2);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+  box-shadow: 0 6px 14px rgba(47, 127, 115, 0.28);
+}
+
+.node-toggle:hover {
+  transform: translate(50%, -50%) scale(1.05);
+}
+
+.node--collapsed {
+  border-style: dashed;
 }
 
 .node--new {
@@ -302,6 +333,35 @@ button.ghost:hover {
   font-family: "Fraunces", "Georgia", serif;
   margin: 0 0 12px;
   font-size: 18px;
+}
+
+.editor-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#editor-select,
+#editor-custom {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(60, 48, 32, 0.25);
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+#editor-custom-row {
+  display: none;
+}
+
+.editor-hint code {
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 6px;
+  padding: 1px 5px;
+  border: 1px solid rgba(60, 48, 32, 0.2);
 }
 
 .panel .meta {

@@ -1,9 +1,17 @@
-﻿import argparse
+﻿"""MMMarkDown local mind map server.
+
+This module hosts a small HTTP server that serves the UI, persists a map state
+(.mmm JSON), keeps Markdown files in sync, and optionally generates summaries
+using a local Ollama model. It also provides a simple file-change reloader.
+"""
+
+import argparse
 import hashlib
 import json
 import mimetypes
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -14,9 +22,10 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
+# ---- Configuration ----
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_STATE_FILE = os.environ.get("MMM_FILE", os.path.join(BASE_DIR, "mindmap.mmm"))
-DOC_DIR = os.path.join(BASE_DIR, "MDDoc")
+DOC_DIR = os.environ.get("MMM_DOC_DIR", os.path.join(BASE_DIR, "MDDoc"))
 STATIC_DIR = os.environ.get("MMM_STATIC_DIR", os.path.join(BASE_DIR, "static"))
 
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
@@ -28,6 +37,23 @@ SUMMARY_POLL_SECONDS = float(os.environ.get("SUMMARY_POLL_SECONDS", "3"))
 SUMMARY_TIMEOUT_SECONDS = int(os.environ.get("SUMMARY_TIMEOUT_SECONDS", "90"))
 OLLAMA_ENABLED = os.environ.get("OLLAMA_ENABLED", "1") != "0"
 RELOAD_ENABLED = os.environ.get("MMM_RELOAD", "1") != "0"
+MARKTEXT_EXE = os.path.join(
+    os.path.expanduser("~"),
+    "AppData",
+    "Local",
+    "Programs",
+    "MarkText",
+    "MarkText.exe",
+)
+
+EDITOR_PRESETS = {
+    "vscode": {"label": "VS Code", "command": ["code", "--reuse-window"]},
+    "typora": {"label": "Typora", "command": ["typora"]},
+    "marktext": {"label": "MarkText", "command": [MARKTEXT_EXE]},
+    "obsidian": {"label": "Obsidian", "command": ["obsidian"]},
+    "notepad++": {"label": "Notepad++", "command": ["notepad++.exe"]},
+    "notepad": {"label": "Notepad", "command": ["notepad.exe"]},
+}
 
 INVALID_NAME_CHARS = set('<>:"/\\|?*')
 RESERVED_NAMES = {
@@ -55,17 +81,29 @@ RESERVED_NAMES = {
     "LPT9",
 }
 
-
+# ---- Utilities ----
 def log(message):
+    """Lightweight console logger with a consistent prefix."""
     print(f"[MMM] {message}")
 
-
 def rel_to_abs(rel_path):
+    """Resolve a repo-relative path to an absolute path."""
+    if os.path.isabs(rel_path):
+        return os.path.abspath(rel_path)
     parts = rel_path.replace("\\", "/").split("/")
+    if parts and parts[0].lower() == "mddoc":
+        return os.path.abspath(os.path.join(DOC_DIR, *parts[1:]))
     return os.path.abspath(os.path.join(BASE_DIR, *parts))
 
 
+def resolve_state_path(state_path):
+    """Resolve the state file path and its workspace directory."""
+    abs_state = os.path.abspath(state_path)
+    workspace = os.path.dirname(abs_state)
+    return abs_state, workspace
+
 def read_text_file(path):
+    """Read text files with BOM-aware UTF-8 fallbacking to CP949."""
     try:
         with open(path, "r", encoding="utf-8-sig") as handle:
             return handle.read()
@@ -75,32 +113,58 @@ def read_text_file(path):
         with open(path, "r", encoding="cp949", errors="replace") as handle:
             return handle.read()
 
-
 def hash_text(text):
+    """Return a stable SHA-256 hash for change detection."""
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
+def is_summary_candidate(content):
+    """Return False for empty docs or docs with only headings."""
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    if not lines:
+        return False
+    if all(line.lstrip().startswith("#") for line in lines):
+        return False
+    return True
+
+def retry_io(action, context="", attempts=6, base_delay=0.2):
+    """Retry transient I/O errors (e.g. sync lock) with backoff."""
+    last_error = None
+    for index in range(attempts):
+        try:
+            return action()
+        except (OSError, PermissionError) as exc:
+            last_error = exc
+            delay = base_delay * (index + 1)
+            time.sleep(delay)
+    if context:
+        log(f"I/O retry failed: {context}: {last_error}")
+    raise last_error
 
 def safe_write_json(path, payload):
+    """Atomically write JSON with UTF-8 BOM to avoid partial files."""
     dir_name = os.path.dirname(path)
     if dir_name:
         os.makedirs(dir_name, exist_ok=True)
     tmp_path = f"{path}.tmp"
-    with open(tmp_path, "w", encoding="utf-8-sig") as handle:
-        json.dump(payload, handle, indent=2, ensure_ascii=False)
-    os.replace(tmp_path, path)
-
+    def _write():
+        with open(tmp_path, "w", encoding="utf-8-sig") as handle:
+            json.dump(payload, handle, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    retry_io(_write, context=f"write state {path}")
 
 def write_text_file(path, text):
+    """Write text files using UTF-8 BOM, creating directories if needed."""
     dir_name = os.path.dirname(path)
     if dir_name:
         os.makedirs(dir_name, exist_ok=True)
-    with open(path, "w", encoding="utf-8-sig") as handle:
-        handle.write(text)
+    def _write():
+        with open(path, "w", encoding="utf-8-sig") as handle:
+            handle.write(text)
+    retry_io(_write, context=f"write text {path}")
 
-
+# ---- Markdown image localization ----
 IMAGE_MD_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 IMAGE_HTML_RE = re.compile(r'(<img\s+[^>]*?src=["\'])([^"\']+)(["\'])', re.IGNORECASE)
-
 
 def _split_md_link_target(text):
     text = text.strip()
@@ -119,7 +183,6 @@ def _split_md_link_target(text):
             return text[:index], text[index:].strip()
     return text, ""
 
-
 def _is_external_link(url):
     if not url:
         return True
@@ -128,7 +191,6 @@ def _is_external_link(url):
         return True
     parsed = urlparse(url)
     return parsed.scheme in ("http", "https", "data", "mailto")
-
 
 def _resolve_local_path(doc_dir, url):
     clean_url = url.split("#")[0].split("?")[0]
@@ -139,14 +201,12 @@ def _resolve_local_path(doc_dir, url):
         return os.path.abspath(clean_url)
     return os.path.abspath(os.path.join(doc_dir, clean_url))
 
-
 def _path_within(path, root):
     root_abs = os.path.abspath(root)
     try:
         return os.path.commonpath([os.path.abspath(path), root_abs]) == root_abs
     except ValueError:
         return False
-
 
 def _unique_destination(target_dir, filename):
     base, ext = os.path.splitext(filename)
@@ -160,8 +220,8 @@ def _unique_destination(target_dir, filename):
             return candidate
         index += 1
 
-
 def localize_markdown_images(abs_path, content):
+    """Copy external local images into the doc folder and rewrite links."""
     doc_dir = os.path.dirname(abs_path)
     base_name = os.path.splitext(os.path.basename(abs_path))[0]
     changed = False
@@ -215,8 +275,8 @@ def localize_markdown_images(abs_path, content):
     updated = IMAGE_HTML_RE.sub(replace_html, updated)
     return updated, changed
 
-
 def normalize_name(raw_name):
+    """Validate and normalize a node name into a safe .md filename."""
     if not isinstance(raw_name, str):
         raise ValueError("Name must be a string.")
     name = raw_name.strip()
@@ -237,7 +297,7 @@ def normalize_name(raw_name):
         raise ValueError("Name is reserved on Windows.")
     return name
 
-
+# ---- State store ----
 class MapStore:
     def __init__(self, state_path, doc_dir):
         self.state_path = state_path
@@ -260,8 +320,10 @@ class MapStore:
                     "content_hash": "",
                     "summary_updated": None,
                     "summary_error": "",
+                    "collapsed": False,
                 }
             },
+            "settings": {"editor": "vscode", "custom_editor": ""},
             "edges": [],
         }
         return state
@@ -272,6 +334,12 @@ class MapStore:
         data.setdefault("version", 1)
         data.setdefault("nodes", {})
         data.setdefault("edges", [])
+        settings = data.get("settings")
+        if not isinstance(settings, dict):
+            settings = {}
+            data["settings"] = settings
+        settings.setdefault("editor", "vscode")
+        settings.setdefault("custom_editor", "")
         if not data.get("nodes"):
             data = self._default_state()
         if "root" not in data or data["root"] not in data["nodes"]:
@@ -284,16 +352,47 @@ class MapStore:
             node.setdefault("content_hash", "")
             node.setdefault("summary_updated", None)
             node.setdefault("summary_error", "")
+            node.setdefault("collapsed", False)
         return data
-
     def _ensure_doc_dir(self):
         os.makedirs(self.doc_dir, exist_ok=True)
 
-    def _ensure_node_file(self, node):
+    def _normalize_rel_path(self, *parts):
+        """Normalize path segments to use forward slashes in state files."""
+        cleaned = [part.strip("/\\") for part in parts if part]
+        return "/".join(cleaned)
+
+    def _folder_parts_for_parent(self, parent_id):
+        parts = []
+        current_id = parent_id
+        while current_id and current_id != self.state["root"]:
+            node = self.state["nodes"].get(current_id)
+            if not node:
+                break
+            base = os.path.splitext(node["name"])[0].strip()
+            if base:
+                parts.append(base)
+            current_id = self._get_parent_id(current_id)
+        return list(reversed(parts))
+
+    def _expected_rel_path_for_node(self, node_id):
+        node = self.state["nodes"][node_id]
+        parent_id = self._get_parent_id(node_id)
+        parts = ["MDDoc"] + self._folder_parts_for_parent(parent_id) + [node["name"]]
+        return self._normalize_rel_path(*parts)
+
+    def _initial_node_content(self, name):
+        """Return starter content for a newly created Markdown file."""
+        base_name = os.path.splitext(name)[0]
+        return f"# {base_name}\n\n"
+
+    def _ensure_node_file(self, node, initial_content=None):
+        """Ensure the node's Markdown file exists on disk."""
         self._ensure_doc_dir()
         abs_path = rel_to_abs(node["file"])
         if not os.path.exists(abs_path):
-            write_text_file(abs_path, "")
+            content = initial_content if initial_content is not None else ""
+            write_text_file(abs_path, content)
 
     def _safe_delete_file(self, rel_path):
         abs_path = os.path.abspath(rel_to_abs(rel_path))
@@ -307,40 +406,87 @@ class MapStore:
         except OSError:
             return
 
+    def _collect_subtree_ids(self, node_id):
+        children = self._build_children_map()
+        to_visit = [node_id]
+        result = []
+        seen = set()
+        while to_visit:
+            current = to_visit.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            result.append(current)
+            for child_id in children.get(current, []):
+                to_visit.append(child_id)
+        return result
+
+    def _sync_node_paths(self, node_ids):
+        for target_id in node_ids:
+            node = self.state["nodes"].get(target_id)
+            if not node:
+                continue
+            expected_rel = self._expected_rel_path_for_node(target_id)
+            if node["file"] == expected_rel:
+                continue
+            old_abs = rel_to_abs(node["file"])
+            new_abs = rel_to_abs(expected_rel)
+            new_dir = os.path.dirname(new_abs)
+            if new_dir:
+                os.makedirs(new_dir, exist_ok=True)
+            if os.path.exists(old_abs):
+                def _move():
+                    os.replace(old_abs, new_abs)
+                retry_io(_move, context=f"move file {old_abs} -> {new_abs}")
+            else:
+                write_text_file(new_abs, self._initial_node_content(node["name"]))
+            node["file"] = expected_rel
+
     def _sync_existing_docs(self, data):
+        # Build a case-insensitive lookup of existing node names to avoid duplicates.
         self._ensure_doc_dir()
         existing_names = {}
         for node_id, node in data["nodes"].items():
             existing_names[node["name"].lower()] = node_id
 
         added = 0
-        for name in os.listdir(self.doc_dir):
-            if not name.lower().endswith(".md"):
-                continue
-            abs_path = os.path.join(self.doc_dir, name)
-            if not os.path.isfile(abs_path):
-                continue
-            key = name.lower()
-            if key in existing_names:
-                node_id = existing_names[key]
-                node = data["nodes"][node_id]
-                expected_rel = f"MDDoc/{name}"
-                if node.get("file") != expected_rel:
-                    node["file"] = expected_rel
-                continue
-            node_id = str(uuid.uuid4())
-            data["nodes"][node_id] = {
-                "id": node_id,
-                "name": name,
-                "file": f"MDDoc/{name}",
-                "summary": "",
-                "content_hash": "",
-                "summary_updated": None,
-                "summary_error": "",
-            }
-            data["edges"].append({"from": data["root"], "to": node_id})
-            added += 1
+        for root, _, files in os.walk(self.doc_dir):
+            for name in files:
+                if not name.lower().endswith(".md"):
+                    continue
+                abs_path = os.path.join(root, name)
+                if not os.path.isfile(abs_path):
+                    continue
+                rel_path = os.path.relpath(abs_path, self.doc_dir).replace("\\", "/")
+                expected_rel = self._normalize_rel_path("MDDoc", rel_path)
+                key = name.lower()
+                if key in existing_names:
+                    node_id = existing_names[key]
+                    node = data["nodes"][node_id]
+                    if node.get("file") != expected_rel:
+                        node["file"] = expected_rel
+                    continue
+                parent_id = data["root"]
+                parent_folder = os.path.dirname(rel_path).replace("\\", "/")
+                if parent_folder:
+                    parent_name = f"{os.path.basename(parent_folder)}.md"
+                    parent_id = existing_names.get(parent_name.lower(), data["root"])
+                node_id = str(uuid.uuid4())
+                data["nodes"][node_id] = {
+                    "id": node_id,
+                    "name": name,
+                    "file": expected_rel,
+                    "summary": "",
+                    "content_hash": "",
+                    "summary_updated": None,
+                    "summary_error": "",
+                    "collapsed": False,
+                }
+                data["edges"].append({"from": parent_id, "to": node_id})
+                existing_names[key] = node_id
+                added += 1
         return added
+
 
     def _load_or_init(self):
         self._ensure_doc_dir()
@@ -352,9 +498,10 @@ class MapStore:
             data = self._default_state()
         self._sync_existing_docs(data)
         for node in data["nodes"].values():
-            self._ensure_node_file(node)
+            self._ensure_node_file(node, initial_content=self._initial_node_content(node["name"]))
         safe_write_json(self.state_path, data)
         return data
+
 
     def save(self):
         safe_write_json(self.state_path, self.state)
@@ -405,26 +552,41 @@ class MapStore:
                 stack.append(child)
         return False
 
-    def create_node(self, parent_id, name):
+    def create_node(self, parent_id, name, insert_after_id=None):
         with self.lock:
             if parent_id not in self.state["nodes"]:
                 parent_id = self.state["root"]
             normalized_name = normalize_name(name)
             self._assert_unique_name(normalized_name)
             node_id = str(uuid.uuid4())
-            rel_path = f"MDDoc/{normalized_name}"
             node = {
                 "id": node_id,
                 "name": normalized_name,
-                "file": rel_path,
+                "file": "",
                 "summary": "",
                 "content_hash": "",
                 "summary_updated": None,
                 "summary_error": "",
+                "collapsed": False,
             }
             self.state["nodes"][node_id] = node
-            self.state["edges"].append({"from": parent_id, "to": node_id})
-            self._ensure_node_file(node)
+            new_edge = {"from": parent_id, "to": node_id}
+            if insert_after_id:
+                edges = self.state["edges"]
+                sibling_edges = [i for i, edge in enumerate(edges) if edge["from"] == parent_id]
+                insert_index = None
+                for index, edge_index in enumerate(sibling_edges):
+                    if edges[edge_index]["to"] == insert_after_id:
+                        insert_index = edge_index + 1
+                        break
+                if insert_index is None:
+                    edges.append(new_edge)
+                else:
+                    edges.insert(insert_index, new_edge)
+            else:
+                self.state["edges"].append(new_edge)
+            node["file"] = self._expected_rel_path_for_node(node_id)
+            self._ensure_node_file(node, initial_content=self._initial_node_content(normalized_name))
             self.save()
             return node_id
 
@@ -437,23 +599,16 @@ class MapStore:
             if normalized_name.lower() == node["name"].lower():
                 return
             self._assert_unique_name(normalized_name, exclude_id=node_id)
-            old_abs = rel_to_abs(node["file"])
-            new_rel = f"MDDoc/{normalized_name}"
-            new_abs = rel_to_abs(new_rel)
-            self._ensure_doc_dir()
-            if os.path.exists(old_abs):
-                os.replace(old_abs, new_abs)
-            else:
-                write_text_file(new_abs, "")
             node["name"] = normalized_name
-            node["file"] = new_rel
             node["summary"] = ""
             node["summary_error"] = ""
             node["content_hash"] = ""
             node["summary_updated"] = None
+            self._sync_node_paths(self._collect_subtree_ids(node_id))
             self.save()
 
     def reorder_node(self, node_id, direction):
+        # Only siblings under the same parent are reordered by swapping edge positions.
         with self.lock:
             if node_id == self.state["root"]:
                 raise ValueError("Root node cannot be reordered.")
@@ -487,6 +642,7 @@ class MapStore:
             self.save()
 
     def move_node(self, node_id, new_parent_id):
+        # Prevent cycles by disallowing moves under descendants.
         with self.lock:
             if node_id == self.state["root"]:
                 raise ValueError("Root node cannot be moved.")
@@ -501,9 +657,11 @@ class MapStore:
             edges = self.state["edges"]
             self.state["edges"] = [edge for edge in edges if edge["to"] != node_id]
             self.state["edges"].append({"from": new_parent_id, "to": node_id})
+            self._sync_node_paths(self._collect_subtree_ids(node_id))
             self.save()
 
     def delete_node(self, node_id):
+        # Collect the full subtree so both nodes and files are removed together.
         with self.lock:
             if node_id == self.state["root"]:
                 raise ValueError("Root node cannot be deleted.")
@@ -530,29 +688,84 @@ class MapStore:
                     self._safe_delete_file(node.get("file", ""))
             self.save()
 
-    def open_in_vscode(self, node_id):
+    def force_resummarize(self):
+        """Mark all nodes to be re-summarized on the next worker cycle."""
+        with self.lock:
+            for node in self.state["nodes"].values():
+                node["content_hash"] = ""
+                node["summary_error"] = ""
+                node["summary_updated"] = None
+            self.save()
+
+    def _assert_editor_exists(self, command):
+        if os.path.isabs(command) or os.path.dirname(command):
+            if not os.path.exists(command):
+                raise ValueError(f"Editor not found: {command}")
+            return
+        if not shutil.which(command):
+            raise ValueError(f"Editor not found in PATH: {command}")
+
+    def _get_editor_args(self, settings, abs_path):
+        editor_key = (settings.get("editor") or "vscode").lower()
+        if editor_key not in EDITOR_PRESETS:
+            raise ValueError("Unknown editor.")
+        preset = EDITOR_PRESETS[editor_key]["command"]
+        self._assert_editor_exists(preset[0])
+        return preset + [abs_path]
+
+    def update_editor_settings(self, editor, custom_editor):
+        editor_value = (editor or "").strip().lower()
+        if not editor_value:
+            editor_value = "vscode"
+        if editor_value not in EDITOR_PRESETS:
+            raise ValueError("Unknown editor.")
+        with self.lock:
+            settings = self.state.setdefault("settings", {})
+            settings["editor"] = editor_value
+            if "custom_editor" in settings:
+                settings["custom_editor"] = ""
+            self.save()
+
+    def set_node_collapsed(self, node_id, collapsed):
+        """Update the collapsed state for a node."""
         with self.lock:
             node = self.state["nodes"].get(node_id)
             if not node:
                 raise ValueError("Node not found.")
+            node["collapsed"] = bool(collapsed)
+            self.save()
+
+    def realign_folders(self):
+        """Align all files to match the current node hierarchy."""
+        with self.lock:
+            self._sync_node_paths(list(self.state["nodes"].keys()))
+            self.save()
+
+    def open_in_editor(self, node_id):
+        with self.lock:
+            node = self.state["nodes"].get(node_id)
+            if not node:
+                raise ValueError("Node not found.")
+            settings = dict(self.state.get("settings") or {})
             abs_path = rel_to_abs(node["file"])
-        code_path = shutil.which("code")
-        if not code_path:
-            raise ValueError("VS Code CLI (code) not found in PATH.")
-        subprocess.Popen([code_path, "--reuse-window", abs_path])
+        args = self._get_editor_args(settings, abs_path)
+        subprocess.Popen(args)
         return abs_path
 
-
+# ---- Summary worker ----
 class SummaryWorker(threading.Thread):
+    """Background thread that localizes images and refreshes summaries."""
     def __init__(self, store):
         super().__init__(daemon=True)
         self.store = store
         self.stop_event = threading.Event()
         self.ollama_path = None
         self.summary_enabled = OLLAMA_ENABLED
+        self.last_ollama_check = 0.0
 
     def run(self):
         self.ollama_path = shutil.which("ollama")
+        self.last_ollama_check = time.time()
         if not self.summary_enabled:
             log("File worker active (summaries disabled).")
         elif not self.ollama_path:
@@ -560,10 +773,29 @@ class SummaryWorker(threading.Thread):
         else:
             log(f"Summary worker active (model: {OLLAMA_MODEL}).")
         while not self.stop_event.is_set():
-            self._cycle()
+            try:
+                self._refresh_ollama_path()
+                self._cycle()
+            except Exception as exc:
+                log(f"Summary worker error: {exc}")
             self.stop_event.wait(SUMMARY_POLL_SECONDS)
 
+    def _refresh_ollama_path(self):
+        if not self.summary_enabled:
+            return
+        now = time.time()
+        if now - self.last_ollama_check < 10:
+            return
+        self.last_ollama_check = now
+        path = shutil.which("ollama")
+        if path and not self.ollama_path:
+            log(f"Summary worker active (model: {OLLAMA_MODEL}).")
+        if not path and self.ollama_path:
+            log("File worker active (ollama not found in PATH).")
+        self.ollama_path = path
+
     def _cycle(self):
+        # Scan all nodes, update content hashes, and refresh summaries when needed.
         nodes = self.store.list_nodes_snapshot()
         for node in nodes:
             abs_path = rel_to_abs(node["file"])
@@ -580,7 +812,8 @@ class SummaryWorker(threading.Thread):
                 content_hash = hash_text(content)
             summary = ""
             error = ""
-            should_summarize = self.summary_enabled and self.ollama_path
+            summary_candidate = is_summary_candidate(content)
+            should_summarize = summary_candidate and self.summary_enabled and self.ollama_path
             if should_summarize:
                 summary, error = generate_summary(self.ollama_path, content)
             with self.store.lock:
@@ -592,17 +825,22 @@ class SummaryWorker(threading.Thread):
                 if latest_hash != content_hash:
                     continue
                 node["content_hash"] = content_hash
-                if should_summarize:
-                    node["summary_updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                    if error:
-                        node["summary_error"] = error
-                    else:
-                        node["summary"] = summary
-                        node["summary_error"] = ""
+                if summary_candidate:
+                    if should_summarize:
+                        node["summary_updated"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                        if error:
+                            node["summary_error"] = error
+                        else:
+                            node["summary"] = summary
+                            node["summary_error"] = ""
+                else:
+                    node["summary"] = ""
+                    node["summary_error"] = ""
+                    node["summary_updated"] = None
                 self.store.save()
 
-
 def generate_summary(ollama_path, content):
+    """Run Ollama to summarize content and return (summary, error)."""
     if not content.strip():
         return "", ""
     prompt = f"{SUMMARY_PROMPT}{content}"
@@ -624,8 +862,9 @@ def generate_summary(ollama_path, content):
         return "", (result.stderr.strip() or "Summary failed.")
     return result.stdout.strip(), ""
 
-
+# ---- HTTP server ----
 class RequestHandler(BaseHTTPRequestHandler):
+    """HTTP handler for static files and JSON API endpoints."""
     server_version = "MMMarkDown/0.1"
 
     def log_message(self, format_string, *args):
@@ -687,11 +926,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._serve_static(parsed.path)
 
     def do_POST(self):
+        # Route API calls and return JSON responses with consistent error handling.
         parsed = urlparse(self.path)
         try:
             if parsed.path == "/api/node/create":
                 payload = self._read_json()
-                node_id = store.create_node(payload.get("parent_id"), payload.get("name", ""))
+                node_id = store.create_node(
+                    payload.get("parent_id"),
+                    payload.get("name", ""),
+                    payload.get("insert_after_id"),
+                )
                 self._send_json({"ok": True, "node_id": node_id, "state": store.state_for_client()})
                 return
             if parsed.path == "/api/node/rename":
@@ -714,9 +958,27 @@ class RequestHandler(BaseHTTPRequestHandler):
                 store.delete_node(payload.get("node_id"))
                 self._send_json({"ok": True, "state": store.state_for_client()})
                 return
+            if parsed.path == "/api/node/collapse":
+                payload = self._read_json()
+                store.set_node_collapsed(payload.get("node_id"), payload.get("collapsed"))
+                self._send_json({"ok": True, "state": store.state_for_client()})
+                return
+            if parsed.path == "/api/folders/realign":
+                store.realign_folders()
+                self._send_json({"ok": True, "state": store.state_for_client()})
+                return
+            if parsed.path == "/api/summary/refresh":
+                store.force_resummarize()
+                self._send_json({"ok": True, "state": store.state_for_client()})
+                return
+            if parsed.path == "/api/settings/editor":
+                payload = self._read_json()
+                store.update_editor_settings(payload.get("editor"), payload.get("custom_editor"))
+                self._send_json({"ok": True, "state": store.state_for_client()})
+                return
             if parsed.path == "/api/node/open":
                 payload = self._read_json()
-                path = store.open_in_vscode(payload.get("node_id"))
+                path = store.open_in_editor(payload.get("node_id"))
                 self._send_json({"ok": True, "path": path})
                 return
         except ValueError as exc:
@@ -727,11 +989,11 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
-
 store = None
 
-
+# ---- Auto reload ----
 def iter_watch_files():
+    """Collect Python files to watch for hot reload."""
     watch_files = []
     for root, dirs, files in os.walk(BASE_DIR):
         dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
@@ -742,8 +1004,8 @@ def iter_watch_files():
         watch_files.append(os.path.abspath(__file__))
     return watch_files
 
-
 def latest_mtime(paths):
+    """Return the newest modification time among the given paths."""
     newest = 0.0
     for path in paths:
         try:
@@ -752,8 +1014,9 @@ def latest_mtime(paths):
             continue
     return newest
 
-
 def run_with_reloader(argv):
+    # Spawn a child process and restart it when any watched file changes.
+    """Start the server and restart it when code changes are detected."""
     watch_files = iter_watch_files()
     last_mtime = latest_mtime(watch_files)
     log("Auto-reload enabled. Watching for code changes.")
@@ -781,8 +1044,9 @@ def run_with_reloader(argv):
             process.terminate()
             return 0
 
-
+# ---- Entry point ----
 def run_server(args):
+    """Initialize state, background workers, and the HTTP server."""
     global store
     store = MapStore(args.state, DOC_DIR)
 
@@ -797,14 +1061,20 @@ def run_server(args):
         log("Shutting down.")
         server.shutdown()
 
-
 def main():
+    """CLI entry point for running the server with optional reload."""
     parser = argparse.ArgumentParser(description="MMMarkDown local mind map server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
     parser.add_argument("--state", default=DEFAULT_STATE_FILE, help="Path to .mmm state file")
     parser.add_argument("--no-reload", action="store_true", help="Disable auto reload on code changes")
     args = parser.parse_args()
+
+    state_path, workspace_dir = resolve_state_path(args.state)
+    os.makedirs(workspace_dir, exist_ok=True)
+    args.state = state_path
+    global DOC_DIR
+    DOC_DIR = os.path.join(workspace_dir, "MDDoc")
 
     reload_enabled = RELOAD_ENABLED and not args.no_reload
     if reload_enabled and os.environ.get("MMM_RUN_MAIN") != "1":
@@ -813,6 +1083,5 @@ def main():
 
     run_server(args)
 
-
 if __name__ == "__main__":
-    main()
+    main()

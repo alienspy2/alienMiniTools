@@ -21,7 +21,9 @@
             <div class="map-actions">
               <button id="new-child-btn">New child</button>
               <button id="rename-btn" class="secondary">Rename</button>
-              <button id="open-btn" class="ghost">Open in VS Code</button>
+              <button id="open-btn" class="ghost">Open in Editor</button>
+              <button id="refresh-summaries-btn" class="ghost">전체 다시 요약하기 (테스트)</button>
+              <button id="realign-folders-btn" class="ghost">폴더 구조 정렬 (테스트)</button>
             </div>
           </div>
           <div id="map-scroll">
@@ -46,6 +48,20 @@
             <div class="meta" id="selected-file">-</div>
           </div>
           <div class="panel">
+            <h2>Editor</h2>
+            <div class="editor-row">
+              <label class="meta" for="editor-select">Markdown editor</label>
+              <select id="editor-select">
+                <option value="vscode">VS Code</option>
+                <option value="typora">Typora</option>
+                <option value="marktext">MarkText</option>
+                <option value="obsidian">Obsidian</option>
+                <option value="notepad++">Notepad++</option>
+                <option value="notepad">Notepad</option>
+              </select>
+            </div>
+          </div>
+          <div class="panel">
             <h2>Shortcuts</h2>
             <div class="meta"><span class="kbd">Insert</span>New child node</div>
             <div class="meta"><span class="kbd">Tab</span>New sibling node</div>
@@ -57,8 +73,8 @@
             <div class="meta"><span class="kbd">Del</span>Delete node</div>
             <div class="meta"><span class="kbd">MMB</span>Drag Pan</div>
             <div class="meta"><span class="kbd">Ctrl</span>+<span class="kbd">Wheel</span>Zoom</div>
-            <div class="meta"><span class="kbd">F2</span>Open file in VS Code</div>
-            <div class="meta"><span class="kbd">Enter</span>Open file in VS Code</div>
+            <div class="meta"><span class="kbd">F2</span>Open file in editor</div>
+            <div class="meta"><span class="kbd">Enter</span>Open file in editor</div>
           </div>
         </aside>
       </main>
@@ -76,4 +92,4 @@
     <div id="toast"></div>
     <script src="/app.js"></script>
   </body>
-</html>
+</html>
