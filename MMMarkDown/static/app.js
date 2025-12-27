@@ -52,8 +52,9 @@ const elements = {
 };
 
 let modalResolver = null;
+let lastSearchQuery = "";
 
-function openNamePrompt(title, initialValue = "") {
+function openNamePrompt(title, initialValue = "", placeholder = "") {
   return new Promise((resolve) => {
     if (!elements.modalOverlay || !elements.modalInput || !elements.modalTitle) {
       showToast("Name prompt unavailable", true);
@@ -67,6 +68,7 @@ function openNamePrompt(title, initialValue = "") {
     state.isModalOpen = true;
     elements.modalTitle.textContent = title;
     elements.modalInput.value = initialValue || "";
+    elements.modalInput.placeholder = placeholder || "";
     elements.modalOverlay.classList.add("visible");
     requestAnimationFrame(() => {
       elements.modalInput.focus();
@@ -430,6 +432,28 @@ function buildChildrenMap(edges) {
     children.get(edge.from).push(edge.to);
   });
   return children;
+}
+
+function buildParentMap(edges) {
+  const parents = new Map();
+  edges.forEach((edge) => {
+    parents.set(edge.to, edge.from);
+  });
+  return parents;
+}
+
+function collectAncestorIds(nodeId, parentMap) {
+  const ancestors = [];
+  let current = nodeId;
+  while (parentMap.has(current)) {
+    const parent = parentMap.get(current);
+    if (!parent) {
+      break;
+    }
+    ancestors.push(parent);
+    current = parent;
+  }
+  return ancestors;
 }
 
 function buildVisibleGraph(nodes, edges, rootId) {
@@ -915,21 +939,79 @@ async function realignFolders() {
   });
 }
 
-async function toggleNodeCollapse(nodeId, collapsed) {
+async function syncStateFromDisk() {
+  await runAction(() => apiPost("/api/state/sync", {}), {
+    onSuccess: (result) => {
+      const added = result?.added ?? 0;
+      const removed = result?.removed ?? 0;
+      showToast(`동기화 완료: +${added}, -${removed}`);
+    },
+  });
+}
+
+async function setNodeCollapsed(nodeId, collapsed, focusAfter = false) {
   try {
     const result = await apiPost("/api/node/collapse", { node_id: nodeId, collapsed });
     if (result?.state) {
       state.selectedId = nodeId;
       applyState(result.state);
-      if (!collapsed) {
+      if (focusAfter && !collapsed) {
         requestAnimationFrame(() => {
           focusSelected();
         });
       }
     }
+    return result;
   } catch (error) {
     showToast(error.message, true);
+    return null;
   }
+}
+
+async function toggleNodeCollapse(nodeId, collapsed) {
+  await setNodeCollapsed(nodeId, collapsed, true);
+}
+
+function findMatchingNodeId(keyword) {
+  const nodes = state.data?.nodes || {};
+  const matches = Object.values(nodes).filter((node) => node.name.toLowerCase().includes(keyword));
+  if (!matches.length) {
+    return null;
+  }
+  matches.sort((a, b) => a.name.localeCompare(b.name));
+  return matches[0].id;
+}
+
+async function revealNode(nodeId) {
+  const edges = state.data?.edges || [];
+  const parentMap = buildParentMap(edges);
+  const ancestors = collectAncestorIds(nodeId, parentMap).reverse();
+  for (const ancestorId of ancestors) {
+    const node = state.data?.nodes?.[ancestorId];
+    if (node?.collapsed) {
+      await setNodeCollapsed(ancestorId, false, false);
+    }
+  }
+}
+
+async function findAndFocusNode() {
+  const query = await openNamePrompt("Find node", lastSearchQuery, "Type a keyword");
+  if (!query) {
+    return;
+  }
+  lastSearchQuery = query;
+  const keyword = query.toLowerCase();
+  const targetId = findMatchingNodeId(keyword);
+  if (!targetId) {
+    showToast("No matching node.", true);
+    return;
+  }
+  await revealNode(targetId);
+  state.selectedId = targetId;
+  render();
+  requestAnimationFrame(() => {
+    focusSelected();
+  });
 }
 
 function handleKeyDown(event) {
@@ -958,6 +1040,16 @@ function handleKeyDown(event) {
   if (metaKey && event.key.toLowerCase() === "v") {
     event.preventDefault();
     pasteToSelected();
+    return;
+  }
+  if (event.key === "F5") {
+    event.preventDefault();
+    syncStateFromDisk();
+    return;
+  }
+  if (metaKey && event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    findAndFocusNode();
     return;
   }
   if (event.key === "Delete") {

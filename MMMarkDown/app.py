@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
@@ -293,7 +294,19 @@ class MapStore:
         self.state_path = state_path
         self.doc_dir = doc_dir
         self.lock = threading.Lock()
+        self._doc_write_depth = 0
         self.state = self._load_or_init()
+
+    def _doc_writes_allowed(self):
+        return self._doc_write_depth > 0
+
+    @contextmanager
+    def allow_doc_writes(self):
+        self._doc_write_depth += 1
+        try:
+            yield
+        finally:
+            self._doc_write_depth -= 1
 
     def _build_node(self, node_id, name, file_rel):
         return {
@@ -358,6 +371,8 @@ class MapStore:
         return data
 
     def _ensure_doc_dir(self):
+        if not self._doc_writes_allowed():
+            return
         os.makedirs(self.doc_dir, exist_ok=True)
 
     def _normalize_rel_path(self, *parts):
@@ -371,6 +386,78 @@ class MapStore:
             return root_id
         parent_name = f"{os.path.basename(parent_folder)}.md"
         return existing_names.get(parent_name.lower(), root_id)
+
+    def sync_with_filesystem(self):
+        """Synchronize nodes with existing .md files without touching documents."""
+        existing_files = {}
+        if os.path.isdir(self.doc_dir):
+            for root, _, files in os.walk(self.doc_dir):
+                for name in files:
+                    if not name.lower().endswith(".md"):
+                        continue
+                    abs_path = os.path.join(root, name)
+                    if not os.path.isfile(abs_path):
+                        continue
+                    rel_path = os.path.relpath(abs_path, self.doc_dir).replace("\\", "/")
+                    key = name.lower()
+                    existing_files.setdefault(key, rel_path)
+
+        with self.lock:
+            nodes = self.state["nodes"]
+            removed = 0
+            for node_id, node in list(nodes.items()):
+                rel_path = existing_files.get(node["name"].lower())
+                if rel_path:
+                    expected_rel = self._normalize_rel_path("MDDoc", rel_path)
+                    if node.get("file") != expected_rel:
+                        node["file"] = expected_rel
+                    continue
+                nodes.pop(node_id, None)
+                removed += 1
+
+            if removed:
+                self.state["edges"] = [
+                    edge for edge in self.state["edges"]
+                    if edge["from"] in nodes and edge["to"] in nodes
+                ]
+
+            root_id = self.state.get("root")
+            if root_id not in nodes:
+                root_id = None
+                self.state["root"] = None
+
+            if nodes and root_id is None:
+                root_id = next(iter(nodes.keys()))
+                self.state["root"] = root_id
+                self.state["edges"] = [edge for edge in self.state["edges"] if edge["to"] != root_id]
+
+            existing_names = {node["name"].lower(): node_id for node_id, node in nodes.items()}
+            added = 0
+            for lower_name, rel_path in existing_files.items():
+                if lower_name in existing_names:
+                    continue
+                name = os.path.basename(rel_path)
+                node_id = str(uuid.uuid4())
+                expected_rel = self._normalize_rel_path("MDDoc", rel_path)
+                nodes[node_id] = self._build_node(node_id, name, expected_rel)
+                if root_id is None:
+                    root_id = node_id
+                    self.state["root"] = root_id
+                else:
+                    parent_id = self._resolve_parent_for_path(existing_names, root_id, rel_path)
+                    self.state["edges"].append({"from": parent_id, "to": node_id})
+                existing_names[lower_name] = node_id
+                added += 1
+
+            if not nodes:
+                root_id = str(uuid.uuid4())
+                root_name = "Root.md"
+                nodes[root_id] = self._build_node(root_id, root_name, f"MDDoc/{root_name}")
+                self.state["root"] = root_id
+                self.state["edges"] = []
+
+            self.save()
+            return {"added": added, "removed": removed}
 
     def _folder_parts_for_parent(self, parent_id):
         parts = []
@@ -396,8 +483,86 @@ class MapStore:
         base_name = os.path.splitext(name)[0]
         return f"# {base_name}\n\n"
 
+    def _relative_url(self, base_dir, target_path):
+        rel_path = os.path.relpath(target_path, base_dir).replace("\\", "/")
+        if not rel_path.startswith("."):
+            rel_path = f"./{rel_path}"
+        return rel_path
+
+    def _update_image_links_on_move(self, content, old_dir, new_dir, base_name):
+        if old_dir == new_dir:
+            return content
+        old_images_root = os.path.abspath(os.path.join(old_dir, "Images", base_name))
+        new_images_root = os.path.abspath(os.path.join(new_dir, "Images", base_name))
+
+        def rewrite_url(url):
+            if not url or _is_external_link(url) or url.startswith("#"):
+                return None
+            resolved = _resolve_local_path(old_dir, url)
+            if not resolved or not _path_within(resolved, old_images_root):
+                return None
+            rel_part = os.path.relpath(resolved, old_images_root)
+            new_abs = os.path.abspath(os.path.join(new_images_root, rel_part))
+            return self._relative_url(new_dir, new_abs)
+
+        def replace_md(match):
+            alt_text = match.group(1)
+            inner = match.group(2)
+            url, title = _split_md_link_target(inner)
+            new_url = rewrite_url(url)
+            if not new_url:
+                return match.group(0)
+            new_inner = f"{new_url} {title}".strip() if title else new_url
+            return f"![{alt_text}]({new_inner})"
+
+        def replace_html(match):
+            prefix, url, suffix = match.groups()
+            new_url = rewrite_url(url)
+            if not new_url:
+                return match.group(0)
+            return f"{prefix}{new_url}{suffix}"
+
+        updated = IMAGE_MD_RE.sub(replace_md, content)
+        updated = IMAGE_HTML_RE.sub(replace_html, updated)
+        return updated
+
+    def _update_image_links_in_file(self, abs_path, old_dir, new_dir, base_name):
+        content = read_text_file(abs_path)
+        updated = self._update_image_links_on_move(content, old_dir, new_dir, base_name)
+        if updated != content:
+            write_text_file(abs_path, updated)
+
+    def _move_images_folder(self, old_dir, new_dir, base_name):
+        if old_dir == new_dir:
+            return
+        old_images = os.path.join(old_dir, "Images", base_name)
+        if not os.path.isdir(old_images):
+            return
+        new_images = os.path.join(new_dir, "Images", base_name)
+        os.makedirs(os.path.dirname(new_images), exist_ok=True)
+
+        def _move():
+            if not os.path.exists(new_images):
+                shutil.move(old_images, new_images)
+                return
+            for root, _, files in os.walk(old_images):
+                rel_root = os.path.relpath(root, old_images)
+                target_root = new_images if rel_root == "." else os.path.join(new_images, rel_root)
+                os.makedirs(target_root, exist_ok=True)
+                for name in files:
+                    src = os.path.join(root, name)
+                    dest = os.path.join(target_root, name)
+                    if os.path.exists(dest):
+                        dest = _unique_destination(target_root, name)
+                    shutil.move(src, dest)
+            shutil.rmtree(old_images, ignore_errors=True)
+
+        retry_io(_move, context=f"move images {old_images} -> {new_images}")
+
     def _ensure_node_file(self, node, initial_content=None):
         """Ensure the node's Markdown file exists on disk."""
+        if not self._doc_writes_allowed():
+            return
         self._ensure_doc_dir()
         abs_path = rel_to_abs(node["file"])
         if not os.path.exists(abs_path):
@@ -405,6 +570,8 @@ class MapStore:
             write_text_file(abs_path, content)
 
     def _safe_delete_file(self, rel_path):
+        if not self._doc_writes_allowed():
+            return
         abs_path = os.path.abspath(rel_to_abs(rel_path))
         doc_root = os.path.abspath(self.doc_dir)
         if not abs_path.startswith(doc_root):
@@ -439,18 +606,31 @@ class MapStore:
             expected_rel = self._expected_rel_path_for_node(target_id)
             if node["file"] == expected_rel:
                 continue
+            if not self._doc_writes_allowed():
+                node["file"] = expected_rel
+                continue
             old_abs = rel_to_abs(node["file"])
             new_abs = rel_to_abs(expected_rel)
+            old_dir = os.path.dirname(old_abs)
             new_dir = os.path.dirname(new_abs)
+            old_name = os.path.basename(old_abs)
+            new_name = os.path.basename(new_abs)
+            same_name = old_name.lower() == new_name.lower()
+            moved_file = False
             if new_dir:
                 os.makedirs(new_dir, exist_ok=True)
             if os.path.exists(old_abs):
                 def _move():
                     os.replace(old_abs, new_abs)
                 retry_io(_move, context=f"move file {old_abs} -> {new_abs}")
+                moved_file = True
             else:
                 write_text_file(new_abs, self._initial_node_content(node["name"]))
             node["file"] = expected_rel
+            if moved_file and same_name and old_dir != new_dir:
+                base_name = os.path.splitext(old_name)[0]
+                self._move_images_folder(old_dir, new_dir, base_name)
+                self._update_image_links_in_file(new_abs, old_dir, new_dir, base_name)
 
     def _sync_existing_docs(self, data):
         # Build a case-insensitive lookup of existing node names to avoid duplicates.
@@ -572,7 +752,8 @@ class MapStore:
             else:
                 self.state["edges"].append(new_edge)
             node["file"] = self._expected_rel_path_for_node(node_id)
-            self._ensure_node_file(node, initial_content=self._initial_node_content(normalized_name))
+            with self.allow_doc_writes():
+                self._ensure_node_file(node, initial_content=self._initial_node_content(normalized_name))
             self.save()
             return node_id
 
@@ -587,7 +768,8 @@ class MapStore:
             self._assert_unique_name(normalized_name, exclude_id=node_id)
             node["name"] = normalized_name
             self._clear_summary_state(node, clear_summary=True)
-            self._sync_node_paths(self._collect_subtree_ids(node_id))
+            with self.allow_doc_writes():
+                self._sync_node_paths(self._collect_subtree_ids(node_id))
             self.save()
 
     def reorder_node(self, node_id, direction):
@@ -640,7 +822,8 @@ class MapStore:
             edges = self.state["edges"]
             self.state["edges"] = [edge for edge in edges if edge["to"] != node_id]
             self.state["edges"].append({"from": new_parent_id, "to": node_id})
-            self._sync_node_paths(self._collect_subtree_ids(node_id))
+            with self.allow_doc_writes():
+                self._sync_node_paths(self._collect_subtree_ids(node_id))
             self.save()
 
     def delete_node(self, node_id):
@@ -656,10 +839,11 @@ class MapStore:
                 for edge in self.state["edges"]
                 if edge["from"] not in to_delete and edge["to"] not in to_delete
             ]
-            for target_id in to_delete:
-                node = self.state["nodes"].pop(target_id, None)
-                if node:
-                    self._safe_delete_file(node.get("file", ""))
+            with self.allow_doc_writes():
+                for target_id in to_delete:
+                    node = self.state["nodes"].pop(target_id, None)
+                    if node:
+                        self._safe_delete_file(node.get("file", ""))
             self.save()
 
     def force_resummarize(self):
@@ -669,21 +853,34 @@ class MapStore:
                 self._clear_summary_state(node)
             self.save()
 
-    def _assert_editor_exists(self, command):
+    def _resolve_editor_command(self, command):
         if os.path.isabs(command) or os.path.dirname(command):
+            log(f"Editor check: absolute path -> {command}")
             if not os.path.exists(command):
                 raise ValueError(f"Editor not found: {command}")
-            return
-        if not shutil.which(command):
-            raise ValueError(f"Editor not found in PATH: {command}")
+            return command
+        resolved = shutil.which(command)
+        log(f"Editor check: PATH lookup '{command}' -> {resolved}")
+        if resolved:
+            return resolved
+        if command.lower() in ("code", "code.cmd", "code.exe"):
+            log("Editor check: using VS Code command alias without PATH.")
+            return command
+        raise ValueError(f"Editor not found in PATH: {command}")
 
     def _get_editor_args(self, settings, abs_path):
         editor_key = (settings.get("editor") or "vscode").lower()
         if editor_key not in EDITOR_PRESETS:
             raise ValueError("Unknown editor.")
         preset = EDITOR_PRESETS[editor_key]["command"]
-        self._assert_editor_exists(preset[0])
-        return preset + [abs_path]
+        log(f"Editor open: preset={editor_key}, command={preset}")
+        resolved = self._resolve_editor_command(preset[0])
+        args = preset[1:] + [abs_path]
+        ext = os.path.splitext(resolved)[1].lower()
+        if ext in (".cmd", ".bat"):
+            cmd_line = subprocess.list2cmdline([resolved] + args)
+            return f'cmd /d /s /c "{cmd_line}"'
+        return [resolved] + args
 
     def update_editor_settings(self, editor, custom_editor):
         editor_value = (editor or "").strip().lower()
@@ -710,7 +907,8 @@ class MapStore:
     def realign_folders(self):
         """Align all files to match the current node hierarchy."""
         with self.lock:
-            self._sync_node_paths(list(self.state["nodes"].keys()))
+            with self.allow_doc_writes():
+                self._sync_node_paths(list(self.state["nodes"].keys()))
             self.save()
 
     def open_in_editor(self, node_id):
@@ -720,8 +918,18 @@ class MapStore:
                 raise ValueError("Node not found.")
             settings = dict(self.state.get("settings") or {})
             abs_path = rel_to_abs(node["file"])
+        log(f"Editor open: node_id={node_id}, file={abs_path}")
         args = self._get_editor_args(settings, abs_path)
-        subprocess.Popen(args)
+        log(
+            "Editor open: which code="
+            f"{shutil.which('code')}, code.cmd={shutil.which('code.cmd')}, code.exe={shutil.which('code.exe')}"
+        )
+        log(f"Editor open: launch args={args}")
+        try:
+            subprocess.Popen(args)
+        except OSError as exc:
+            log(f"Editor open failed: {exc}")
+            raise ValueError(f"Editor launch failed: {exc}")
         return abs_path
 
 # ---- Summary worker ----
@@ -777,11 +985,6 @@ class SummaryWorker(threading.Thread):
             content_hash = hash_text(content)
             if content_hash == node.get("content_hash", ""):
                 continue
-            updated_content, updated = localize_markdown_images(abs_path, content)
-            if updated:
-                write_text_file(abs_path, updated_content)
-                content = updated_content
-                content_hash = hash_text(content)
             summary = ""
             error = ""
             summary_candidate = is_summary_candidate(content)
@@ -845,6 +1048,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         "/api/node/move": ("_handle_node_move", True),
         "/api/node/delete": ("_handle_node_delete", True),
         "/api/node/collapse": ("_handle_node_collapse", True),
+        "/api/state/sync": ("_handle_state_sync", True),
         "/api/folders/realign": ("_handle_realign_folders", True),
         "/api/summary/refresh": ("_handle_refresh_summaries", True),
         "/api/settings/editor": ("_handle_update_editor", True),
@@ -902,6 +1106,9 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _handle_node_collapse(self, payload):
         store.set_node_collapsed(payload.get("node_id"), payload.get("collapsed"))
         return {}
+
+    def _handle_state_sync(self, payload):
+        return store.sync_with_filesystem()
 
     def _handle_realign_folders(self, payload):
         store.realign_folders()
