@@ -96,6 +96,7 @@ function confirmNamePrompt() {
   const value = elements.modalInput.value.trim();
   closeNamePrompt(value.length ? value : null);
 }
+
 function applyEditorSettings(settings) {
   if (!elements.editorSelect) {
     return;
@@ -129,6 +130,7 @@ function on(element, eventName, handler, options) {
   }
   element.addEventListener(eventName, handler, options);
 }
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -390,6 +392,7 @@ async function runAction(action, options = {}) {
     return null;
   }
 }
+
 async function fetchState() {
   try {
     const response = await fetch("/api/state");
@@ -590,6 +593,108 @@ function renderEdges(edges, positions, offsetX, offsetY) {
   });
 }
 
+function attachNodeToggle(card, node, childrenMap) {
+  const children = childrenMap.get(node.id) || [];
+  if (!children.length) {
+    return;
+  }
+  const isCollapsed = Boolean(node.collapsed);
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "node-toggle";
+  toggle.textContent = isCollapsed ? "+" : "-";
+  toggle.title = isCollapsed ? "Expand" : "Collapse";
+  toggle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleNodeCollapse(node.id, !isCollapsed);
+  });
+  card.appendChild(toggle);
+  if (isCollapsed) {
+    card.classList.add("node--collapsed");
+  }
+}
+
+function attachNodeInteractions(card, nodeId) {
+  card.addEventListener("click", () => {
+    state.selectedId = nodeId;
+    render();
+  });
+  card.addEventListener("dblclick", () => {
+    openSelected();
+  });
+}
+
+function buildNodeCard(node, index, targetX, targetY, childrenMap) {
+  const card = document.createElement("div");
+  card.className = "node";
+  if (node.id === state.selectedId) {
+    card.classList.add("node--selected");
+  }
+  const isNew = !state.seenNodes.has(node.id);
+  if (isNew) {
+    card.classList.add("node--new");
+    state.seenNodes.add(node.id);
+  }
+  card.style.left = `${targetX}px`;
+  card.style.top = `${targetY}px`;
+  card.style.animationDelay = `${index * 40}ms`;
+  card.dataset.id = node.id;
+
+  const title = document.createElement("div");
+  title.className = "node-title";
+  title.textContent = node.name;
+
+  const summary = document.createElement("div");
+  summary.className = "node-summary";
+  summary.textContent = node.summary || "";
+
+  card.appendChild(title);
+  card.appendChild(summary);
+  if (!summary.textContent.trim()) {
+    card.classList.add("node--compact");
+    card.style.setProperty("--cy", `${(NODE_HEIGHT - COMPACT_NODE_HEIGHT) / 2}px`);
+  }
+  attachNodeToggle(card, node, childrenMap);
+  attachNodeInteractions(card, node.id);
+  return { card, isNew };
+}
+
+function setNodeTransform(card, dx, dy) {
+  card.style.setProperty("--tx", `${dx}px`);
+  card.style.setProperty("--ty", `${dy}px`);
+}
+
+function applyNodeMotion(card, prevPos, targetX, targetY, isNew) {
+  let animate = false;
+  if (prevPos && !isNew) {
+    const dx = prevPos.x - targetX;
+    const dy = prevPos.y - targetY;
+    if (dx !== 0 || dy !== 0) {
+      animate = true;
+      setNodeTransform(card, dx, dy);
+    }
+  }
+  if (!animate) {
+    setNodeTransform(card, 0, 0);
+  }
+  return animate;
+}
+
+function finalizeCompactNode(card) {
+  if (!card.classList.contains("node--compact")) {
+    return;
+  }
+  const measured = card.offsetHeight;
+  const offset = Math.max(0, (NODE_HEIGHT - measured) / 2);
+  card.style.setProperty("--cy", `${offset}px`);
+}
+
+function queueNodeMotionReset(card) {
+  requestAnimationFrame(() => {
+    setNodeTransform(card, 0, 0);
+  });
+}
+
 function renderNodes(nodes, positions, offsetX, offsetY, previousPositions, childrenMap) {
   const nextPositions = new Map();
   const nodeList = Object.values(nodes).sort((a, b) => a.name.localeCompare(b.name));
@@ -599,92 +704,19 @@ function renderNodes(nodes, positions, offsetX, offsetY, previousPositions, chil
       return;
     }
 
-    const card = document.createElement("div");
-    card.className = "node";
-    if (node.id === state.selectedId) {
-      card.classList.add("node--selected");
-    }
-    const isNew = !state.seenNodes.has(node.id);
-    if (isNew) {
-      card.classList.add("node--new");
-      state.seenNodes.add(node.id);
-    }
     const targetX = pos.x + offsetX;
     const targetY = pos.y + offsetY;
-    card.style.left = `${targetX}px`;
-    card.style.top = `${targetY}px`;
-    card.style.animationDelay = `${index * 40}ms`;
-    card.dataset.id = node.id;
-    nextPositions.set(node.id, { x: targetX, y: targetY });
-
-    const title = document.createElement("div");
-    title.className = "node-title";
-    title.textContent = node.name;
-
-    const summary = document.createElement("div");
-    summary.className = "node-summary";
-    summary.textContent = node.summary || "";
-
-    card.appendChild(title);
-    card.appendChild(summary);
-    if (!summary.textContent.trim()) {
-      card.classList.add("node--compact");
-      card.style.setProperty("--cy", `${(NODE_HEIGHT - COMPACT_NODE_HEIGHT) / 2}px`);
-    }
-    const children = childrenMap.get(node.id) || [];
-    if (children.length) {
-      const isCollapsed = Boolean(node.collapsed);
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "node-toggle";
-      toggle.textContent = isCollapsed ? "+" : "-";
-      toggle.title = isCollapsed ? "Expand" : "Collapse";
-      toggle.addEventListener("click", (event) => {
-        event.stopPropagation();
-        toggleNodeCollapse(node.id, !isCollapsed);
-      });
-      card.appendChild(toggle);
-      if (isCollapsed) {
-        card.classList.add("node--collapsed");
-      }
-    }
-    card.addEventListener("click", () => {
-      state.selectedId = node.id;
-      render();
-    });
-    card.addEventListener("dblclick", () => {
-      openSelected();
-    });
-
+    const { card, isNew } = buildNodeCard(node, index, targetX, targetY, childrenMap);
     const prevPos = previousPositions.get(node.id);
-    let animate = false;
-    if (prevPos && !isNew) {
-      const dx = prevPos.x - targetX;
-      const dy = prevPos.y - targetY;
-      if (dx !== 0 || dy !== 0) {
-        animate = true;
-        card.style.setProperty("--tx", `${dx}px`);
-        card.style.setProperty("--ty", `${dy}px`);
-      }
-    }
-    if (!animate) {
-      card.style.setProperty("--tx", "0px");
-      card.style.setProperty("--ty", "0px");
-    }
+    const animate = applyNodeMotion(card, prevPos, targetX, targetY, isNew);
 
     elements.map.appendChild(card);
-    if (card.classList.contains("node--compact")) {
-      const measured = card.offsetHeight;
-      const offset = Math.max(0, (NODE_HEIGHT - measured) / 2);
-      card.style.setProperty("--cy", `${offset}px`);
-    }
+    finalizeCompactNode(card);
 
     if (animate) {
-      requestAnimationFrame(() => {
-        card.style.setProperty("--tx", "0px");
-        card.style.setProperty("--ty", "0px");
-      });
+      queueNodeMotionReset(card);
     }
+    nextPositions.set(node.id, { x: targetX, y: targetY });
   });
 
   state.lastPositions = nextPositions;
@@ -721,16 +753,9 @@ function render() {
     graph.childrenMap
   );
   renderMinimap(layout.nodes, layout.edges, layout.positions, layout.width, layout.height);
-  renderSidePanel();
   if (!state.initialScrollDone) {
     centerOnSelected(layout.positions, layout.offsetX, layout.offsetY);
     state.initialScrollDone = true;
-  }
-}
-
-function renderSidePanel() {
-  if (!state.data) {
-    return;
   }
 }
 

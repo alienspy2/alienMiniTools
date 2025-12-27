@@ -11,7 +11,6 @@ import json
 import mimetypes
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -226,49 +225,40 @@ def localize_markdown_images(abs_path, content):
     base_name = os.path.splitext(os.path.basename(abs_path))[0]
     changed = False
 
-    def replace_md(match):
+    def copy_local_image(url):
         nonlocal changed
+        if not url or _is_external_link(url) or url.startswith("#"):
+            return None
+        resolved = _resolve_local_path(doc_dir, url)
+        if not resolved or not os.path.isfile(resolved):
+            return None
+        if _path_within(resolved, doc_dir):
+            return None
+        target_dir = os.path.join(doc_dir, "Images", base_name)
+        os.makedirs(target_dir, exist_ok=True)
+        dest_path = _unique_destination(target_dir, os.path.basename(resolved))
+        try:
+            shutil.copy2(resolved, dest_path)
+        except OSError:
+            return None
+        changed = True
+        return f"./Images/{base_name}/{os.path.basename(dest_path)}"
+
+    def replace_md(match):
         alt_text = match.group(1)
         inner = match.group(2)
         url, title = _split_md_link_target(inner)
-        if not url or _is_external_link(url) or url.startswith("#"):
+        rel_path = copy_local_image(url)
+        if not rel_path:
             return match.group(0)
-        resolved = _resolve_local_path(doc_dir, url)
-        if not resolved or not os.path.isfile(resolved):
-            return match.group(0)
-        if _path_within(resolved, doc_dir):
-            return match.group(0)
-        target_dir = os.path.join(doc_dir, "Images", base_name)
-        os.makedirs(target_dir, exist_ok=True)
-        dest_path = _unique_destination(target_dir, os.path.basename(resolved))
-        try:
-            shutil.copy2(resolved, dest_path)
-        except OSError:
-            return match.group(0)
-        rel_path = f"./Images/{base_name}/{os.path.basename(dest_path)}"
         new_inner = f"{rel_path} {title}".strip() if title else rel_path
-        changed = True
         return f"![{alt_text}]({new_inner})"
 
     def replace_html(match):
-        nonlocal changed
         prefix, url, suffix = match.groups()
-        if not url or _is_external_link(url) or url.startswith("#"):
+        rel_path = copy_local_image(url)
+        if not rel_path:
             return match.group(0)
-        resolved = _resolve_local_path(doc_dir, url)
-        if not resolved or not os.path.isfile(resolved):
-            return match.group(0)
-        if _path_within(resolved, doc_dir):
-            return match.group(0)
-        target_dir = os.path.join(doc_dir, "Images", base_name)
-        os.makedirs(target_dir, exist_ok=True)
-        dest_path = _unique_destination(target_dir, os.path.basename(resolved))
-        try:
-            shutil.copy2(resolved, dest_path)
-        except OSError:
-            return match.group(0)
-        rel_path = f"./Images/{base_name}/{os.path.basename(dest_path)}"
-        changed = True
         return f"{prefix}{rel_path}{suffix}"
 
     updated = IMAGE_MD_RE.sub(replace_md, content)
@@ -305,6 +295,34 @@ class MapStore:
         self.lock = threading.Lock()
         self.state = self._load_or_init()
 
+    def _build_node(self, node_id, name, file_rel):
+        return {
+            "id": node_id,
+            "name": name,
+            "file": file_rel,
+            "summary": "",
+            "content_hash": "",
+            "summary_updated": None,
+            "summary_error": "",
+            "collapsed": False,
+        }
+
+    def _apply_node_defaults(self, node_id, node):
+        name = node.get("name") or f"{node_id}.md"
+        file_rel = node.get("file") or f"MDDoc/{name}"
+        defaults = self._build_node(node_id, name, file_rel)
+        for key, value in defaults.items():
+            node.setdefault(key, value)
+        node["id"] = node_id
+        return node
+
+    def _clear_summary_state(self, node, clear_summary=False):
+        node["content_hash"] = ""
+        node["summary_error"] = ""
+        node["summary_updated"] = None
+        if clear_summary:
+            node["summary"] = ""
+
     def _default_state(self):
         root_id = str(uuid.uuid4())
         root_name = "Root.md"
@@ -312,16 +330,7 @@ class MapStore:
             "version": 1,
             "root": root_id,
             "nodes": {
-                root_id: {
-                    "id": root_id,
-                    "name": root_name,
-                    "file": f"MDDoc/{root_name}",
-                    "summary": "",
-                    "content_hash": "",
-                    "summary_updated": None,
-                    "summary_error": "",
-                    "collapsed": False,
-                }
+                root_id: self._build_node(root_id, root_name, f"MDDoc/{root_name}")
             },
             "settings": {"editor": "vscode", "custom_editor": ""},
             "edges": [],
@@ -345,15 +354,9 @@ class MapStore:
         if "root" not in data or data["root"] not in data["nodes"]:
             data["root"] = next(iter(data["nodes"].keys()))
         for node_id, node in list(data["nodes"].items()):
-            node.setdefault("id", node_id)
-            node.setdefault("name", f"{node_id}.md")
-            node.setdefault("file", f"MDDoc/{node['name']}")
-            node.setdefault("summary", "")
-            node.setdefault("content_hash", "")
-            node.setdefault("summary_updated", None)
-            node.setdefault("summary_error", "")
-            node.setdefault("collapsed", False)
+            self._apply_node_defaults(node_id, node)
         return data
+
     def _ensure_doc_dir(self):
         os.makedirs(self.doc_dir, exist_ok=True)
 
@@ -361,6 +364,13 @@ class MapStore:
         """Normalize path segments to use forward slashes in state files."""
         cleaned = [part.strip("/\\") for part in parts if part]
         return "/".join(cleaned)
+
+    def _resolve_parent_for_path(self, existing_names, root_id, rel_path):
+        parent_folder = os.path.dirname(rel_path).replace("\\", "/")
+        if not parent_folder:
+            return root_id
+        parent_name = f"{os.path.basename(parent_folder)}.md"
+        return existing_names.get(parent_name.lower(), root_id)
 
     def _folder_parts_for_parent(self, parent_id):
         parts = []
@@ -460,33 +470,19 @@ class MapStore:
                 rel_path = os.path.relpath(abs_path, self.doc_dir).replace("\\", "/")
                 expected_rel = self._normalize_rel_path("MDDoc", rel_path)
                 key = name.lower()
-                if key in existing_names:
-                    node_id = existing_names[key]
-                    node = data["nodes"][node_id]
+                existing_id = existing_names.get(key)
+                if existing_id:
+                    node = data["nodes"][existing_id]
                     if node.get("file") != expected_rel:
                         node["file"] = expected_rel
                     continue
-                parent_id = data["root"]
-                parent_folder = os.path.dirname(rel_path).replace("\\", "/")
-                if parent_folder:
-                    parent_name = f"{os.path.basename(parent_folder)}.md"
-                    parent_id = existing_names.get(parent_name.lower(), data["root"])
+                parent_id = self._resolve_parent_for_path(existing_names, data["root"], rel_path)
                 node_id = str(uuid.uuid4())
-                data["nodes"][node_id] = {
-                    "id": node_id,
-                    "name": name,
-                    "file": expected_rel,
-                    "summary": "",
-                    "content_hash": "",
-                    "summary_updated": None,
-                    "summary_error": "",
-                    "collapsed": False,
-                }
+                data["nodes"][node_id] = self._build_node(node_id, name, expected_rel)
                 data["edges"].append({"from": parent_id, "to": node_id})
                 existing_names[key] = node_id
                 added += 1
         return added
-
 
     def _load_or_init(self):
         self._ensure_doc_dir()
@@ -501,7 +497,6 @@ class MapStore:
             self._ensure_node_file(node, initial_content=self._initial_node_content(node["name"]))
         safe_write_json(self.state_path, data)
         return data
-
 
     def save(self):
         safe_write_json(self.state_path, self.state)
@@ -559,16 +554,7 @@ class MapStore:
             normalized_name = normalize_name(name)
             self._assert_unique_name(normalized_name)
             node_id = str(uuid.uuid4())
-            node = {
-                "id": node_id,
-                "name": normalized_name,
-                "file": "",
-                "summary": "",
-                "content_hash": "",
-                "summary_updated": None,
-                "summary_error": "",
-                "collapsed": False,
-            }
+            node = self._build_node(node_id, normalized_name, "")
             self.state["nodes"][node_id] = node
             new_edge = {"from": parent_id, "to": node_id}
             if insert_after_id:
@@ -600,10 +586,7 @@ class MapStore:
                 return
             self._assert_unique_name(normalized_name, exclude_id=node_id)
             node["name"] = normalized_name
-            node["summary"] = ""
-            node["summary_error"] = ""
-            node["content_hash"] = ""
-            node["summary_updated"] = None
+            self._clear_summary_state(node, clear_summary=True)
             self._sync_node_paths(self._collect_subtree_ids(node_id))
             self.save()
 
@@ -667,16 +650,7 @@ class MapStore:
                 raise ValueError("Root node cannot be deleted.")
             if node_id not in self.state["nodes"]:
                 raise ValueError("Node not found.")
-            children = self._build_children_map()
-            to_delete = set()
-            stack = [node_id]
-            while stack:
-                current = stack.pop()
-                if current in to_delete:
-                    continue
-                to_delete.add(current)
-                for child_id in children.get(current, []):
-                    stack.append(child_id)
+            to_delete = set(self._collect_subtree_ids(node_id))
             self.state["edges"] = [
                 edge
                 for edge in self.state["edges"]
@@ -692,9 +666,7 @@ class MapStore:
         """Mark all nodes to be re-summarized on the next worker cycle."""
         with self.lock:
             for node in self.state["nodes"].values():
-                node["content_hash"] = ""
-                node["summary_error"] = ""
-                node["summary_updated"] = None
+                self._clear_summary_state(node)
             self.save()
 
     def _assert_editor_exists(self, command):
@@ -866,6 +838,18 @@ def generate_summary(ollama_path, content):
 class RequestHandler(BaseHTTPRequestHandler):
     """HTTP handler for static files and JSON API endpoints."""
     server_version = "MMMarkDown/0.1"
+    POST_ROUTES = {
+        "/api/node/create": ("_handle_node_create", True),
+        "/api/node/rename": ("_handle_node_rename", True),
+        "/api/node/reorder": ("_handle_node_reorder", True),
+        "/api/node/move": ("_handle_node_move", True),
+        "/api/node/delete": ("_handle_node_delete", True),
+        "/api/node/collapse": ("_handle_node_collapse", True),
+        "/api/folders/realign": ("_handle_realign_folders", True),
+        "/api/summary/refresh": ("_handle_refresh_summaries", True),
+        "/api/settings/editor": ("_handle_update_editor", True),
+        "/api/node/open": ("_handle_node_open", False),
+    }
 
     def log_message(self, format_string, *args):
         return
@@ -890,6 +874,50 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _send_error_json(self, message, status=HTTPStatus.BAD_REQUEST):
         self._send_json({"ok": False, "error": message}, status=status)
+
+    def _handle_node_create(self, payload):
+        node_id = store.create_node(
+            payload.get("parent_id"),
+            payload.get("name", ""),
+            payload.get("insert_after_id"),
+        )
+        return {"node_id": node_id}
+
+    def _handle_node_rename(self, payload):
+        store.rename_node(payload.get("node_id"), payload.get("name", ""))
+        return {}
+
+    def _handle_node_reorder(self, payload):
+        store.reorder_node(payload.get("node_id"), payload.get("direction"))
+        return {}
+
+    def _handle_node_move(self, payload):
+        store.move_node(payload.get("node_id"), payload.get("new_parent_id"))
+        return {}
+
+    def _handle_node_delete(self, payload):
+        store.delete_node(payload.get("node_id"))
+        return {}
+
+    def _handle_node_collapse(self, payload):
+        store.set_node_collapsed(payload.get("node_id"), payload.get("collapsed"))
+        return {}
+
+    def _handle_realign_folders(self, payload):
+        store.realign_folders()
+        return {}
+
+    def _handle_refresh_summaries(self, payload):
+        store.force_resummarize()
+        return {}
+
+    def _handle_update_editor(self, payload):
+        store.update_editor_settings(payload.get("editor"), payload.get("custom_editor"))
+        return {}
+
+    def _handle_node_open(self, payload):
+        path = store.open_in_editor(payload.get("node_id"))
+        return {"path": path}
 
     def _serve_static(self, path):
         if path == "/":
@@ -929,65 +957,25 @@ class RequestHandler(BaseHTTPRequestHandler):
         # Route API calls and return JSON responses with consistent error handling.
         parsed = urlparse(self.path)
         try:
-            if parsed.path == "/api/node/create":
-                payload = self._read_json()
-                node_id = store.create_node(
-                    payload.get("parent_id"),
-                    payload.get("name", ""),
-                    payload.get("insert_after_id"),
-                )
-                self._send_json({"ok": True, "node_id": node_id, "state": store.state_for_client()})
+            route = self.POST_ROUTES.get(parsed.path)
+            if not route:
+                self.send_error(HTTPStatus.NOT_FOUND)
                 return
-            if parsed.path == "/api/node/rename":
-                payload = self._read_json()
-                store.rename_node(payload.get("node_id"), payload.get("name", ""))
-                self._send_json({"ok": True, "state": store.state_for_client()})
-                return
-            if parsed.path == "/api/node/reorder":
-                payload = self._read_json()
-                store.reorder_node(payload.get("node_id"), payload.get("direction"))
-                self._send_json({"ok": True, "state": store.state_for_client()})
-                return
-            if parsed.path == "/api/node/move":
-                payload = self._read_json()
-                store.move_node(payload.get("node_id"), payload.get("new_parent_id"))
-                self._send_json({"ok": True, "state": store.state_for_client()})
-                return
-            if parsed.path == "/api/node/delete":
-                payload = self._read_json()
-                store.delete_node(payload.get("node_id"))
-                self._send_json({"ok": True, "state": store.state_for_client()})
-                return
-            if parsed.path == "/api/node/collapse":
-                payload = self._read_json()
-                store.set_node_collapsed(payload.get("node_id"), payload.get("collapsed"))
-                self._send_json({"ok": True, "state": store.state_for_client()})
-                return
-            if parsed.path == "/api/folders/realign":
-                store.realign_folders()
-                self._send_json({"ok": True, "state": store.state_for_client()})
-                return
-            if parsed.path == "/api/summary/refresh":
-                store.force_resummarize()
-                self._send_json({"ok": True, "state": store.state_for_client()})
-                return
-            if parsed.path == "/api/settings/editor":
-                payload = self._read_json()
-                store.update_editor_settings(payload.get("editor"), payload.get("custom_editor"))
-                self._send_json({"ok": True, "state": store.state_for_client()})
-                return
-            if parsed.path == "/api/node/open":
-                payload = self._read_json()
-                path = store.open_in_editor(payload.get("node_id"))
-                self._send_json({"ok": True, "path": path})
-                return
+            handler_name, include_state = route
+            payload = self._read_json()
+            handler = getattr(self, handler_name)
+            response = handler(payload) or {}
+            if include_state:
+                response["state"] = store.state_for_client()
+            response["ok"] = True
+            self._send_json(response)
+            return
         except ValueError as exc:
             self._send_error_json(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
         except Exception as exc:
             self._send_error_json(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
-        self.send_error(HTTPStatus.NOT_FOUND)
 
 store = None
 
@@ -1015,7 +1003,6 @@ def latest_mtime(paths):
     return newest
 
 def run_with_reloader(argv):
-    # Spawn a child process and restart it when any watched file changes.
     """Start the server and restart it when code changes are detected."""
     watch_files = iter_watch_files()
     last_mtime = latest_mtime(watch_files)
