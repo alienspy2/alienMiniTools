@@ -1,2 +1,6 @@
-﻿MMMarkDown/MDDoc
+﻿InvokeComfyUI/output
+__pycache__
+InvokeComfyUI/log
+MMMarkDown/MDDoc
 MMMarkDown/mindmap.mmm
+InvokeComfyUI/output
