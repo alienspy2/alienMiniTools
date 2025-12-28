@@ -1,6 +1,25 @@
 ﻿# MMMarkDown
 
-Local-only mind map for Markdown files. Each node maps to a single `.md` file in `MDDoc`, and node connections plus summaries live in a `.mmm` JSON file.
+로컬 마크다운 파일을 마인드맵으로 관리하는 웹 애플리케이션입니다.
+
+## 개요
+
+MMMarkDown은 마크다운 문서들을 시각적인 마인드맵 형태로 연결하고 탐색할 수 있게 해주는 로컬 전용 도구입니다.
+
+### 주요 기능
+
+- **마인드맵 시각화**: 마크다운 파일들을 노드로 표현하여 계층적 구조로 관리
+- **실시간 편집**: 노드 생성, 이동, 삭제 등 마인드맵 조작 기능
+- **VS Code 연동**: 노드를 더블클릭하거나 단축키로 VS Code에서 마크다운 파일 편집
+- **자동 요약**: Ollama를 활용한 마크다운 파일 자동 요약 (한국어 지원)
+- **워크스페이스 관리**: 여러 문서 폴더를 워크스페이스로 전환하며 작업 가능
+- **트레이 모드**: Windows에서 백그라운드 실행 지원
+- **싱글 인스턴스**: 중복 실행 방지 및 기존 인스턴스로 포커스 전환
+
+### 파일 구조
+
+- `MDDoc/`: 마크다운 파일들이 저장되는 기본 폴더
+- `*.mmm`: 노드 연결 구조와 요약 정보를 담은 JSON 상태 파일
 
 ## Run
 
@@ -98,4 +117,4 @@ The map state is stored in a `.mmm` JSON file (default: `mindmap.mmm`). Override
 python mmm_app.py --state other-file.mmm
 ```
 
-Or set `MMM_FILE` to a path.
+Or set `MMM_FILE` to a path.
