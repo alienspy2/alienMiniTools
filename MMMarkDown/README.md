@@ -4,11 +4,19 @@ Local-only mind map for Markdown files. Each node maps to a single `.md` file in
 
 ## Run
 
+기본 실행:
+
 ```bash
 python mmm_app.py
 ```
 
-Open `http://127.0.0.1:8000` in your browser.
+Windows 백그라운드(트레이) 실행:
+
+```bash
+run.bat
+```
+
+브라우저에서 `http://127.0.0.1:8000` 열기.
 
 ## Tray mode (Windows)
 
@@ -25,6 +33,22 @@ python mmm_app.py --tray
 ```
 
 The tray menu provides `Open` and `Quit`. `run.bat` now launches tray mode via `pythonw`.
+
+`run.bat` uses the `n8n` conda environment. If you use another env, run `python mmm_app.py --tray` in that env.
+
+## Stop (Windows)
+
+백그라운드 프로세스 종료:
+
+```bash
+kill.bat
+```
+
+PowerShell에서 직접 실행:
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File kill.ps1
+```
 
 ## Auto reload
 
