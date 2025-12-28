@@ -2,4 +2,4 @@
 setlocal
 
 call conda activate n8n
-python app.py --state "%USERPROFILE%\Nextcloud\mmm\mindmap.mmm"
+start "" pythonw mmm_app.py --tray --state "%USERPROFILE%\Nextcloud\mmm\mindmap.mmm"

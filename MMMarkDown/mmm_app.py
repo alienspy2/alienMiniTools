@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import uuid
+import webbrowser
 from contextlib import contextmanager
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1209,17 +1210,38 @@ def latest_mtime(paths):
             continue
     return newest
 
-def run_with_reloader(argv):
+def build_app_url(args):
+    """Return the URL to open in a browser."""
+    host = args.host
+    if host in ("0.0.0.0", "::"):
+        host = "127.0.0.1"
+    return f"http://{host}:{args.port}"
+
+def _terminate_process(process):
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+
+def run_with_reloader(argv, stop_event=None):
     """Start the server and restart it when code changes are detected."""
     watch_files = iter_watch_files()
     last_mtime = latest_mtime(watch_files)
     log("Auto-reload enabled. Watching for code changes.")
     while True:
+        if stop_event and stop_event.is_set():
+            return 0
         env = os.environ.copy()
         env["MMM_RUN_MAIN"] = "1"
         process = subprocess.Popen([sys.executable] + argv, env=env)
         try:
             while True:
+                if stop_event and stop_event.is_set():
+                    _terminate_process(process)
+                    return 0
                 time.sleep(0.5)
                 if process.poll() is not None:
                     return process.returncode
@@ -1228,19 +1250,14 @@ def run_with_reloader(argv):
                 if current_mtime > last_mtime:
                     last_mtime = current_mtime
                     log("Change detected. Reloading...")
-                    process.terminate()
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
+                    _terminate_process(process)
                     break
         except KeyboardInterrupt:
-            process.terminate()
+            _terminate_process(process)
             return 0
 
-# ---- Entry point ----
-def run_server(args):
-    """Initialize state, background workers, and the HTTP server."""
+def init_runtime(args):
+    """Create the store, worker, and HTTP server."""
     global store
     store = MapStore(args.state, DOC_DIR)
 
@@ -1248,12 +1265,94 @@ def run_server(args):
     worker.start()
 
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
+    return server, worker
+
+def _create_tray_image(Image, ImageDraw):
+    size = 64
+    image = Image.new("RGBA", (size, size), (255, 252, 247, 255))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((8, 8, 56, 56), radius=12, fill=(47, 127, 115, 255))
+    draw.line((20, 24, 44, 24), fill=(255, 252, 247, 255), width=4)
+    draw.line((20, 32, 44, 32), fill=(255, 252, 247, 255), width=4)
+    draw.line((20, 40, 36, 40), fill=(255, 252, 247, 255), width=4)
+    return image
+
+def run_tray(args, reload_enabled):
+    """Run the server in the background with a tray icon."""
+    if sys.platform != "win32":
+        log("Tray mode is only supported on Windows. Starting server in console.")
+        run_server(args)
+        return
+
+    try:
+        import pystray
+        from PIL import Image, ImageDraw
+    except ImportError:
+        log("Tray mode requires pystray and pillow. Install with: pip install pystray pillow")
+        run_server(args)
+        return
+
+    stop_event = threading.Event()
+    runtime = {"server": None, "worker": None, "thread": None}
+
+    def serve():
+        if reload_enabled:
+            run_with_reloader(sys.argv, stop_event=stop_event)
+            return
+        server, worker = init_runtime(args)
+        runtime["server"] = server
+        runtime["worker"] = worker
+        log(f"Serving on {build_app_url(args)}")
+        try:
+            server.serve_forever()
+        finally:
+            worker.stop_event.set()
+            server.server_close()
+
+    def open_browser(icon=None, item=None):
+        webbrowser.open(build_app_url(args))
+
+    def stop_background():
+        stop_event.set()
+        server = runtime.get("server")
+        if server:
+            server.shutdown()
+        worker = runtime.get("worker")
+        if worker:
+            worker.stop_event.set()
+        thread = runtime.get("thread")
+        if thread:
+            thread.join(timeout=5)
+
+    def on_quit(icon, item):
+        stop_background()
+        icon.stop()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    runtime["thread"] = thread
+    thread.start()
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Open", open_browser),
+        pystray.MenuItem("Quit", on_quit),
+    )
+    icon = pystray.Icon("MMMarkDown", _create_tray_image(Image, ImageDraw), "MMMarkDown", menu)
+    log("Tray icon active.")
+    icon.run()
+
+# ---- Entry point ----
+def run_server(args):
+    """Initialize state, background workers, and the HTTP server."""
+    server, worker = init_runtime(args)
     log(f"Serving on http://{args.host}:{args.port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         log("Shutting down.")
+    finally:
+        worker.stop_event.set()
         server.shutdown()
+        server.server_close()
 
 def main():
     """CLI entry point for running the server with optional reload."""
@@ -1262,6 +1361,7 @@ def main():
     parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
     parser.add_argument("--state", default=DEFAULT_STATE_FILE, help="Path to .mmm state file")
     parser.add_argument("--no-reload", action="store_true", help="Disable auto reload on code changes")
+    parser.add_argument("--tray", action="store_true", help="Run in background with a tray icon")
     args = parser.parse_args()
 
     state_path, workspace_dir = resolve_state_path(args.state)
@@ -1271,6 +1371,13 @@ def main():
     DOC_DIR = os.path.join(workspace_dir, "MDDoc")
 
     reload_enabled = RELOAD_ENABLED and not args.no_reload
+    if os.environ.get("MMM_RUN_MAIN") == "1":
+        args.tray = False
+
+    if args.tray and os.environ.get("MMM_RUN_MAIN") != "1":
+        run_tray(args, reload_enabled)
+        return
+
     if reload_enabled and os.environ.get("MMM_RUN_MAIN") != "1":
         return_code = run_with_reloader(sys.argv)
         raise SystemExit(return_code)

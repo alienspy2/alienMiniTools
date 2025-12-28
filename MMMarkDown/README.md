@@ -5,10 +5,26 @@ Local-only mind map for Markdown files. Each node maps to a single `.md` file in
 ## Run
 
 ```bash
-python app.py
+python mmm_app.py
 ```
 
 Open `http://127.0.0.1:8000` in your browser.
+
+## Tray mode (Windows)
+
+Install dependencies:
+
+```bash
+pip install pystray pillow
+```
+
+Run in the background with a tray icon:
+
+```bash
+python mmm_app.py --tray
+```
+
+The tray menu provides `Open` and `Quit`. `run.bat` now launches tray mode via `pythonw`.
 
 ## Auto reload
 
@@ -54,7 +70,7 @@ Environment overrides:
 The map state is stored in a `.mmm` JSON file (default: `mindmap.mmm`). Override with:
 
 ```bash
-python app.py --state other-file.mmm
+python mmm_app.py --state other-file.mmm
 ```
 
 Or set `MMM_FILE` to a path.
