@@ -1474,7 +1474,7 @@ def main():
     """CLI entry point for running the server with optional reload."""
     parser = argparse.ArgumentParser(description="MMMarkDown local mind map server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000)")
+    parser.add_argument("--port", type=int, default=23005, help="Port to bind (default: 23005)")
     parser.add_argument("--state", default=DEFAULT_STATE_FILE, help="Path to .mmm state file")
     parser.add_argument("--no-reload", action="store_true", help="Disable auto reload on code changes")
     parser.add_argument("--tray", action="store_true", help="Run in background with a tray icon")

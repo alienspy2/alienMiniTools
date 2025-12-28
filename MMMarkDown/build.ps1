@@ -1,4 +1,4 @@
-﻿# Build a single-file portable exe into .\buildOutput
+# Build a single-file portable exe into .\buildOutput
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
