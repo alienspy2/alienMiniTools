@@ -4,3 +4,4 @@ InvokeComfyUI/log
 MMMarkDown/MDDoc
 MMMarkDown/mindmap.mmm
 InvokeComfyUI/output
+.claude/settings.local.json
