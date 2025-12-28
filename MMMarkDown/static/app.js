@@ -44,6 +44,8 @@ const elements = {
   refreshSummariesBtn: document.getElementById("refresh-summaries-btn"),
   realignFoldersBtn: document.getElementById("realign-folders-btn"),
   editorSelect: document.getElementById("editor-select"),
+  workspacePath: document.getElementById("workspace-path"),
+  workspaceBtn: document.getElementById("workspace-btn"),
   modalOverlay: document.getElementById("modal-overlay"),
   modalTitle: document.getElementById("modal-title"),
   modalInput: document.getElementById("modal-input"),
@@ -411,6 +413,9 @@ async function fetchState() {
 function applyState(data) {
   state.data = data;
   elements.stateFile.textContent = `State: ${data.state_file || "-"}`;
+  if (elements.workspacePath) {
+    elements.workspacePath.textContent = data.workspace_dir || "-";
+  }
 
   const nodes = data.nodes || {};
   if (state.cutNodeId && !nodes[state.cutNodeId]) {
@@ -939,6 +944,17 @@ async function realignFolders() {
   });
 }
 
+async function changeWorkspace() {
+  const current = state.data?.workspace_dir || "";
+  const workspace = await openNamePrompt("Workspace path", current, "C:\\path\\to\\workspace");
+  if (!workspace) {
+    return;
+  }
+  await runAction(() => apiPost("/api/workspace/set", { workspace }), {
+    successMessage: "워크스페이스를 변경했어요.",
+  });
+}
+
 async function syncStateFromDisk() {
   await runAction(() => apiPost("/api/state/sync", {}), {
     onSuccess: (result) => {
@@ -1082,6 +1098,7 @@ function bindEvents() {
   on(elements.openBtn, "click", openSelected);
   on(elements.refreshSummariesBtn, "click", refreshSummaries);
   on(elements.realignFoldersBtn, "click", realignFolders);
+  on(elements.workspaceBtn, "click", changeWorkspace);
   on(elements.editorSelect, "change", () => {
     saveEditorSettings();
   });

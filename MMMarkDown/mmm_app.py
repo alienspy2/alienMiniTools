@@ -18,16 +18,20 @@ import threading
 import time
 import uuid
 import webbrowser
+import atexit
 from contextlib import contextmanager
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
 # ---- Configuration ----
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_STATE_FILE = os.environ.get("MMM_FILE", os.path.join(BASE_DIR, "mindmap.mmm"))
-DOC_DIR = os.environ.get("MMM_DOC_DIR", os.path.join(BASE_DIR, "MDDoc"))
-STATIC_DIR = os.environ.get("MMM_STATIC_DIR", os.path.join(BASE_DIR, "static"))
+IS_FROZEN = getattr(sys, "frozen", False)
+RUNTIME_DIR = os.path.dirname(sys.executable) if IS_FROZEN else os.path.dirname(os.path.abspath(__file__))
+RESOURCE_DIR = getattr(sys, "_MEIPASS", RUNTIME_DIR) if IS_FROZEN else RUNTIME_DIR
+BASE_DIR = RUNTIME_DIR
+DEFAULT_STATE_FILE = os.environ.get("MMM_FILE", os.path.join(RUNTIME_DIR, "mindmap.mmm"))
+DOC_DIR = os.environ.get("MMM_DOC_DIR", os.path.join(RUNTIME_DIR, "MDDoc"))
+STATIC_DIR = os.environ.get("MMM_STATIC_DIR", os.path.join(RESOURCE_DIR, "static"))
 
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
 SUMMARY_PROMPT = os.environ.get(
@@ -83,9 +87,98 @@ RESERVED_NAMES = {
 }
 
 # ---- Utilities ----
+LOG_PATH = None
+CONFIG_FILE = os.path.join(RUNTIME_DIR, "mmm_config.json")
+LOCK_FILE = os.path.join(RUNTIME_DIR, "mmm_app.lock")
+_instance_lock_handle = None
+
+def _init_log_path():
+    return os.path.join(RUNTIME_DIR, "mmm_app.log")
+
 def log(message):
     """Lightweight console logger with a consistent prefix."""
-    print(f"[MMM] {message}")
+    global LOG_PATH
+    if LOG_PATH is None:
+        LOG_PATH = _init_log_path()
+    line = f"[MMM] {message}"
+    print(line)
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8-sig") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        pass
+
+def load_config():
+    if not os.path.exists(CONFIG_FILE):
+        return {}
+    try:
+        raw = read_text_file(CONFIG_FILE).strip()
+        data = json.loads(raw) if raw else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+def save_config(config):
+    safe_write_json(CONFIG_FILE, config)
+
+def _resolve_workspace_input(raw_path):
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ValueError("Workspace path is required.")
+    abs_path = os.path.abspath(os.path.expanduser(raw_path.strip()))
+    if abs_path.lower().endswith(".mmm"):
+        return abs_path, os.path.dirname(abs_path)
+    return os.path.join(abs_path, "mindmap.mmm"), abs_path
+
+def persist_workspace(workspace_dir):
+    config = load_config()
+    if config.get("last_workspace") != workspace_dir:
+        config["last_workspace"] = workspace_dir
+        save_config(config)
+
+def acquire_single_instance():
+    """Return False if another instance is already running."""
+    global _instance_lock_handle
+    if _instance_lock_handle:
+        return True
+    try:
+        handle = open(LOCK_FILE, "a")
+    except OSError:
+        return True
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return False
+    _instance_lock_handle = handle
+    atexit.register(release_single_instance)
+    return True
+
+def release_single_instance():
+    global _instance_lock_handle
+    if not _instance_lock_handle:
+        return
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            _instance_lock_handle.seek(0)
+            msvcrt.locking(_instance_lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(_instance_lock_handle, fcntl.LOCK_UN)
+    except OSError:
+        pass
+    try:
+        _instance_lock_handle.close()
+    except OSError:
+        pass
+    _instance_lock_handle = None
 
 def rel_to_abs(rel_path):
     """Resolve a repo-relative path to an absolute path."""
@@ -692,6 +785,7 @@ class MapStore:
         for node in data["nodes"].values():
             node["file_abs"] = rel_to_abs(node["file"])
         data["state_file"] = os.path.abspath(self.state_path)
+        data["workspace_dir"] = os.path.dirname(os.path.abspath(self.state_path))
         return data
 
     def _assert_unique_name(self, name, exclude_id=None):
@@ -1053,6 +1147,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         "/api/folders/realign": ("_handle_realign_folders", True),
         "/api/summary/refresh": ("_handle_refresh_summaries", True),
         "/api/settings/editor": ("_handle_update_editor", True),
+        "/api/workspace/set": ("_handle_workspace_set", True),
         "/api/node/open": ("_handle_node_open", False),
     }
 
@@ -1123,6 +1218,11 @@ class RequestHandler(BaseHTTPRequestHandler):
         store.update_editor_settings(payload.get("editor"), payload.get("custom_editor"))
         return {}
 
+    def _handle_workspace_set(self, payload):
+        workspace = payload.get("workspace", "")
+        switch_workspace(workspace)
+        return {}
+
     def _handle_node_open(self, payload):
         path = store.open_in_editor(payload.get("node_id"))
         return {"path": path}
@@ -1186,6 +1286,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
 store = None
+worker_ref = None
 
 # ---- Auto reload ----
 def iter_watch_files():
@@ -1258,14 +1359,29 @@ def run_with_reloader(argv, stop_event=None):
 
 def init_runtime(args):
     """Create the store, worker, and HTTP server."""
-    global store
+    global store, worker_ref
     store = MapStore(args.state, DOC_DIR)
 
     worker = SummaryWorker(store)
     worker.start()
+    worker_ref = worker
 
     server = ThreadingHTTPServer((args.host, args.port), RequestHandler)
     return server, worker
+
+def switch_workspace(new_workspace):
+    """Switch workspace and return the refreshed client state."""
+    global DOC_DIR, store, worker_ref
+    state_path, workspace_dir = _resolve_workspace_input(new_workspace)
+    os.makedirs(workspace_dir, exist_ok=True)
+    DOC_DIR = os.path.join(workspace_dir, "MDDoc")
+    if worker_ref:
+        worker_ref.stop_event.set()
+    store = MapStore(state_path, DOC_DIR)
+    worker_ref = SummaryWorker(store)
+    worker_ref.start()
+    persist_workspace(workspace_dir)
+    return store.state_for_client()
 
 def _create_tray_image(Image, ImageDraw):
     size = 64
@@ -1364,13 +1480,30 @@ def main():
     parser.add_argument("--tray", action="store_true", help="Run in background with a tray icon")
     args = parser.parse_args()
 
+    state_arg_provided = "--state" in sys.argv
+    if not state_arg_provided:
+        config = load_config()
+        last_workspace = config.get("last_workspace")
+        if last_workspace:
+            args.state = os.path.join(last_workspace, "mindmap.mmm")
+
     state_path, workspace_dir = resolve_state_path(args.state)
     os.makedirs(workspace_dir, exist_ok=True)
     args.state = state_path
     global DOC_DIR
     DOC_DIR = os.path.join(workspace_dir, "MDDoc")
+    persist_workspace(workspace_dir)
+
+    if os.environ.get("MMM_RUN_MAIN") != "1":
+        if not acquire_single_instance():
+            log("Another instance is already running. Exiting.")
+            return
 
     reload_enabled = RELOAD_ENABLED and not args.no_reload
+    if IS_FROZEN:
+        reload_enabled = False
+    if IS_FROZEN and not args.tray and os.environ.get("MMM_RUN_MAIN") != "1":
+        args.tray = True
     if os.environ.get("MMM_RUN_MAIN") == "1":
         args.tray = False
 

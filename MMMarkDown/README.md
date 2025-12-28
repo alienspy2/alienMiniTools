@@ -72,6 +72,7 @@ The server auto-reloads when Python files change. Disable with `--no-reload` or 
 - `F2` or `Enter` opens the selected node in VS Code.
 - The node name becomes the Markdown filename (the app will append `.md` if missing).
 - App start 시 `MDDoc`에 이미 있는 `.md` 파일은 자동으로 노드로 추가됩니다 (루트 노드에 연결).
+- Workspace는 Tools 패널에서 변경 가능하며, 마지막으로 선택한 경로가 다음 실행에 자동 적용됩니다.
 
 VS Code integration uses the `code` CLI. If it is missing, open VS Code and run the "Shell Command: Install 'code' command in PATH" command.
 
