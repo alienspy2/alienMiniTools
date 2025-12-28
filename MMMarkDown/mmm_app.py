@@ -7,6 +7,7 @@ using a local Ollama model. It also provides a simple file-change reloader.
 
 import argparse
 import hashlib
+import io
 import json
 import mimetypes
 import os
@@ -19,6 +20,12 @@ import time
 import uuid
 import webbrowser
 import atexit
+
+# Windows 콘솔 인코딩 문제 해결
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 from contextlib import contextmanager
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
