@@ -1,0 +1,13 @@
+# Build output
+**/bin/
+**/obj/
+publish/
+
+# User-specific files
+**/*.user
+**/*.suo
+**/*.userosscache
+**/*.sln.docstates
+.vs/
+.vscode/
+.idea/

@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RemoteKM.Client", "src\\RemoteKM.Client\\RemoteKM.Client.csproj", "{2BC1F653-13F2-4D0A-8A2E-1F2E6B4A02DF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RemoteKM.Server", "src\\RemoteKM.Server\\RemoteKM.Server.csproj", "{F1180F35-4AB9-4A86-9A9B-7A8E59755E8D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2BC1F653-13F2-4D0A-8A2E-1F2E6B4A02DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2BC1F653-13F2-4D0A-8A2E-1F2E6B4A02DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2BC1F653-13F2-4D0A-8A2E-1F2E6B4A02DF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2BC1F653-13F2-4D0A-8A2E-1F2E6B4A02DF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F1180F35-4AB9-4A86-9A9B-7A8E59755E8D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F1180F35-4AB9-4A86-9A9B-7A8E59755E8D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F1180F35-4AB9-4A86-9A9B-7A8E59755E8D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F1180F35-4AB9-4A86-9A9B-7A8E59755E8D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
