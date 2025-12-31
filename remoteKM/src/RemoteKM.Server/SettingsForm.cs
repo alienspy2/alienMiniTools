@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Drawing;
 using System.Net;
 using System.Windows.Forms;
@@ -14,7 +14,8 @@ internal sealed class SettingsForm : Form
     private readonly Label _serviceStatusLabel;
     private bool _updatingServiceToggle;
 
-    private const string ServiceName = "RemoteKMServer";
+    private const string CoreTaskName = "RemoteKMServer.Core";
+    private const string TrayTaskName = "RemoteKMServer.Tray";
 
     internal SettingsForm(ServerSettings settings, Action<ServerSettings> apply)
     {
@@ -70,7 +71,7 @@ internal sealed class SettingsForm : Form
 
         var serviceLabel = new Label
         {
-            Text = "Service",
+            Text = "자동실행",
             Left = 12,
             Top = 96,
             Width = 80
@@ -90,7 +91,7 @@ internal sealed class SettingsForm : Form
             Top = 98,
             AutoSize = true
         };
-        UpdateServiceToggle(IsServiceRegistered(ServiceName));
+        UpdateServiceToggle(IsAutoRunRegistered());
         _serviceToggle.CheckedChanged += (_, _) => ToggleServiceRegistration();
 
         var closeButton = new Button
@@ -142,7 +143,7 @@ internal sealed class SettingsForm : Form
         try
         {
             var targetRegister = _serviceToggle.Checked;
-            var success = targetRegister ? RegisterService() : UnregisterService();
+            var success = targetRegister ? RegisterAutoRun() : UnregisterAutoRun();
             if (!success)
             {
                 UpdateServiceToggle(!targetRegister);
@@ -150,7 +151,7 @@ internal sealed class SettingsForm : Form
             }
 
             MessageBox.Show(this,
-                targetRegister ? "서비스 등록 완료" : "서비스 해제 완료",
+                targetRegister ? "자동실행 등록 완료" : "자동실행 해제 완료",
                 "RemoteKM Server",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -160,44 +161,70 @@ internal sealed class SettingsForm : Form
             _serviceToggle.Enabled = true;
         }
 
-        UpdateServiceToggle(IsServiceRegistered(ServiceName));
+        UpdateServiceToggle(IsAutoRunRegistered());
     }
 
     private void UpdateServiceToggle(bool registered)
     {
         _updatingServiceToggle = true;
         _serviceToggle.Checked = registered;
-        _serviceToggle.Text = registered ? "Service 해제" : "Service 등록";
+        _serviceToggle.Text = registered ? "자동실행 해제" : "자동실행 등록";
         _serviceStatusLabel.Text = registered ? "등록됨" : "미등록";
         _updatingServiceToggle = false;
     }
 
-    private static bool RegisterService()
+    private static bool RegisterAutoRun()
     {
         var exePath = Application.ExecutablePath;
-        var args = $"create \"{ServiceName}\" binPath= \"{exePath}\" start= auto";
-        return RunSc(args, out var output, out var error, out var exitCode)
-            || ShowServiceError("서비스 등록 실패", output, error, exitCode);
+        var coreArgs = $"/Create /TN \"{CoreTaskName}\" /TR \"\\\"{exePath}\\\" --proxy\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F";
+        if (!RunSchtasks(coreArgs, out var output, out var error, out var exitCode))
+        {
+            return ShowServiceError("자동실행 등록 실패", output, error, exitCode);
+        }
+
+        var trayArgs = $"/Create /TN \"{TrayTaskName}\" /TR \"\\\"{exePath}\\\" --agent\" /SC ONLOGON /RL HIGHEST /F";
+        if (!RunSchtasks(trayArgs, out output, out error, out exitCode))
+        {
+            RunSchtasks($"/Delete /TN \"{CoreTaskName}\" /F", out _, out _, out _);
+            return ShowServiceError("자동실행 등록 실패", output, error, exitCode);
+        }
+
+        return true;
     }
 
-    private static bool UnregisterService()
+    private static bool UnregisterAutoRun()
     {
-        RunSc($"stop \"{ServiceName}\"", out _, out _, out _);
-        var args = $"delete \"{ServiceName}\"";
-        return RunSc(args, out var output, out var error, out var exitCode)
-            || ShowServiceError("서비스 해제 실패", output, error, exitCode);
+        var success = true;
+        if (IsTaskRegistered(CoreTaskName) &&
+            !RunSchtasks($"/Delete /TN \"{CoreTaskName}\" /F", out var output, out var error, out var exitCode))
+        {
+            success = ShowServiceError("자동실행 해제 실패", output, error, exitCode);
+        }
+
+        if (IsTaskRegistered(TrayTaskName) &&
+            !RunSchtasks($"/Delete /TN \"{TrayTaskName}\" /F", out output, out error, out exitCode))
+        {
+            success = ShowServiceError("자동실행 해제 실패", output, error, exitCode) && success;
+        }
+
+        return success;
     }
 
-    private static bool IsServiceRegistered(string name)
+    private static bool IsTaskRegistered(string name)
     {
-        return RunSc($"query \"{name}\"", out _, out _, out var exitCode) && exitCode == 0;
+        return RunSchtasks($"/Query /TN \"{name}\"", out _, out _, out var exitCode) && exitCode == 0;
     }
 
-    private static bool RunSc(string arguments, out string output, out string error, out int exitCode)
+    private static bool IsAutoRunRegistered()
+    {
+        return IsTaskRegistered(CoreTaskName) && IsTaskRegistered(TrayTaskName);
+    }
+
+    private static bool RunSchtasks(string arguments, out string output, out string error, out int exitCode)
     {
         using var process = new Process
         {
-            StartInfo = new ProcessStartInfo("sc.exe", arguments)
+            StartInfo = new ProcessStartInfo("schtasks.exe", arguments)
             {
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -218,7 +245,7 @@ internal sealed class SettingsForm : Form
         var detail = !string.IsNullOrWhiteSpace(error) ? error : output;
         if (string.IsNullOrWhiteSpace(detail))
         {
-            detail = $"sc.exe exit code: {exitCode}";
+            detail = $"schtasks.exe exit code: {exitCode}";
         }
 
         MessageBox.Show(detail.Trim(), title, MessageBoxButtons.OK, MessageBoxIcon.Error);
