@@ -22,6 +22,7 @@ internal sealed class TcpListenerService
     private int _transferInProgress;
 
     internal event Action<IPEndPoint?>? ClientConnected;
+    internal event Action<IPEndPoint?>? ClientDisconnected;
     internal event Action<string>? ClipboardReceived;
     internal event Action<FileTransferProgress>? FileTransferProgress;
     internal event Action<string>? FileTransferReceived;
@@ -91,9 +92,10 @@ internal sealed class TcpListenerService
             }
 
             Console.WriteLine("Client connected.");
-            ClientConnected?.Invoke(client.Client.RemoteEndPoint as IPEndPoint);
+            var remoteEndpoint = client.Client.RemoteEndPoint as IPEndPoint;
+            ClientConnected?.Invoke(remoteEndpoint);
             client.NoDelay = true;
-            await HandleClientAsync(client, token);
+            await HandleClientAsync(client, token, remoteEndpoint);
         }
     }
 
@@ -180,7 +182,7 @@ internal sealed class TcpListenerService
         return Task.CompletedTask;
     }
 
-    private Task HandleClientAsync(TcpClient client, CancellationToken token)
+    private Task HandleClientAsync(TcpClient client, CancellationToken token, IPEndPoint? endpoint)
     {
         using (client)
         using (token.Register(() => client.Close()))
@@ -334,6 +336,10 @@ internal sealed class TcpListenerService
             {
                 _player.CaptureStopRequested -= OnCaptureStop;
                 SetWriter(null);
+                if (!token.IsCancellationRequested)
+                {
+                    ClientDisconnected?.Invoke(endpoint);
+                }
             }
         }
         return Task.CompletedTask;

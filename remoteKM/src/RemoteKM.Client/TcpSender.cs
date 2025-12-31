@@ -19,6 +19,7 @@ internal sealed class TcpSender : IDisposable
     private Task? _listenTask;
     private readonly object _lock = new();
     private int _connectionLostNotified;
+    private int _connectionState;
     private readonly object _fileListLock = new();
     private PendingFileList? _localFileList;
     private string? _remoteFileToken;
@@ -29,6 +30,7 @@ internal sealed class TcpSender : IDisposable
     internal event Action<string>? ClipboardReceived;
     internal event Action<FileTransferProgress>? FileTransferProgress;
     internal event Action<string>? FileTransferReceived;
+    internal event Action? ConnectionEstablished;
     internal event Action? ConnectionLost;
 
     internal TcpSender(string host, int port)
@@ -92,6 +94,7 @@ internal sealed class TcpSender : IDisposable
         _writer = new BinaryWriter(_stream);
         _reader = new BinaryReader(_stream);
         Interlocked.Exchange(ref _connectionLostNotified, 0);
+        NotifyConnectionEstablished();
         StartListening();
     }
 
@@ -625,12 +628,22 @@ internal sealed class TcpSender : IDisposable
         _writer = null;
         _stream = null;
         _client = null;
+        Interlocked.Exchange(ref _connectionState, 0);
         ClearRemoteFileList();
         ClearLocalFileList();
     }
 
+    private void NotifyConnectionEstablished()
+    {
+        if (Interlocked.Exchange(ref _connectionState, 1) == 0)
+        {
+            ConnectionEstablished?.Invoke();
+        }
+    }
+
     private void NotifyConnectionLost()
     {
+        Interlocked.Exchange(ref _connectionState, 0);
         if (Interlocked.Exchange(ref _connectionLostNotified, 1) == 0)
         {
             ConnectionLost?.Invoke();

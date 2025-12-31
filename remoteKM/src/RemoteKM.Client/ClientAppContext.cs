@@ -23,6 +23,7 @@ internal sealed class ClientAppContext : ApplicationContext
     private bool _active;
     private ClientSettings _settings;
     private bool _edgeArmed = true;
+    private bool _hasConnected;
 
     private const int EdgeOffset = 16;
 
@@ -47,7 +48,8 @@ internal sealed class ClientAppContext : ApplicationContext
         _sender.ClipboardReceived += text => _syncContext.Post(_ => _clipboardSync.ApplyRemoteText(text), null);
         _sender.FileTransferProgress += progress => _syncContext.Post(_ => UpdateTransferPopup(progress), null);
         _sender.FileTransferReceived += tempRoot => _syncContext.Post(_ => OnFileTransferReceived(tempRoot), null);
-        _sender.ConnectionLost += () => _syncContext.Post(_ => StopCapture(sendStop: false), null);
+        _sender.ConnectionEstablished += () => _syncContext.Post(_ => OnConnectionEstablished(), null);
+        _sender.ConnectionLost += () => _syncContext.Post(_ => OnConnectionLost(), null);
         _hooks.CaptureStopRequested += () => _syncContext.Post(_ => StopCapture(sendStop: true), null);
         _hotKeyWindow = new HotKeyWindow(ParseHotKey(_settings.HotKey), Toggle, () => _active, _hooks.HandleRawMouseDelta);
         _hotKeyWindow.ShowInTaskbar = false;
@@ -102,6 +104,7 @@ internal sealed class ClientAppContext : ApplicationContext
         _settings = settings;
         _sender.UpdateEndpoint(settings.Host, settings.Port);
         _edgeArmed = true;
+        _hasConnected = false;
 
         var hotKey = ParseHotKey(settings.HotKey);
         _hooks.UpdateHotKey(hotKey);
@@ -152,9 +155,13 @@ internal sealed class ClientAppContext : ApplicationContext
             return;
         }
 
+        if (!_sender.SendCaptureStart(_settings.CaptureEdge))
+        {
+            return;
+        }
+
         _active = true;
         _hooks.SetActive(true);
-        _sender.SendCaptureStart(_settings.CaptureEdge);
         UpdateTrayText();
     }
 
@@ -173,6 +180,22 @@ internal sealed class ClientAppContext : ApplicationContext
         }
         MoveCursorInsideEdge(_settings.CaptureEdge, EdgeOffset);
         UpdateTrayText();
+    }
+
+    private void OnConnectionEstablished()
+    {
+        _hasConnected = true;
+        ShowConnectionStatus(connected: true);
+    }
+
+    private void OnConnectionLost()
+    {
+        StopCapture(sendStop: false);
+        if (!_hasConnected)
+        {
+            return;
+        }
+        ShowConnectionStatus(connected: false);
     }
 
     private void OnControlReceived(ControlMessage message, int value)
@@ -276,6 +299,14 @@ internal sealed class ClientAppContext : ApplicationContext
     private void UpdateTrayText()
     {
         _tray.Text = _active ? "RemoteKM Client (Capture ON)" : "RemoteKM Client (Capture OFF)";
+    }
+
+    private void ShowConnectionStatus(bool connected)
+    {
+        var target = $"{_settings.Host}:{_settings.Port}";
+        var icon = connected ? ToolTipIcon.Info : ToolTipIcon.Warning;
+        var message = connected ? $"Server connected: {target}" : $"Server disconnected: {target}";
+        _tray.ShowBalloonTip(3000, "RemoteKM Client", message, icon);
     }
 
     private void UpdateTransferPopup(FileTransferProgress progress)

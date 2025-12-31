@@ -70,6 +70,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _cts = new CancellationTokenSource();
         _service = new TcpListenerService(_settings.IpAddress, _settings.Port, new InputPlayer());
         _service.ClientConnected += OnClientConnected;
+        _service.ClientDisconnected += OnClientDisconnected;
         _service.ClipboardReceived += OnClipboardReceived;
         _service.FileTransferProgress += OnFileTransferProgress;
         _service.FileTransferReceived += OnFileTransferReceived;
@@ -87,6 +88,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (_service != null)
         {
             _service.ClientConnected -= OnClientConnected;
+            _service.ClientDisconnected -= OnClientDisconnected;
             _service.ClipboardReceived -= OnClipboardReceived;
             _service.FileTransferProgress -= OnFileTransferProgress;
             _service.FileTransferReceived -= OnFileTransferReceived;
@@ -132,6 +134,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 "RemoteKM Server",
                 $"Client connected: {address}",
                 ToolTipIcon.Info);
+        }, null);
+    }
+
+    private void OnClientDisconnected(IPEndPoint? endpoint)
+    {
+        var address = endpoint == null ? "unknown" : $"{endpoint.Address}:{endpoint.Port}";
+        _uiContext.Post(_ =>
+        {
+            _notifyIcon.ShowBalloonTip(
+                3000,
+                "RemoteKM Server",
+                $"Client disconnected: {address}",
+                ToolTipIcon.Warning);
         }, null);
     }
 
