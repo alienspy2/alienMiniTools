@@ -20,7 +20,6 @@ internal sealed class ClientAppContext : ApplicationContext
     private readonly SynchronizationContext _syncContext;
     private readonly TransferProgressPopup _transferPopup;
     private readonly PasteMonitor _pasteMonitor;
-    private readonly ClientRuntimeOptions _runtime;
     private bool _active;
     private ClientSettings _settings;
     private bool _edgeArmed = true;
@@ -28,15 +27,13 @@ internal sealed class ClientAppContext : ApplicationContext
 
     private const int EdgeOffset = 16;
 
-    internal ClientAppContext(string settingsPath, ClientSettings settings, ClientRuntimeOptions runtime)
+    internal ClientAppContext()
     {
-        _settingsPath = settingsPath;
-        _settings = settings;
-        _runtime = runtime;
+        _settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
+        _settings = ClientSettings.Load(_settingsPath);
 
         _syncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
-        var (host, port) = GetEndpoint(_settings);
-        _sender = new TcpSender(host, port);
+        _sender = new TcpSender(_settings.Host, _settings.Port);
         _hooks = new HookService(_sender, ParseHotKey(_settings.HotKey));
         _clipboardSync = new ClipboardSyncService(
             text => Task.Run(() => _sender.SendClipboardText(text)),
@@ -77,16 +74,6 @@ internal sealed class ClientAppContext : ApplicationContext
         _edgeMonitor.Start();
     }
 
-    private (string Host, int Port) GetEndpoint(ClientSettings settings)
-    {
-        if (!_runtime.UseProxy)
-        {
-            return (settings.Host, settings.Port);
-        }
-
-        return (_runtime.ProxyHost, ProxyPortHelper.GetProxyPort(settings.Port));
-    }
-
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
@@ -115,8 +102,7 @@ internal sealed class ClientAppContext : ApplicationContext
     private void ApplySettings(ClientSettings settings)
     {
         _settings = settings;
-        var (host, port) = GetEndpoint(settings);
-        _sender.UpdateEndpoint(host, port);
+        _sender.UpdateEndpoint(settings.Host, settings.Port);
         _edgeArmed = true;
         _hasConnected = false;
 

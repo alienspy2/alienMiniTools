@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Text.Json.Serialization;
@@ -18,8 +18,7 @@ internal sealed class SettingsForm : Form
     private bool _updatingServiceToggle;
     private bool _initializing;
 
-    private const string CoreTaskName = "RemoteKMClient.Core";
-    private const string TrayTaskName = "RemoteKMClient.Tray";
+    private const string ServiceName = "RemoteKMClient";
 
     internal SettingsForm(string settingsPath, ClientSettings settings, Action<ClientSettings> apply)
     {
@@ -80,7 +79,7 @@ internal sealed class SettingsForm : Form
         _serviceToggle.AutoSize = true;
         _serviceToggle.TextAlign = ContentAlignment.MiddleCenter;
         _serviceStatusLabel.AutoSize = true;
-        UpdateServiceToggle(IsAutoRunRegistered());
+        UpdateServiceToggle(IsServiceRegistered(ServiceName));
         _serviceToggle.CheckedChanged += (_, _) => ToggleServiceRegistration();
         var servicePanel = new FlowLayoutPanel
         {
@@ -90,7 +89,7 @@ internal sealed class SettingsForm : Form
         };
         servicePanel.Controls.Add(_serviceToggle);
         servicePanel.Controls.Add(_serviceStatusLabel);
-        layout.Controls.Add(new Label { Text = "자동실행", AutoSize = true }, 0, 4);
+        layout.Controls.Add(new Label { Text = "Service", AutoSize = true }, 0, 4);
         layout.Controls.Add(servicePanel, 1, 4);
 
         var buttonPanel = new FlowLayoutPanel
@@ -192,7 +191,7 @@ internal sealed class SettingsForm : Form
         try
         {
             var targetRegister = _serviceToggle.Checked;
-            var success = targetRegister ? RegisterAutoRun() : UnregisterAutoRun();
+            var success = targetRegister ? RegisterService() : UnregisterService();
             if (!success)
             {
                 UpdateServiceToggle(!targetRegister);
@@ -200,7 +199,7 @@ internal sealed class SettingsForm : Form
             }
 
             MessageBox.Show(this,
-                targetRegister ? "자동실행 등록 완료" : "자동실행 해제 완료",
+                targetRegister ? "서비스 등록 완료" : "서비스 해제 완료",
                 "RemoteKM Client",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -210,70 +209,44 @@ internal sealed class SettingsForm : Form
             _serviceToggle.Enabled = true;
         }
 
-        UpdateServiceToggle(IsAutoRunRegistered());
+        UpdateServiceToggle(IsServiceRegistered(ServiceName));
     }
 
     private void UpdateServiceToggle(bool registered)
     {
         _updatingServiceToggle = true;
         _serviceToggle.Checked = registered;
-        _serviceToggle.Text = registered ? "자동실행 해제" : "자동실행 등록";
+        _serviceToggle.Text = registered ? "Service 해제" : "Service 등록";
         _serviceStatusLabel.Text = registered ? "등록됨" : "미등록";
         _updatingServiceToggle = false;
     }
 
-    private static bool RegisterAutoRun()
+    private static bool RegisterService()
     {
         var exePath = Application.ExecutablePath;
-        var coreArgs = $"/Create /TN \"{CoreTaskName}\" /TR \"\\\"{exePath}\\\" --proxy\" /SC ONSTART /RU SYSTEM /RL HIGHEST /F";
-        if (!RunSchtasks(coreArgs, out var output, out var error, out var exitCode))
-        {
-            return ShowServiceError("자동실행 등록 실패", output, error, exitCode);
-        }
-
-        var trayArgs = $"/Create /TN \"{TrayTaskName}\" /TR \"\\\"{exePath}\\\" --agent\" /SC ONLOGON /RL HIGHEST /F";
-        if (!RunSchtasks(trayArgs, out output, out error, out exitCode))
-        {
-            RunSchtasks($"/Delete /TN \"{CoreTaskName}\" /F", out _, out _, out _);
-            return ShowServiceError("자동실행 등록 실패", output, error, exitCode);
-        }
-
-        return true;
+        var args = $"create \"{ServiceName}\" binPath= \"{exePath}\" start= auto";
+        return RunSc(args, out var output, out var error, out var exitCode)
+            || ShowServiceError("서비스 등록 실패", output, error, exitCode);
     }
 
-    private static bool UnregisterAutoRun()
+    private static bool UnregisterService()
     {
-        var success = true;
-        if (IsTaskRegistered(CoreTaskName) &&
-            !RunSchtasks($"/Delete /TN \"{CoreTaskName}\" /F", out var output, out var error, out var exitCode))
-        {
-            success = ShowServiceError("자동실행 해제 실패", output, error, exitCode);
-        }
-
-        if (IsTaskRegistered(TrayTaskName) &&
-            !RunSchtasks($"/Delete /TN \"{TrayTaskName}\" /F", out output, out error, out exitCode))
-        {
-            success = ShowServiceError("자동실행 해제 실패", output, error, exitCode) && success;
-        }
-
-        return success;
+        RunSc($"stop \"{ServiceName}\"", out _, out _, out _);
+        var args = $"delete \"{ServiceName}\"";
+        return RunSc(args, out var output, out var error, out var exitCode)
+            || ShowServiceError("서비스 해제 실패", output, error, exitCode);
     }
 
-    private static bool IsTaskRegistered(string name)
+    private static bool IsServiceRegistered(string name)
     {
-        return RunSchtasks($"/Query /TN \"{name}\"", out _, out _, out var exitCode) && exitCode == 0;
+        return RunSc($"query \"{name}\"", out _, out _, out var exitCode) && exitCode == 0;
     }
 
-    private static bool IsAutoRunRegistered()
-    {
-        return IsTaskRegistered(CoreTaskName) && IsTaskRegistered(TrayTaskName);
-    }
-
-    private static bool RunSchtasks(string arguments, out string output, out string error, out int exitCode)
+    private static bool RunSc(string arguments, out string output, out string error, out int exitCode)
     {
         using var process = new Process
         {
-            StartInfo = new ProcessStartInfo("schtasks.exe", arguments)
+            StartInfo = new ProcessStartInfo("sc.exe", arguments)
             {
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -294,7 +267,7 @@ internal sealed class SettingsForm : Form
         var detail = !string.IsNullOrWhiteSpace(error) ? error : output;
         if (string.IsNullOrWhiteSpace(detail))
         {
-            detail = $"schtasks.exe exit code: {exitCode}";
+            detail = $"sc.exe exit code: {exitCode}";
         }
 
         MessageBox.Show(detail.Trim(), title, MessageBoxButtons.OK, MessageBoxIcon.Error);

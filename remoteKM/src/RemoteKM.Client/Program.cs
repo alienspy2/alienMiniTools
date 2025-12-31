@@ -13,38 +13,9 @@ internal static class Program
     private static void Main(string[] args)
     {
         InitializeLogging();
-
-        var runProxy = false;
-        var runAgent = false;
-        foreach (var arg in args)
-        {
-            if (arg.Equals("--proxy", StringComparison.OrdinalIgnoreCase) ||
-                arg.Equals("--headless", StringComparison.OrdinalIgnoreCase))
-            {
-                runProxy = true;
-                continue;
-            }
-
-            if (arg.Equals("--agent", StringComparison.OrdinalIgnoreCase))
-            {
-                runAgent = true;
-                continue;
-            }
-        }
-
-        var settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
-        var settings = ClientSettings.Load(settingsPath);
-
-        if (runProxy)
-        {
-            ClientProxyHost.Run(settingsPath, settings);
-            return;
-        }
-
-        var runtime = runAgent ? new ClientRuntimeOptions(true, "127.0.0.1") : ClientRuntimeOptions.Direct;
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new ClientAppContext(settingsPath, settings, runtime));
+        Application.Run(new ClientAppContext());
     }
 
     private static void InitializeLogging()

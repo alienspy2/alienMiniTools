@@ -15,15 +15,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly TransferProgressPopup _transferPopup;
     private readonly PasteMonitor _pasteMonitor;
     private ServerSettings _settings;
-    private readonly ServerRuntimeOptions _runtime;
     private TcpListenerService? _service;
     private CancellationTokenSource? _cts;
     private SettingsForm? _settingsForm;
 
-    internal TrayApplicationContext(ServerSettings settings, ServerRuntimeOptions runtime)
+    internal TrayApplicationContext(ServerSettings settings)
     {
         _settings = settings;
-        _runtime = runtime;
         _uiContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         var menu = new ContextMenuStrip();
@@ -70,8 +68,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         StopServer();
         _cts = new CancellationTokenSource();
-        var listenSettings = GetListenSettings();
-        _service = new TcpListenerService(listenSettings.IpAddress, listenSettings.Port, new InputPlayer());
+        _service = new TcpListenerService(_settings.IpAddress, _settings.Port, new InputPlayer());
         _service.ClientConnected += OnClientConnected;
         _service.ClientDisconnected += OnClientDisconnected;
         _service.ClipboardReceived += OnClipboardReceived;
@@ -117,7 +114,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void ApplySettings(ServerSettings settings)
     {
         _settings = settings;
-        ServerSettings.Save(_settings);
         UpdateTooltip();
         StartServer();
     }
@@ -126,17 +122,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         var text = $"RemoteKM Server ({_settings.Host}:{_settings.Port})";
         _notifyIcon.Text = text.Length <= 63 ? text : "RemoteKM Server";
-    }
-
-    private ServerSettings GetListenSettings()
-    {
-        if (!_runtime.UseProxy)
-        {
-            return _settings;
-        }
-
-        var proxyPort = ProxyPortHelper.GetProxyPort(_settings.Port);
-        return new ServerSettings("127.0.0.1", proxyPort);
     }
 
     private void OnClientConnected(IPEndPoint? endpoint)
