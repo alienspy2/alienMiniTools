@@ -14,6 +14,9 @@
     <Optimize>false</Optimize>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="TaskScheduler" Version="2.10.1" />
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource Include="..\..\portal.png" Link="portal.png">
       <LogicalName>portal.png</LogicalName>
     </EmbeddedResource>

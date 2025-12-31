@@ -1,5 +1,6 @@
-using System.Windows.Forms;
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows.Forms;
 
 namespace RemoteKM.Client;
 
@@ -9,13 +10,18 @@ internal sealed class SettingsForm : Form
     private readonly TextBox _portBox = new();
     private readonly TextBox _hotKeyBox = new();
     private readonly ComboBox _edgeBox = new();
+    private readonly CheckBox _runAtStartupBox = new();
     private readonly string _settingsPath;
     private readonly Action<ClientSettings> _apply;
+    private ClientSettings _currentSettings;
+    private bool _startupEnabled;
+    private bool _suppressEvents;
 
     internal SettingsForm(string settingsPath, ClientSettings settings, Action<ClientSettings> apply)
     {
         _settingsPath = settingsPath;
         _apply = apply;
+        _currentSettings = settings;
 
         Text = "RemoteKM Settings";
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -44,11 +50,29 @@ internal sealed class SettingsForm : Form
         _hotKeyBox.ShortcutsEnabled = false;
         _hotKeyBox.KeyDown += HotKeyBoxOnKeyDown;
 
+        _runAtStartupBox.Text = "Run at startup";
+        _runAtStartupBox.AutoSize = true;
+        try
+        {
+            _startupEnabled = StartupTaskManager.IsEnabled();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to read startup task: {ex.Message}", "RemoteKM", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _startupEnabled = false;
+        }
+        _runAtStartupBox.Checked = _startupEnabled;
+
+        _hostBox.TextChanged += (_, _) => ApplyIfChanged();
+        _portBox.TextChanged += (_, _) => ApplyIfChanged();
+        _edgeBox.SelectedIndexChanged += (_, _) => ApplyIfChanged();
+        _runAtStartupBox.CheckedChanged += (_, _) => ApplyIfChanged();
+
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 5,
+            RowCount = 6,
             Padding = new Padding(12)
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -62,6 +86,8 @@ internal sealed class SettingsForm : Form
         layout.Controls.Add(_hotKeyBox, 1, 2);
         layout.Controls.Add(new Label { Text = "Capture Edge", AutoSize = true }, 0, 3);
         layout.Controls.Add(_edgeBox, 1, 3);
+        layout.Controls.Add(_runAtStartupBox, 0, 4);
+        layout.SetColumnSpan(_runAtStartupBox, 2);
 
         var buttonPanel = new FlowLayoutPanel
         {
@@ -70,19 +96,15 @@ internal sealed class SettingsForm : Form
             AutoSize = true
         };
 
-        var saveButton = new Button { Text = "Save", AutoSize = true };
-        var cancelButton = new Button { Text = "Cancel", AutoSize = true };
-        saveButton.Click += (_, _) => SaveAndClose();
-        cancelButton.Click += (_, _) => Close();
-        buttonPanel.Controls.Add(saveButton);
-        buttonPanel.Controls.Add(cancelButton);
+        var closeButton = new Button { Text = "Close", AutoSize = true };
+        closeButton.Click += (_, _) => Close();
+        buttonPanel.Controls.Add(closeButton);
 
-        layout.Controls.Add(buttonPanel, 0, 4);
+        layout.Controls.Add(buttonPanel, 0, 5);
         layout.SetColumnSpan(buttonPanel, 2);
 
         Controls.Add(layout);
-        AcceptButton = saveButton;
-        CancelButton = cancelButton;
+        CancelButton = closeButton;
     }
 
     private void HotKeyBoxOnKeyDown(object? sender, KeyEventArgs e)
@@ -96,6 +118,7 @@ internal sealed class SettingsForm : Form
         }
 
         _hotKeyBox.Text = FormatHotKey(key, e.Modifiers);
+        ApplyIfChanged();
     }
 
     private static string FormatHotKey(Keys key, Keys modifiers)
@@ -120,29 +143,81 @@ internal sealed class SettingsForm : Form
         return string.Join('+', parts);
     }
 
-    private void SaveAndClose()
+    private void ApplyIfChanged()
     {
-        if (!int.TryParse(_portBox.Text, out var port))
+        if (_suppressEvents)
         {
-            MessageBox.Show("Port must be a number.", "RemoteKM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
-        var settings = new ClientSettings(_hostBox.Text.Trim(), port, _hotKeyBox.Text.Trim(), (CaptureEdge)_edgeBox.SelectedItem!);
+        if (TryBuildSettings(out var settings) && !settings.Equals(_currentSettings))
+        {
+            if (PersistSettings(settings))
+            {
+                _currentSettings = settings;
+                _apply(settings);
+            }
+        }
+
+        UpdateStartupTask();
+    }
+
+    private bool TryBuildSettings(out ClientSettings settings)
+    {
+        settings = _currentSettings;
+        if (!int.TryParse(_portBox.Text.Trim(), out var port))
+        {
+            return false;
+        }
+
+        if (port < 1 || port > 65535)
+        {
+            return false;
+        }
+
+        var edge = _edgeBox.SelectedItem is CaptureEdge captureEdge ? captureEdge : CaptureEdge.None;
+        settings = new ClientSettings(_hostBox.Text.Trim(), port, _hotKeyBox.Text.Trim(), edge);
+        return true;
+    }
+
+    private bool PersistSettings(ClientSettings settings)
+    {
         try
         {
-            var json = System.Text.Json.JsonSerializer.Serialize(settings, new System.Text.Json.JsonSerializerOptions
+            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions
             {
                 WriteIndented = true,
                 Converters = { new JsonStringEnumConverter() }
             });
             File.WriteAllText(_settingsPath, json);
-            _apply(settings);
-            Close();
+            return true;
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Failed to save settings: {ex.Message}", "RemoteKM", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
+        }
+    }
+
+    private void UpdateStartupTask()
+    {
+        var requested = _runAtStartupBox.Checked;
+        if (requested == _startupEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            StartupTaskManager.SetEnabled(requested);
+            _startupEnabled = requested;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to update startup task: {ex.Message}", "RemoteKM", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            _suppressEvents = true;
+            _runAtStartupBox.Checked = _startupEnabled;
+            _suppressEvents = false;
         }
     }
 }
