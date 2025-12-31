@@ -4,7 +4,7 @@ namespace RemoteKM.Server;
 
 internal static class Program
 {
-    internal static bool VerboseFlag = true;
+    internal static bool VerboseFlag = false;
 
     [STAThread]
     private static void Main(string[] args)
