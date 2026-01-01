@@ -46,7 +46,6 @@ internal static class StartupTaskManager
         td.RegistrationInfo.Description = TaskDescription;
         td.Principal.RunLevel = TaskRunLevel.Highest;
         td.Principal.LogonType = TaskLogonType.InteractiveToken;
-        td.Settings.RunOnlyIfLoggedOn = true;
         td.Settings.StartWhenAvailable = true;
         if (!string.IsNullOrWhiteSpace(userId))
         {
