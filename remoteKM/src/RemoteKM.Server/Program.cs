@@ -14,6 +14,12 @@ internal static class Program
     private static void Main(string[] args)
     {
         InitializeLogging();
+#if !DEBUG
+        if (!EnsureElevated(args))
+        {
+            return;
+        }
+#endif
         foreach (var arg in args)
         {
             if (arg.Equals("--verbose", StringComparison.OrdinalIgnoreCase) ||
@@ -30,6 +36,83 @@ internal static class Program
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.Run(new TrayApplicationContext(settings));
+    }
+
+    private static bool EnsureElevated(string[] args)
+    {
+        if (IsAdministrator())
+        {
+            return true;
+        }
+
+        if (HasArgument(args, "--elevated"))
+        {
+            Console.WriteLine("Elevation requested but still not elevated.");
+            return false;
+        }
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = Application.ExecutablePath,
+                Arguments = BuildArguments(args, "--elevated"),
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+            Process.Start(startInfo);
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            Console.WriteLine("Elevation canceled by user.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Elevation failed: {ex.Message}");
+        }
+
+        return false;
+    }
+
+    private static bool HasArgument(string[] args, string value)
+    {
+        foreach (var arg in args)
+        {
+            if (arg.Equals(value, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string BuildArguments(string[] args, string extraArg)
+    {
+        var items = new string[args.Length + 1];
+        var index = 0;
+        foreach (var arg in args)
+        {
+            items[index++] = QuoteArgument(arg);
+        }
+
+        items[index] = QuoteArgument(extraArg);
+        return string.Join(" ", items);
+    }
+
+    private static string QuoteArgument(string arg)
+    {
+        if (string.IsNullOrEmpty(arg))
+        {
+            return "\"\"";
+        }
+
+        if (arg.IndexOfAny(new[] { ' ', '\t', '"' }) < 0)
+        {
+            return arg;
+        }
+
+        return $"\"{arg.Replace("\"", "\\\"")}\"";
     }
 
     private static void InitializeLogging()
