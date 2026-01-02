@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using System.IO;
-using System.Security.Principal;
 using System.Windows.Forms;
 
 namespace RemoteKM.Client;
@@ -15,7 +13,6 @@ internal static class Program
     private static void Main(string[] args)
     {
         InitializeLogging();
-        LogStartupInfo(args);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.Run(new ClientAppContext());
@@ -51,40 +48,6 @@ internal static class Program
         }
         catch
         {
-        }
-    }
-
-    private static void LogStartupInfo(string[] args)
-    {
-        try
-        {
-            Console.WriteLine($"Args: {string.Join(' ', args)}");
-            Console.WriteLine($"ExePath: {Application.ExecutablePath}");
-            Console.WriteLine($"BaseDir: {AppContext.BaseDirectory}");
-            Console.WriteLine($"CurrentDir: {Environment.CurrentDirectory}");
-            Console.WriteLine($"UserInteractive: {Environment.UserInteractive}");
-            Console.WriteLine($"User: {WindowsIdentity.GetCurrent().Name}");
-            Console.WriteLine($"IsAdmin: {IsAdministrator()}");
-            Console.WriteLine($"SessionId: {Process.GetCurrentProcess().SessionId}");
-            Console.WriteLine($"ProcessId: {Environment.ProcessId}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"LogStartupInfo failed: {ex.Message}");
-        }
-    }
-
-    private static bool IsAdministrator()
-    {
-        try
-        {
-            using var identity = WindowsIdentity.GetCurrent();
-            var principal = new WindowsPrincipal(identity);
-            return principal.IsInRole(WindowsBuiltInRole.Administrator);
-        }
-        catch
-        {
-            return false;
         }
     }
 }
