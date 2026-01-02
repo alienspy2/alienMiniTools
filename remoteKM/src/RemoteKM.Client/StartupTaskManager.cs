@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using System.Security.Principal;
 using System.Windows.Forms;
@@ -45,26 +44,18 @@ internal static class StartupTaskManager
         td.RegistrationInfo.Description = TaskDescription;
         td.Principal.RunLevel = TaskRunLevel.Highest;
         td.Principal.LogonType = TaskLogonType.InteractiveToken;
-        td.Settings.RunOnlyIfUserIsLoggedOn = true;
-        td.Settings.StartWhenAvailable = true;
         if (!string.IsNullOrWhiteSpace(userId))
         {
             td.Principal.UserId = userId;
         }
-        var trigger = new LogonTrigger();
-        if (!string.IsNullOrWhiteSpace(userId))
-        {
-            trigger.UserId = userId;
-        }
-        trigger.Delay = TimeSpan.FromSeconds(5);
-        td.Triggers.Add(trigger);
+        td.Triggers.Add(new LogonTrigger());
         td.Actions.Add(new ExecAction(exePath, null, workingDirectory));
 
         ts.RootFolder.RegisterTaskDefinition(
             TaskName,
             td,
             TaskCreation.CreateOrUpdate,
-            string.IsNullOrWhiteSpace(userId) ? null : userId,
+            null,
             null,
             TaskLogonType.InteractiveToken);
         Console.WriteLine("StartupTaskManager: task registered.");
