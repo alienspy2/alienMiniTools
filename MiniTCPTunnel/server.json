@@ -1,0 +1,5 @@
+{
+  "controlPort": 9000,
+  "controlListenHost": "0.0.0.0",
+  "allowedClientKeys": []
+}
