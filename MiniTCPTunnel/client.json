@@ -4,6 +4,6 @@
     "controlPort": 9000,
     "serverPublicKey": ""
   },
-  "identityKeyPath": "client.key",
-  "tunnels": []
+  "tunnels": [],
+  "identityKeyPath": "client.key"
 }

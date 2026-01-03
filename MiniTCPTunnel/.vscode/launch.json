@@ -1,0 +1,30 @@
+{
+  // VS Code F5 debugging is driven by this file; keep the client as the only
+  // configuration so F5 always launches the client project by default.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Display name shown in the Run and Debug dropdown.
+      "name": "MiniTCPTunnel Client (F5)",
+      "type": "coreclr",
+      "request": "launch",
+      // Build the client project before launching so the DLL is up to date.
+      "preLaunchTask": "build-client",
+      // The client DLL path; update net10.0 if the target framework changes.
+      "program": "${workspaceFolder}/src/Client/bin/Debug/net10.0/MiniTCPTunnel.Client.dll",
+      // Use the repo-root config file so debug runs match normal usage.
+      "args": [
+        "--config",
+        "client.json"
+      ],
+      // Run from the repo root so relative config paths resolve correctly.
+      "cwd": "${workspaceFolder}",
+      // Console output is needed for this CLI-style app.
+      "console": "internalConsole",
+      // Keep entry-point stop disabled for faster inner-loop debugging.
+      "stopAtEntry": false,
+      // Debug only user code to reduce noise from framework internals.
+      "justMyCode": true
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  // The build task used by the F5 launch configuration.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Task label referenced by launch.json preLaunchTask.
+      "label": "build-client",
+      "type": "process",
+      // Use dotnet CLI so the build matches normal command-line usage.
+      "command": "dotnet",
+      "args": [
+        "build",
+        "${workspaceFolder}/src/Client/MiniTCPTunnel.Client.csproj"
+      ],
+      // Surface build errors in the Problems panel.
+      "problemMatcher": "$msCompile",
+      // Treat this as the default build task.
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}
