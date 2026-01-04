@@ -72,6 +72,23 @@ class MainWindow(QMainWindow):
         title_lbl = QLabel("Active Tunnels")
         title_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF;")
         
+        # 현재 UI 상태(터널 목록/활성 여부)를 서버에 반영하는 버튼
+        btn_apply = QPushButton("Apply")
+        btn_apply.setCursor(Qt.PointingHandCursor)
+        btn_apply.setFixedHeight(30)
+        btn_apply.setToolTip("Apply current tunnels to server")
+        btn_apply.setStyleSheet("""
+            QPushButton {
+                background-color: #3A3A3A;
+                color: white;
+                border-radius: 6px;
+                padding: 0 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #4A4A4A; }
+        """)
+        btn_apply.clicked.connect(self.on_apply_click)
+
         btn_add = QPushButton("+")
         btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.setFixedSize(30, 30)
@@ -89,6 +106,7 @@ class MainWindow(QMainWindow):
         
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
+        header_layout.addWidget(btn_apply)
         header_layout.addWidget(btn_add)
         
         main_layout.addLayout(header_layout)
@@ -195,24 +213,37 @@ class MainWindow(QMainWindow):
                 
     @Slot()
     def on_apply_click(self):
-        # Trigger Sync
-        # Convert AppState VMs to Client TunnelConfigs
-        # Update client.tunnels with current state (including enabled)
-        # Then call sync.
-        
-        # NOTE: self.client.tunnels is the "Registry".
-        # We need to ensure it matches AppState.
-        
+        # [1] UI에 있는 터널 정보를 기반으로 "원하는 상태" 구성 리스트를 만든다.
+        #     이 리스트는 서버에 적용할 목표 상태(열기/닫기)를 판단하는 기준이 된다.
         configs = []
         for vm in self.app_state.tunnels:
             cfg = TunnelConfig(vm.tid, vm.remote_port, vm.local_host, vm.local_port, enabled=vm.enabled)
             configs.append(cfg)
-            self.client.add_tunnel(cfg) # Update registry
+            # ControlClient 쪽 레지스트리(알고 있는 터널 목록)를 갱신한다.
+            # 서버에서 INCOMING_CONN을 받을 때 이 레지스트리를 참조한다.
+            self.client.add_tunnel(cfg)
         
-        # Sync
+        # [2] 서버에 실제 적용할 수 있는지(연결 상태) 확인한다.
+        #     연결이 없으면 요청을 보낼 수 없으므로 사용자에게 안내하고 상태를 보정한다.
+        if not self.client.is_connected or not self.client.codec:
+            QMessageBox.information(self, "Not Connected", "서버에 연결된 뒤 적용해 주세요.")
+            # 연결되지 않은 상태에서는 모든 터널이 실제로 열릴 수 없으므로 UI 상태를 Stopped로 맞춘다.
+            for vm in self.app_state.tunnels:
+                vm.status = "Stopped"
+                if vm.tid in self.cards:
+                    self.cards[vm.tid].update_state()
+            return
+
+        # [3] 연결된 상태에서는 "요청을 보냈음"을 UI에 즉시 반영한다.
+        #     서버가 TUNNEL_STATUS를 보내지 않기 때문에, 일단 Requested/Stopped로 표시한다.
+        for vm in self.app_state.tunnels:
+            vm.status = "Requested" if vm.enabled else "Stopped"
+            if vm.tid in self.cards:
+                self.cards[vm.tid].update_state()
+
+        # [4] 실제 동기화 요청을 서버로 보낸다(비동기).
+        #     ControlClient가 Open/Close 요청을 전송한다.
         asyncio.create_task(self.client.sync_tunnels(configs))
-        # Provide feedback? "Applied" toaster? 
-        # For now the status dots will update as 'Requested' -> 'Open'.
 
     @Slot(str, bool)
     def on_tunnel_enabled_change(self, tid, enabled):
@@ -226,21 +257,8 @@ class MainWindow(QMainWindow):
         # Find VM
         vm = next((t for t in self.app_state.tunnels if t.tid == tid), None)
         if not vm: return
-
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.No: return
-            # Stop async? Ideally we wait.
-            # But UI blocking wait is bad.
-            # We can signal request_close_tunnel, then modify.
-            # But modification requires data.
-            # Let's fire stop request, then immediately proceed assuming it will stop.
-            # Or better: Stop it, and tell user to click Edit again? No.
-            # Let's request stop, then open dialog. If user confirms, we apply new config.
-            # Even if stop fails on server, we act locally.
-            asyncio.create_task(self.stop_tunnel(vm))
-            vm.status = "Stopped" # Force local update for UI
-            self.cards[tid].update_state()
+        # Edit logic: No need to stop first. Just edit Config.
+        # If user wants to apply, they hit "Apply".
 
         # Existing Data
         data = {
@@ -300,6 +318,8 @@ class MainWindow(QMainWindow):
                     self.refresh_tunnels()
 
             self.save_config()
+
+    def save_config(self):
         # Sync state to config
         self.cfg_mgr.config.server_host = self.inp_host.text().strip()
         try:
@@ -314,7 +334,7 @@ class MainWindow(QMainWindow):
                 remote_port=vm.remote_port,
                 local_host=vm.local_host,
                 local_port=vm.local_port,
-                auto_start=(vm.status == "Active" or vm.status == "Open")
+                auto_start=vm.enabled  # Use enabled flag for auto_start
             )
             new_defs.append(t_def)
         

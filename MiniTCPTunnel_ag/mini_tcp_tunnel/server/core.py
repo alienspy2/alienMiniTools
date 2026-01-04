@@ -168,6 +168,17 @@ class ControlSession:
         header = bytes([msg_type, 0]) + struct.pack(">I", 0)
         await self.codec.write_frame(header + payload)
 
+    async def send_tunnel_status(self, tunnel_id: str, status: str):
+        """
+        터널 상태를 클라이언트로 통보한다.
+        페이로드 형식: | status_len(4) | status(utf-8) | tunnel_id_len(4) | tunnel_id(utf-8) |
+        """
+        status_bytes = status.encode('utf-8')
+        tid_bytes = tunnel_id.encode('utf-8')
+        payload = struct.pack(">I", len(status_bytes)) + status_bytes + \
+                  struct.pack(">I", len(tid_bytes)) + tid_bytes
+        await self.send_message(MsgType.TUNNEL_STATUS, payload)
+
     async def run(self):
         try:
             while self.is_active:
@@ -211,6 +222,7 @@ class ControlSession:
 
     async def handle_open_tunnel(self, payload: bytes):
         # Payload: | remote_port(4) | tunnel_id_len(4) | tunnel_id |
+        tunnel_id = None
         try:
             remote_port = struct.unpack(">I", payload[0:4])[0]
             tid_len = struct.unpack(">I", payload[4:8])[0]
@@ -228,14 +240,23 @@ class ControlSession:
             
             # Send STATUS OK? For now just log
             self.logger.info(f"Tunnel opened: {tunnel_id} on port {remote_port}")
+            # 클라이언트에게 "Open" 상태를 통보한다.
+            await self.send_tunnel_status(tunnel_id, "Open")
             
             # Send Ack back?
             # await self.send_message(MsgType.TUNNEL_STATUS, ... ok ...)
         except Exception as e:
             self.logger.error(f"Failed to open tunnel: {e}")
+            # 실패 시에도 상태를 알려준다. (UI에서 즉시 오류 표시 가능)
+            try:
+                if tunnel_id:
+                    await self.send_tunnel_status(tunnel_id, "Error")
+            except Exception:
+                pass
 
     async def handle_close_tunnel(self, payload: bytes):
         # Payload: | tunnel_id_len(4) | tunnel_id |
+        tunnel_id = None
         try:
             tid_len = struct.unpack(">I", payload[0:4])[0]
             tunnel_id = payload[4:4+tid_len].decode('utf-8')
@@ -244,10 +265,20 @@ class ControlSession:
                 await self.tunnels[tunnel_id].stop()
                 del self.tunnels[tunnel_id]
                 self.logger.info(f"Tunnel closed: {tunnel_id}")
+                # 클라이언트에게 "Stopped" 상태를 통보한다.
+                await self.send_tunnel_status(tunnel_id, "Stopped")
             else:
                 self.logger.warning(f"Close request for unknown tunnel: {tunnel_id}")
+                # 알 수 없는 터널이면 상태를 Error로 전달
+                await self.send_tunnel_status(tunnel_id, "Error")
         except Exception as e:
             self.logger.error(f"Failed to close tunnel: {e}")
+            # 예외 발생 시에도 상태 통보를 시도한다.
+            try:
+                if tunnel_id:
+                    await self.send_tunnel_status(tunnel_id, "Error")
+            except Exception:
+                pass
 
     async def cleanup(self):
         self.is_active = False

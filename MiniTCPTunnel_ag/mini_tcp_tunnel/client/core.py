@@ -120,6 +120,7 @@ class ClientHandshake:
             self.logger.error(f"Client Handshake failed: {e}")
             return None
 
+class TunnelConfig:
     def __init__(self, tid: str, remote_port: int, local_host: str, local_port: int, enabled: bool = True):
         self.tid = tid
         self.remote_port = remote_port
@@ -173,6 +174,12 @@ class ControlClient:
         # self.running_tunnels is what we believe is OPEN on server.
         self.tunnels[config.tid] = config
 
+    async def connect(self):
+        """Starts the connection manager."""
+        if self.should_reconnect: return # Already trying
+        self.should_reconnect = True
+        self.connection_task = asyncio.create_task(self.connection_loop())
+
     async def sync_tunnels(self, desired_configs: List[TunnelConfig]):
         """
         Syncs the server state to match the desired_configs (list).
@@ -209,42 +216,46 @@ class ControlClient:
                 await self.request_open_tunnel(target)
 
     async def request_open_tunnel(self, tunnel: TunnelConfig):
-        if not self.codec: return
+        # 제어 채널이 아직 준비되지 않았으면 요청을 보낼 수 없다.
+        if not self.codec:
+            return
+        # 프로토콜 페이로드 구성: remote_port + tunnel_id 길이 + tunnel_id
         tid_bytes = tunnel.tid.encode('utf-8')
         payload = struct.pack(">I", tunnel.remote_port) + \
                   struct.pack(">I", len(tid_bytes)) + \
                   tid_bytes
         
+        # 동시 전송 충돌을 막기 위해 write_lock으로 보호해 전송한다.
         async with self.write_lock:
             await self.codec.write_frame(bytes([MsgType.OPEN_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
         
         self.logger.info(f"Requested OpenTunnel {tunnel.tid}")
+        # UI/상태 갱신: 요청 상태로 전환하고 실행중 목록에 반영한다.
         tunnel.status = "Requested"
-        # Update running state
         self.running_tunnels[tunnel.tid] = tunnel
         
         if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Requested")
 
     async def request_close_tunnel(self, tunnel: TunnelConfig):
-        if not self.codec: return
+        # 제어 채널이 준비되지 않은 경우 종료 요청을 보낼 수 없다.
+        if not self.codec:
+            return
+        # 프로토콜 페이로드 구성: tunnel_id 길이 + tunnel_id
         tid_bytes = tunnel.tid.encode('utf-8')
         payload = struct.pack(">I", len(tid_bytes)) + tid_bytes
         
+        # 동시 전송 충돌을 막기 위해 write_lock으로 보호해 전송한다.
         async with self.write_lock:
             await self.codec.write_frame(bytes([MsgType.CLOSE_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
         
         self.logger.info(f"Requested CloseTunnel {tunnel.tid}")
+        # UI/상태 갱신: 종료 상태로 전환하고 실행중 목록에서 제거한다.
         tunnel.status = "Stopped"
         
-        # Update running state
         if tunnel.tid in self.running_tunnels:
             del self.running_tunnels[tunnel.tid]
             
         if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Stopped")
-        """Starts the connection manager."""
-        if self.should_reconnect: return # Already trying
-        self.should_reconnect = True
-        self.connection_task = asyncio.create_task(self.connection_loop())
 
     async def disconnect(self):
         """Stops the connection manager and closes connection."""
@@ -381,10 +392,14 @@ class ControlClient:
                     break
                 
                 if not plaintext: break 
-                if len(plaintext) < 2: continue
+                # 프로토콜 헤더(1+1+4=6바이트)가 최소 길이
+                if len(plaintext) < 6:
+                    continue
                 
                 msg_type = plaintext[0]
-                await self.handle_message(msg_type, plaintext[1:])
+                # Payload는 헤더(타입/플래그/스트림ID)를 제외한 영역이다.
+                payload = plaintext[6:]
+                await self.handle_message(msg_type, payload)
         except Exception as e:
             self.logger.error(f"Loop Exception: {e}")
         finally:
@@ -396,9 +411,9 @@ class ControlClient:
 
     async def handle_message(self, msg_type: int, payload: bytes):
         if msg_type == MsgType.INCOMING_CONN:
-            await self.handle_incoming_conn(payload[5:])
+            await self.handle_incoming_conn(payload)
         elif msg_type == MsgType.TUNNEL_STATUS:
-            pass # TODO: Handle status ack
+            await self.handle_tunnel_status(payload)
         elif msg_type == MsgType.HEARTBEAT:
             # Just Pong receiving. Activity already updated.
             # self.logger.debug("Received Heartbeat Echo")
@@ -406,29 +421,43 @@ class ControlClient:
         else:
             self.logger.warning(f"Received unknown message type: {msg_type}")
 
-    async def request_open_tunnel(self, tunnel: TunnelConfig):
-        if not self.codec: return
-        tid_bytes = tunnel.tid.encode('utf-8')
-        payload = struct.pack(">I", tunnel.remote_port) + \
-                  struct.pack(">I", len(tid_bytes)) + \
-                  tid_bytes
-        
-        async with self.write_lock:
-            await self.codec.write_frame(bytes([MsgType.OPEN_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
-        self.logger.info(f"Requested OpenTunnel {tunnel.tid}")
-        tunnel.status = "Requested"
-        if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Requested")
+    async def handle_tunnel_status(self, payload: bytes):
+        """
+        서버가 보내는 터널 상태 메시지를 파싱해 UI에 반영한다.
+        페이로드 형식: | status_len(4) | status(utf-8) | tunnel_id_len(4) | tunnel_id(utf-8) |
+        """
+        try:
+            if len(payload) < 8:
+                self.logger.warning("TunnelStatus payload too short")
+                return
+            
+            status_len = struct.unpack(">I", payload[0:4])[0]
+            offset = 4
+            status = payload[offset:offset+status_len].decode('utf-8')
+            offset += status_len
+            
+            tid_len = struct.unpack(">I", payload[offset:offset+4])[0]
+            offset += 4
+            tunnel_id = payload[offset:offset+tid_len].decode('utf-8')
 
-    async def request_close_tunnel(self, tunnel: TunnelConfig):
-        if not self.codec: return
-        tid_bytes = tunnel.tid.encode('utf-8')
-        payload = struct.pack(">I", len(tid_bytes)) + tid_bytes
-        
-        async with self.write_lock:
-            await self.codec.write_frame(bytes([MsgType.CLOSE_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
-        self.logger.info(f"Requested CloseTunnel {tunnel.tid}")
-        tunnel.status = "Stopped"
-        if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Stopped")
+            # 내부 상태 갱신 (있다면)
+            if tunnel_id in self.tunnels:
+                self.tunnels[tunnel_id].status = status
+
+            # 실행중 목록은 상태에 맞게 유지한다.
+            if status.lower() in ["open", "active"]:
+                if tunnel_id in self.tunnels:
+                    self.running_tunnels[tunnel_id] = self.tunnels[tunnel_id]
+            elif status.lower() in ["stopped", "closed", "error"]:
+                if tunnel_id in self.running_tunnels:
+                    del self.running_tunnels[tunnel_id]
+
+            # UI 콜백 갱신
+            if self.on_tunnel_status_change:
+                self.on_tunnel_status_change(tunnel_id, status)
+                
+        except Exception as e:
+            self.logger.error(f"TunnelStatus parse error: {e}")
 
     async def handle_incoming_conn(self, payload: bytes):
         # Payload: | len(4) | tid | len(4) | conn_id |
