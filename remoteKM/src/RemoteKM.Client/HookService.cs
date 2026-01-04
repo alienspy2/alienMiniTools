@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
 
@@ -5,8 +6,8 @@ namespace RemoteKM.Client;
 
 internal sealed class HookService : IDisposable
 {
-    private readonly TcpSender _sender;
-    private HotKeyConfig _hotKey;
+    private readonly Func<TcpSender?> _getSender;
+    private IReadOnlyList<HotKeyConfig> _hotKeys;
     private readonly NativeMethods.LowLevelKeyboardProc _keyboardProc;
     private readonly NativeMethods.LowLevelMouseProc _mouseProc;
     private IntPtr _keyboardHook;
@@ -20,17 +21,17 @@ internal sealed class HookService : IDisposable
 
     internal event Action? CaptureStopRequested;
 
-    internal HookService(TcpSender sender, HotKeyConfig hotKey)
+    internal HookService(Func<TcpSender?> getSender, IReadOnlyList<HotKeyConfig> hotKeys)
     {
-        _sender = sender;
-        _hotKey = hotKey;
+        _getSender = getSender;
+        _hotKeys = hotKeys;
         _keyboardProc = KeyboardCallback;
         _mouseProc = MouseCallback;
     }
 
-    internal void UpdateHotKey(HotKeyConfig hotKey)
+    internal void UpdateHotKeys(IReadOnlyList<HotKeyConfig> hotKeys)
     {
-        _hotKey = hotKey;
+        _hotKeys = hotKeys;
     }
 
     internal void SetActive(bool active)
@@ -107,7 +108,8 @@ internal sealed class HookService : IDisposable
             return NativeMethods.CallNextHookEx(_keyboardHook, nCode, wParam, lParam);
         }
 
-        var sent = _sender.SendKeyboard(new KeyboardEvent(wParam.ToInt32(), data.vkCode, data.scanCode, data.flags));
+        var sender = _getSender();
+        var sent = sender != null && sender.SendKeyboard(new KeyboardEvent(wParam.ToInt32(), data.vkCode, data.scanCode, data.flags));
         return sent ? new IntPtr(1) : NativeMethods.CallNextHookEx(_keyboardHook, nCode, wParam, lParam);
     }
 
@@ -142,7 +144,8 @@ internal sealed class HookService : IDisposable
             return NativeMethods.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
         }
 
-        var sentDefault = _sender.SendMouse(new MouseEvent(message, 0, 0, data.mouseData, data.flags));
+        var sender = _getSender();
+        var sentDefault = sender != null && sender.SendMouse(new MouseEvent(message, 0, 0, data.mouseData, data.flags));
         if (IsBlockedCaptureMessage(message))
         {
             return sentDefault ? new IntPtr(1) : NativeMethods.CallNextHookEx(_mouseHook, nCode, wParam, lParam);
@@ -170,7 +173,8 @@ internal sealed class HookService : IDisposable
             Console.WriteLine($"Send mouse: deltaX={deltaX} deltaY={deltaY}");
         }
 
-        _sender.SendMouse(new MouseEvent(NativeMethods.WM_MOUSEMOVE, deltaX, deltaY, 0, 0));
+        var sender = _getSender();
+        sender?.SendMouse(new MouseEvent(NativeMethods.WM_MOUSEMOVE, deltaX, deltaY, 0, 0));
     }
 
     private static bool IsBlockedCaptureMessage(int message)
@@ -189,32 +193,42 @@ internal sealed class HookService : IDisposable
 
     private bool IsHotKeyEvent(NativeMethods.KBDLLHOOKSTRUCT data)
     {
-        if (data.vkCode != _hotKey.VirtualKey)
+        if (_hotKeys.Count == 0)
         {
             return false;
         }
 
-        if ((_hotKey.Modifiers & (int)HotKeyModifiers.Control) != 0 && !IsKeyDown(0x11))
+        foreach (var hotKey in _hotKeys)
         {
-            return false;
+            if (data.vkCode != hotKey.VirtualKey)
+            {
+                continue;
+            }
+
+            if ((hotKey.Modifiers & (int)HotKeyModifiers.Control) != 0 && !IsKeyDown(0x11))
+            {
+                continue;
+            }
+
+            if ((hotKey.Modifiers & (int)HotKeyModifiers.Alt) != 0 && !IsKeyDown(0x12))
+            {
+                continue;
+            }
+
+            if ((hotKey.Modifiers & (int)HotKeyModifiers.Shift) != 0 && !IsKeyDown(0x10))
+            {
+                continue;
+            }
+
+            if ((hotKey.Modifiers & (int)HotKeyModifiers.Win) != 0 && !IsKeyDown(0x5B) && !IsKeyDown(0x5C))
+            {
+                continue;
+            }
+
+            return true;
         }
 
-        if ((_hotKey.Modifiers & (int)HotKeyModifiers.Alt) != 0 && !IsKeyDown(0x12))
-        {
-            return false;
-        }
-
-        if ((_hotKey.Modifiers & (int)HotKeyModifiers.Shift) != 0 && !IsKeyDown(0x10))
-        {
-            return false;
-        }
-
-        if ((_hotKey.Modifiers & (int)HotKeyModifiers.Win) != 0 && !IsKeyDown(0x5B) && !IsKeyDown(0x5C))
-        {
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
     private static bool IsKeyDown(int vKey) => (NativeMethods.GetAsyncKeyState(vKey) & 0x8000) != 0;

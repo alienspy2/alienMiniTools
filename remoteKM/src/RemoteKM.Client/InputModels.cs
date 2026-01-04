@@ -67,6 +67,8 @@ internal enum HotKeyModifiers
 
 internal sealed record HotKeyConfig(int Modifiers, int VirtualKey);
 
+internal sealed record HotKeyBinding(HotKeyConfig HotKey, ServerEndpoint Server);
+
 internal sealed record KeyboardEvent(int Message, int VkCode, int ScanCode, int Flags);
 
 internal sealed record MouseEvent(int Message, int X, int Y, int MouseData, int Flags);

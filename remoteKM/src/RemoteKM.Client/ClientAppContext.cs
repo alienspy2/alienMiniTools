@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -12,7 +13,7 @@ internal sealed class ClientAppContext : ApplicationContext
     private readonly string _settingsPath;
     private readonly NotifyIcon _tray;
     private readonly Icon? _trayIcon;
-    private readonly TcpSender _sender;
+    private readonly Dictionary<EndpointKey, TcpSender> _senders;
     private readonly HookService _hooks;
     private readonly ClipboardSyncService _clipboardSync;
     private readonly HotKeyWindow _hotKeyWindow;
@@ -22,36 +23,66 @@ internal sealed class ClientAppContext : ApplicationContext
     private readonly PasteMonitor _pasteMonitor;
     private bool _active;
     private ClientSettings _settings;
-    private bool _edgeArmed = true;
+    private readonly Dictionary<CaptureEdge, bool> _edgeArmed = new();
+    private ServerEndpoint? _currentServer;
+    private ServerEndpoint? _activeServer;
     private bool _hasConnected;
 
     private const int EdgeOffset = 16;
 
+    private sealed record EndpointKey(string Host, int Port);
+
+    private sealed class EndpointKeyComparer : IEqualityComparer<EndpointKey>
+    {
+        public bool Equals(EndpointKey? x, EndpointKey? y)
+        {
+            if (ReferenceEquals(x, y))
+            {
+                return true;
+            }
+
+            if (x is null || y is null)
+            {
+                return false;
+            }
+
+            return x.Port == y.Port && string.Equals(x.Host, y.Host, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int GetHashCode(EndpointKey obj)
+        {
+            return HashCode.Combine(StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Host), obj.Port);
+        }
+    }
+
     internal ClientAppContext()
     {
-        _settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
+        _settingsPath = Path.Combine(GetAppDirectory(), "settings.json");
         _settings = ClientSettings.Load(_settingsPath);
+        Console.WriteLine($"Client base dir: {AppContext.BaseDirectory}");
+        Console.WriteLine($"Client settings path: {_settingsPath}");
+        Console.WriteLine($"Client settings servers: {_settings.Servers.Count}");
 
         _syncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
-        _sender = new TcpSender(_settings.Host, _settings.Port);
-        _hooks = new HookService(_sender, ParseHotKey(_settings.HotKey));
+        _senders = new Dictionary<EndpointKey, TcpSender>(new EndpointKeyComparer());
+        _currentServer = SelectInitialServer(_settings);
+        UpdateConnections(_settings);
+        _hooks = new HookService(GetActiveSender, BuildHotKeyConfigs(_settings));
         _clipboardSync = new ClipboardSyncService(
-            text => Task.Run(() => _sender.SendClipboardText(text)),
-            paths => Task.Run(() => _sender.SendClipboardFileList(paths)),
+            text => Task.Run(() => SendClipboardText(text)),
+            paths => Task.Run(() => SendClipboardFileList(paths)),
             () =>
             {
-                _sender.ClearRemoteFileList();
-                _sender.ClearLocalFileList();
+                ClearFileLists();
             });
 
-        _sender.ControlReceived += OnControlReceived;
-        _sender.ClipboardReceived += text => _syncContext.Post(_ => _clipboardSync.ApplyRemoteText(text), null);
-        _sender.FileTransferProgress += progress => _syncContext.Post(_ => UpdateTransferPopup(progress), null);
-        _sender.FileTransferReceived += tempRoot => _syncContext.Post(_ => OnFileTransferReceived(tempRoot), null);
-        _sender.ConnectionEstablished += () => _syncContext.Post(_ => OnConnectionEstablished(), null);
-        _sender.ConnectionLost += () => _syncContext.Post(_ => OnConnectionLost(), null);
         _hooks.CaptureStopRequested += () => _syncContext.Post(_ => StopCapture(sendStop: true), null);
-        _hotKeyWindow = new HotKeyWindow(ParseHotKey(_settings.HotKey), Toggle, () => _active, _hooks.HandleRawMouseDelta);
+        _hotKeyWindow = new HotKeyWindow(
+            BuildHotKeyBindings(_settings),
+            StartCaptureFromHotKey,
+            StopCaptureFromHotKey,
+            () => _active,
+            _hooks.HandleRawMouseDelta);
         _hotKeyWindow.ShowInTaskbar = false;
         _hotKeyWindow.Load += (_, _) => _hotKeyWindow.Hide();
         _hotKeyWindow.Show();
@@ -72,6 +103,8 @@ internal sealed class ClientAppContext : ApplicationContext
         _edgeMonitor = new System.Windows.Forms.Timer { Interval = 30 };
         _edgeMonitor.Tick += (_, _) => CheckEdgeTrigger();
         _edgeMonitor.Start();
+
+        ResetEdgeArming();
     }
 
     private ContextMenuStrip BuildMenu()
@@ -101,14 +134,125 @@ internal sealed class ClientAppContext : ApplicationContext
 
     private void ApplySettings(ClientSettings settings)
     {
-        _settings = settings;
-        _sender.UpdateEndpoint(settings.Host, settings.Port);
-        _edgeArmed = true;
-        _hasConnected = false;
+        if (_active)
+        {
+            StopCapture(sendStop: true);
+        }
 
-        var hotKey = ParseHotKey(settings.HotKey);
-        _hooks.UpdateHotKey(hotKey);
-        _hotKeyWindow.UpdateHotKey(hotKey);
+        _settings = settings;
+        _hasConnected = false;
+        ResetEdgeArming();
+        UpdateConnections(settings);
+
+        var nextServer = SelectMatchingServer(_currentServer, settings) ?? SelectInitialServer(settings);
+        if (nextServer != null)
+        {
+            SetCurrentServer(nextServer);
+        }
+        else
+        {
+            _currentServer = null;
+        }
+
+        _hooks.UpdateHotKeys(BuildHotKeyConfigs(settings));
+        _hotKeyWindow.UpdateHotKeys(BuildHotKeyBindings(settings));
+    }
+
+    private void UpdateConnections(ClientSettings settings)
+    {
+        var desired = new HashSet<EndpointKey>(new EndpointKeyComparer());
+        foreach (var server in settings.Servers)
+        {
+            desired.Add(ToKey(server));
+        }
+
+        var existing = new List<EndpointKey>(_senders.Keys);
+        foreach (var key in existing)
+        {
+            if (!desired.Contains(key))
+            {
+                _senders[key].Dispose();
+                _senders.Remove(key);
+            }
+        }
+
+        foreach (var key in desired)
+        {
+            if (!_senders.ContainsKey(key))
+            {
+                var sender = new TcpSender(key.Host, key.Port);
+                RegisterSenderEvents(sender, key);
+                _senders.Add(key, sender);
+            }
+        }
+
+        WarmConnectAll();
+    }
+
+    private void RegisterSenderEvents(TcpSender sender, EndpointKey key)
+    {
+        sender.ControlReceived += (message, value) => _syncContext.Post(_ => OnControlReceived(key, message, value), null);
+        sender.ClipboardReceived += text => _syncContext.Post(_ => OnClipboardReceived(key, text), null);
+        sender.FileTransferProgress += progress => _syncContext.Post(_ => OnFileTransferProgress(key, progress), null);
+        sender.FileTransferReceived += tempRoot => _syncContext.Post(_ => OnFileTransferReceived(key, tempRoot), null);
+        sender.ConnectionEstablished += () => _syncContext.Post(_ => OnConnectionEstablished(key), null);
+        sender.ConnectionLost += () => _syncContext.Post(_ => OnConnectionLost(key), null);
+    }
+
+    private void WarmConnectAll()
+    {
+        foreach (var sender in _senders.Values)
+        {
+            Task.Run(() => sender.TryConnect());
+        }
+    }
+
+    private TcpSender? GetActiveSender() => GetSender(_activeServer);
+
+    private TcpSender? GetSender(ServerEndpoint? server)
+    {
+        if (server == null)
+        {
+            return null;
+        }
+
+        _senders.TryGetValue(ToKey(server), out var sender);
+        return sender;
+    }
+
+    private TcpSender GetOrCreateSender(ServerEndpoint server)
+    {
+        var key = ToKey(server);
+        if (!_senders.TryGetValue(key, out var sender))
+        {
+            sender = new TcpSender(server.Host, server.Port);
+            RegisterSenderEvents(sender, key);
+            _senders.Add(key, sender);
+        }
+
+        return sender;
+    }
+
+    private void ClearFileLists()
+    {
+        foreach (var sender in _senders.Values)
+        {
+            sender.ClearRemoteFileList();
+            sender.ClearLocalFileList();
+        }
+    }
+
+    private static EndpointKey ToKey(ServerEndpoint server) => new(server.Host, server.Port);
+
+    private bool IsCurrentServer(EndpointKey key) => MatchesEndpoint(_currentServer, key);
+
+    private bool IsActiveServer(EndpointKey key) => MatchesEndpoint(_activeServer, key);
+
+    private static bool MatchesEndpoint(ServerEndpoint? server, EndpointKey key)
+    {
+        return server != null
+            && string.Equals(server.Host, key.Host, StringComparison.OrdinalIgnoreCase)
+            && server.Port == key.Port;
     }
 
     private void Toggle()
@@ -119,7 +263,32 @@ internal sealed class ClientAppContext : ApplicationContext
         }
         else
         {
-            StartCapture();
+            var server = _currentServer ?? SelectInitialServer(_settings);
+            if (server == null)
+            {
+                MessageBox.Show("No servers configured. Add one in Settings.", "RemoteKM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            StartCapture(server);
+        }
+    }
+
+    private void StartCaptureFromHotKey(ServerEndpoint server)
+    {
+        if (_active)
+        {
+            return;
+        }
+
+        StartCapture(server);
+    }
+
+    private void StopCaptureFromHotKey()
+    {
+        if (_active)
+        {
+            StopCapture(sendStop: true);
         }
     }
 
@@ -144,23 +313,30 @@ internal sealed class ClientAppContext : ApplicationContext
         _transferPopup.Dispose();
         _clipboardSync.Dispose();
         _hooks.Dispose();
-        _sender.Dispose();
+        foreach (var sender in _senders.Values)
+        {
+            sender.Dispose();
+        }
+        _senders.Clear();
         base.ExitThreadCore();
     }
 
-    private void StartCapture()
+    private void StartCapture(ServerEndpoint server)
     {
         if (_active)
         {
             return;
         }
 
-        if (!_sender.SendCaptureStart(_settings.CaptureEdge))
+        var sender = GetOrCreateSender(server);
+        SetCurrentServer(server);
+        if (!sender.SendCaptureStart(server.CaptureEdge))
         {
             return;
         }
 
         _active = true;
+        _activeServer = server;
         _hooks.SetActive(true);
         UpdateTrayText();
     }
@@ -176,20 +352,33 @@ internal sealed class ClientAppContext : ApplicationContext
         _hooks.SetActive(false);
         if (sendStop)
         {
-            _sender.SendCaptureStop();
+            var sender = GetSender(_activeServer);
+            sender?.SendCaptureStop();
         }
-        MoveCursorInsideEdge(_settings.CaptureEdge, EdgeOffset);
+        MoveCursorInsideEdge(_activeServer?.CaptureEdge ?? CaptureEdge.None, EdgeOffset);
+        _activeServer = null;
         UpdateTrayText();
+        ResetEdgeArming();
     }
 
-    private void OnConnectionEstablished()
+    private void OnConnectionEstablished(EndpointKey key)
     {
+        if (!IsCurrentServer(key))
+        {
+            return;
+        }
+
         _hasConnected = true;
         ShowConnectionStatus(connected: true);
     }
 
-    private void OnConnectionLost()
+    private void OnConnectionLost(EndpointKey key)
     {
+        if (!IsCurrentServer(key))
+        {
+            return;
+        }
+
         StopCapture(sendStop: false);
         if (!_hasConnected)
         {
@@ -198,21 +387,60 @@ internal sealed class ClientAppContext : ApplicationContext
         ShowConnectionStatus(connected: false);
     }
 
-    private void OnControlReceived(ControlMessage message, int value)
+    private void OnControlReceived(EndpointKey key, ControlMessage message, int value)
     {
         if (message != ControlMessage.CaptureStop)
         {
             return;
         }
 
-        _syncContext.Post(_ => StopCapture(sendStop: false), null);
+        if (!IsActiveServer(key))
+        {
+            return;
+        }
+
+        StopCapture(sendStop: false);
+    }
+
+    private void OnClipboardReceived(EndpointKey key, string text)
+    {
+        if (!IsCurrentServer(key))
+        {
+            return;
+        }
+
+        _clipboardSync.ApplyRemoteText(text);
+    }
+
+    private void OnFileTransferProgress(EndpointKey key, FileTransferProgress progress)
+    {
+        if (!IsCurrentServer(key))
+        {
+            return;
+        }
+
+        UpdateTransferPopup(progress);
+    }
+
+    private void OnFileTransferReceived(EndpointKey key, string tempRoot)
+    {
+        if (!IsCurrentServer(key))
+        {
+            return;
+        }
+
+        HandleFileTransferReceived(tempRoot);
     }
 
     private void CheckEdgeTrigger()
     {
-        if (_active || _settings.CaptureEdge == CaptureEdge.None)
+        if (_active)
         {
-            _edgeArmed = true;
+            return;
+        }
+
+        if (_settings.Servers.Count == 0)
+        {
             return;
         }
 
@@ -222,18 +450,28 @@ internal sealed class ClientAppContext : ApplicationContext
         }
 
         var bounds = GetVirtualScreenBounds();
-        var atEdge = IsAtEdge(point, bounds, _settings.CaptureEdge);
-        if (atEdge)
+        foreach (var server in _settings.Servers)
         {
-            if (_edgeArmed)
+            var edge = server.CaptureEdge;
+            if (edge == CaptureEdge.None)
             {
-                _edgeArmed = false;
-                StartCapture();
+                continue;
             }
-        }
-        else
-        {
-            _edgeArmed = true;
+
+            var atEdge = IsAtEdge(point, bounds, edge);
+            if (atEdge)
+            {
+                if (IsEdgeArmed(edge))
+                {
+                    SetEdgeArmed(edge, false);
+                    StartCapture(server);
+                    return;
+                }
+            }
+            else
+            {
+                SetEdgeArmed(edge, true);
+            }
         }
     }
 
@@ -303,7 +541,12 @@ internal sealed class ClientAppContext : ApplicationContext
 
     private void ShowConnectionStatus(bool connected)
     {
-        var target = $"{_settings.Host}:{_settings.Port}";
+        if (_currentServer == null)
+        {
+            return;
+        }
+
+        var target = $"{_currentServer.Host}:{_currentServer.Port}";
         var icon = connected ? ToolTipIcon.Info : ToolTipIcon.Warning;
         var message = connected ? $"Server connected: {target}" : $"Server disconnected: {target}";
         _tray.ShowBalloonTip(3000, "RemoteKM Client", message, icon);
@@ -319,7 +562,7 @@ internal sealed class ClientAppContext : ApplicationContext
             progress.Completed);
     }
 
-    private void OnFileTransferReceived(string tempRoot)
+    private void HandleFileTransferReceived(string tempRoot)
     {
         var entries = Directory.Exists(tempRoot)
             ? Directory.EnumerateFileSystemEntries(tempRoot).ToArray()
@@ -373,7 +616,90 @@ internal sealed class ClientAppContext : ApplicationContext
 
     private bool TryStartFileTransfer(string? destinationPath)
     {
-        return _sender.TryRequestFileTransfer(destinationPath);
+        var sender = GetSender(_currentServer);
+        if (sender == null)
+        {
+            return false;
+        }
+
+        return sender.TryRequestFileTransfer(destinationPath);
+    }
+
+    private void SendClipboardText(string text)
+    {
+        var sender = GetSender(_currentServer);
+        sender?.SendClipboardText(text);
+    }
+
+    private void SendClipboardFileList(IReadOnlyList<string> paths)
+    {
+        var sender = GetSender(_currentServer);
+        sender?.SendClipboardFileList(paths);
+    }
+
+    private static ServerEndpoint? SelectInitialServer(ClientSettings settings)
+    {
+        return settings.Servers.Count > 0 ? settings.Servers[0] : null;
+    }
+
+    private static ServerEndpoint? SelectMatchingServer(ServerEndpoint? current, ClientSettings settings)
+    {
+        if (current == null)
+        {
+            return null;
+        }
+
+        foreach (var server in settings.Servers)
+        {
+            if (string.Equals(server.Host, current.Host, StringComparison.OrdinalIgnoreCase) && server.Port == current.Port)
+            {
+                return server;
+            }
+        }
+
+        return null;
+    }
+
+    private void SetCurrentServer(ServerEndpoint server)
+    {
+        var endpointChanged = _currentServer == null
+            || !string.Equals(_currentServer.Host, server.Host, StringComparison.OrdinalIgnoreCase)
+            || _currentServer.Port != server.Port;
+
+        _currentServer = server;
+        if (endpointChanged)
+        {
+            var sender = GetSender(server);
+            _hasConnected = sender?.IsConnected == true;
+        }
+    }
+
+    private void ResetEdgeArming()
+    {
+        _edgeArmed.Clear();
+        foreach (var server in _settings.Servers)
+        {
+            if (server.CaptureEdge != CaptureEdge.None)
+            {
+                _edgeArmed[server.CaptureEdge] = true;
+            }
+        }
+    }
+
+    private bool IsEdgeArmed(CaptureEdge edge)
+    {
+        if (_edgeArmed.TryGetValue(edge, out var armed))
+        {
+            return armed;
+        }
+
+        _edgeArmed[edge] = true;
+        return true;
+    }
+
+    private void SetEdgeArmed(CaptureEdge edge, bool armed)
+    {
+        _edgeArmed[edge] = armed;
     }
 
     private static Icon? LoadTrayIcon()
@@ -407,6 +733,21 @@ internal sealed class ClientAppContext : ApplicationContext
 
         var iconPath = Path.Combine(AppContext.BaseDirectory, "portal.png");
         return File.Exists(iconPath) ? File.OpenRead(iconPath) : null;
+    }
+
+    private static string GetAppDirectory()
+    {
+        var processPath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(processPath))
+        {
+            var dir = Path.GetDirectoryName(processPath);
+            if (!string.IsNullOrWhiteSpace(dir))
+            {
+                return dir;
+            }
+        }
+
+        return AppContext.BaseDirectory;
     }
 
 
@@ -445,5 +786,37 @@ internal sealed class ClientAppContext : ApplicationContext
         }
 
         return new HotKeyConfig(modifiers, (int)key);
+    }
+
+    private static IReadOnlyList<HotKeyConfig> BuildHotKeyConfigs(ClientSettings settings)
+    {
+        var list = new List<HotKeyConfig>();
+        foreach (var server in settings.Servers)
+        {
+            if (string.IsNullOrWhiteSpace(server.HotKey))
+            {
+                continue;
+            }
+
+            list.Add(ParseHotKey(server.HotKey));
+        }
+
+        return list;
+    }
+
+    private static IReadOnlyList<HotKeyBinding> BuildHotKeyBindings(ClientSettings settings)
+    {
+        var list = new List<HotKeyBinding>();
+        foreach (var server in settings.Servers)
+        {
+            if (string.IsNullOrWhiteSpace(server.HotKey))
+            {
+                continue;
+            }
+
+            list.Add(new HotKeyBinding(ParseHotKey(server.HotKey), server));
+        }
+
+        return list;
     }
 }

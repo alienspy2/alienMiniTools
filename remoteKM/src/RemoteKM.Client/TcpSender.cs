@@ -41,6 +41,8 @@ internal sealed class TcpSender : IDisposable
 
     private int TransferPort => _port + 1;
 
+    internal bool IsConnected => Volatile.Read(ref _connectionState) == 1;
+
     internal bool HasRemoteFileList
     {
         get
@@ -76,6 +78,14 @@ internal sealed class TcpSender : IDisposable
             _host = host;
             _port = port;
             ResetConnectionLocked();
+        }
+    }
+
+    internal bool TryConnect()
+    {
+        lock (_lock)
+        {
+            return TryEnsureConnected();
         }
     }
 

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -5,18 +7,26 @@ namespace RemoteKM.Client;
 
 internal sealed class HotKeyWindow : Form
 {
-    private readonly Action _toggleAction;
+    private readonly Action<ServerEndpoint> _startAction;
+    private readonly Action _stopAction;
     private readonly Func<bool> _isCaptureActive;
     private readonly Action<int, int> _rawMouseAction;
-    private readonly int _hotKeyId = 1;
-    private HotKeyConfig _hotKey;
+    private IReadOnlyList<HotKeyBinding> _bindings;
+    private readonly Dictionary<int, HotKeyBinding> _bindingsById = new();
     private readonly System.Windows.Forms.Timer _releaseTimer;
     private bool _pendingToggle;
+    private HotKeyBinding? _pendingBinding;
 
-    internal HotKeyWindow(HotKeyConfig hotKey, Action toggleAction, Func<bool> isCaptureActive, Action<int, int> rawMouseAction)
+    internal HotKeyWindow(
+        IReadOnlyList<HotKeyBinding> bindings,
+        Action<ServerEndpoint> startAction,
+        Action stopAction,
+        Func<bool> isCaptureActive,
+        Action<int, int> rawMouseAction)
     {
-        _hotKey = hotKey;
-        _toggleAction = toggleAction;
+        _bindings = bindings;
+        _startAction = startAction;
+        _stopAction = stopAction;
         _isCaptureActive = isCaptureActive;
         _rawMouseAction = rawMouseAction;
         ShowInTaskbar = false;
@@ -28,9 +38,10 @@ internal sealed class HotKeyWindow : Form
         FormClosing += (_, _) => Unregister();
     }
 
-    internal void UpdateHotKey(HotKeyConfig hotKey)
+    internal void UpdateHotKeys(IReadOnlyList<HotKeyBinding> bindings)
     {
-        _hotKey = hotKey;
+        _bindings = bindings;
+        CancelPending();
         Unregister();
         Register();
     }
@@ -39,15 +50,20 @@ internal sealed class HotKeyWindow : Form
     {
         if (m.Msg == NativeMethods.WM_HOTKEY)
         {
+            var id = (int)m.WParam;
             if (_isCaptureActive())
             {
                 CancelPending();
-                _toggleAction();
+                _stopAction();
             }
             else if (!_pendingToggle)
             {
-                _pendingToggle = true;
-                _releaseTimer.Start();
+                if (_bindingsById.TryGetValue(id, out var binding))
+                {
+                    _pendingToggle = true;
+                    _pendingBinding = binding;
+                    _releaseTimer.Start();
+                }
             }
         }
         else if (m.Msg == NativeMethods.WM_INPUT && _isCaptureActive())
@@ -63,9 +79,16 @@ internal sealed class HotKeyWindow : Form
 
     private void Register()
     {
-        if (!NativeMethods.RegisterHotKey(Handle, _hotKeyId, _hotKey.Modifiers, _hotKey.VirtualKey))
+        _bindingsById.Clear();
+        var id = 1;
+        foreach (var binding in _bindings)
         {
-            Console.WriteLine("Failed to register hotkey.");
+            if (!NativeMethods.RegisterHotKey(Handle, id, binding.HotKey.Modifiers, binding.HotKey.VirtualKey))
+            {
+                Console.WriteLine("Failed to register hotkey.");
+            }
+            _bindingsById[id] = binding;
+            id++;
         }
 
         RegisterRawInput();
@@ -73,7 +96,11 @@ internal sealed class HotKeyWindow : Form
 
     private void Unregister()
     {
-        NativeMethods.UnregisterHotKey(Handle, _hotKeyId);
+        foreach (var id in _bindingsById.Keys.ToArray())
+        {
+            NativeMethods.UnregisterHotKey(Handle, id);
+        }
+        _bindingsById.Clear();
     }
 
     private void RegisterRawInput()
@@ -134,13 +161,20 @@ internal sealed class HotKeyWindow : Form
 
     private void CheckRelease()
     {
-        if (IsHotKeyDown())
+        var binding = _pendingBinding;
+        if (binding == null)
+        {
+            CancelPending();
+            return;
+        }
+
+        if (IsHotKeyDown(binding.HotKey))
         {
             return;
         }
 
         CancelPending();
-        _toggleAction();
+        _startAction(binding.Server);
     }
 
     private void CancelPending()
@@ -148,36 +182,38 @@ internal sealed class HotKeyWindow : Form
         if (_pendingToggle)
         {
             _pendingToggle = false;
+            _pendingBinding = null;
             _releaseTimer.Stop();
         }
     }
 
-    private bool IsHotKeyDown()
+    private static bool IsHotKeyDown(HotKeyConfig hotKey)
     {
-        if (IsModifierRequired(HotKeyModifiers.Control) && !IsKeyDown(0x11))
+        if (IsModifierRequired(hotKey, HotKeyModifiers.Control) && !IsKeyDown(0x11))
         {
             return false;
         }
 
-        if (IsModifierRequired(HotKeyModifiers.Alt) && !IsKeyDown(0x12))
+        if (IsModifierRequired(hotKey, HotKeyModifiers.Alt) && !IsKeyDown(0x12))
         {
             return false;
         }
 
-        if (IsModifierRequired(HotKeyModifiers.Shift) && !IsKeyDown(0x10))
+        if (IsModifierRequired(hotKey, HotKeyModifiers.Shift) && !IsKeyDown(0x10))
         {
             return false;
         }
 
-        if (IsModifierRequired(HotKeyModifiers.Win) && !IsKeyDown(0x5B) && !IsKeyDown(0x5C))
+        if (IsModifierRequired(hotKey, HotKeyModifiers.Win) && !IsKeyDown(0x5B) && !IsKeyDown(0x5C))
         {
             return false;
         }
 
-        return IsKeyDown(_hotKey.VirtualKey);
+        return IsKeyDown(hotKey.VirtualKey);
     }
 
-    private bool IsModifierRequired(HotKeyModifiers modifier) => (_hotKey.Modifiers & (int)modifier) != 0;
+    private static bool IsModifierRequired(HotKeyConfig hotKey, HotKeyModifiers modifier)
+        => (hotKey.Modifiers & (int)modifier) != 0;
 
     private static bool IsKeyDown(int vKey) => (NativeMethods.GetAsyncKeyState(vKey) & 0x8000) != 0;
 }
