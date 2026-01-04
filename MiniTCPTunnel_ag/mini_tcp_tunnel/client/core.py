@@ -180,6 +180,21 @@ class ControlClient:
         tunnel.status = "Requested"
         if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Requested")
 
+    async def request_close_tunnel(self, tunnel: TunnelConfig):
+        if not self.codec: return
+        # Payload: | tunnel_id_len(4) | tunnel_id |
+        # Wait, server handle_close_tunnel needs payload format.
+        # Let's define simple format: same as others.
+        # Just sending Tunnel ID is enough if Server maps ID -> Listener.
+        
+        tid_bytes = tunnel.tid.encode('utf-8')
+        payload = struct.pack(">I", len(tid_bytes)) + tid_bytes
+        
+        await self.codec.write_frame(bytes([MsgType.CLOSE_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
+        self.logger.info(f"Requested CloseTunnel {tunnel.tid}")
+        tunnel.status = "Stopped" # Assume stopped immediately or wait for ack?
+        if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Stopped")
+
     async def loop(self):
         try:
             while self.is_connected and self.codec:

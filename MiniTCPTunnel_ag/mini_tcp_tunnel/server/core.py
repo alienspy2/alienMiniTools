@@ -188,6 +188,8 @@ class ControlSession:
     async def handle_message(self, msg_type: int, payload: bytes):
         if msg_type == MsgType.OPEN_TUNNEL:
             await self.handle_open_tunnel(payload)
+        elif msg_type == MsgType.CLOSE_TUNNEL:
+            await self.handle_close_tunnel(payload)
         elif msg_type == MsgType.DATA_CONN_READY:
              # This should NOT happen on Control Session typically if logic separates them early.
              # BUT if we reuse the handler, let's see. 
@@ -206,14 +208,37 @@ class ControlSession:
             tid_len = struct.unpack(">I", payload[4:8])[0]
             tunnel_id = payload[8:8+tid_len].decode('utf-8')
             
+            # Check if exists
+            if tunnel_id in self.tunnels:
+                self.logger.warning(f"Tunnel {tunnel_id} already exists. Closing old one.")
+                await self.tunnels[tunnel_id].stop()
+
             listener = PublicListener(tunnel_id, remote_port, self, self.pairer)
             await listener.start()
             self.tunnels[tunnel_id] = listener
             
-            # Send STATUS OK?
+            # Send STATUS OK? For now just log
             self.logger.info(f"Tunnel opened: {tunnel_id} on port {remote_port}")
+            
+            # Send Ack back?
+            # await self.send_message(MsgType.TUNNEL_STATUS, ... ok ...)
         except Exception as e:
             self.logger.error(f"Failed to open tunnel: {e}")
+
+    async def handle_close_tunnel(self, payload: bytes):
+        # Payload: | tunnel_id_len(4) | tunnel_id |
+        try:
+            tid_len = struct.unpack(">I", payload[0:4])[0]
+            tunnel_id = payload[4:4+tid_len].decode('utf-8')
+            
+            if tunnel_id in self.tunnels:
+                await self.tunnels[tunnel_id].stop()
+                del self.tunnels[tunnel_id]
+                self.logger.info(f"Tunnel closed: {tunnel_id}")
+            else:
+                self.logger.warning(f"Close request for unknown tunnel: {tunnel_id}")
+        except Exception as e:
+            self.logger.error(f"Failed to close tunnel: {e}")
 
     async def cleanup(self):
         self.is_active = False

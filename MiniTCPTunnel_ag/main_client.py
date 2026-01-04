@@ -50,30 +50,37 @@ def main():
         state.tunnels.append(ex_tunnel)
         # Update config? Maybe user connects first then adds.
 
+    import signal
+    
     # 3. Setup Client Core
     client = ControlClient(
         server_host=state.server_host, 
         server_port=state.server_port, 
         identity_key=id_key
-        # server_key=... (TODO: Add server pinning from config)
     )
 
     # 4. Setup UI
-    window = MainWindow(client, state)
+    window = MainWindow(client, state, cfg_mgr)
     window.show()
+
+    # Handle Ctrl+C
+    def signal_handler(sig, frame):
+        print("Exiting...")
+        app.quit()
+        
+    signal.signal(signal.SIGINT, signal_handler)
 
     # 5. Auto-connect
     async def run_client():
         await client.connect()
-        # Auto-start tunnels
+        # ... Auto-start logic same as before but now we pass cfg_mgr into UI so it can save too.
         if client.is_connected:
             for vm in state.tunnels:
-                # Find corresponding config def
                 cfg_def = next((t for t in cfg_mgr.config.tunnels if t.id == vm.tid), None)
                 if cfg_def and cfg_def.auto_start:
                     logging.info(f"Auto-starting tunnel: {vm.tid}")
                     tunnel_cfg = TunnelConfig(vm.tid, vm.remote_port, vm.local_host, vm.local_port)
-                    client.add_tunnel(tunnel_cfg) # Ensure it's in client map
+                    client.add_tunnel(tunnel_cfg) 
                     await client.request_open_tunnel(tunnel_cfg)
 
     loop.create_task(run_client())

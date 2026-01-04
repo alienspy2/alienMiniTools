@@ -11,6 +11,7 @@ class TunnelCard(QFrame):
     Displays: ID, Remote->Local Map, Status, Control Button
     """
     request_toggle = Signal(str) # Emits tunnel_id
+    request_delete = Signal(str) # Emits tunnel_id
 
     def __init__(self, tunnel_vm):
         super().__init__()
@@ -56,6 +57,13 @@ class TunnelCard(QFrame):
         
         # Footer: Controls
         footer_layout = QHBoxLayout()
+        
+        self.btn_delete = QPushButton("Del")
+        self.btn_delete.setCursor(Qt.PointingHandCursor)
+        self.btn_delete.setFixedSize(40, 28)
+        self.btn_delete.setStyleSheet("background-color: #444; color: #BBB;")
+        self.btn_delete.clicked.connect(self.on_delete_click)
+
         self.btn_toggle = QPushButton("Start")
         self.btn_toggle.setCursor(Qt.PointingHandCursor)
         self.btn_toggle.setFixedSize(80, 28)
@@ -67,6 +75,7 @@ class TunnelCard(QFrame):
 
         footer_layout.addWidget(self.lbl_status_text)
         footer_layout.addStretch()
+        footer_layout.addWidget(self.btn_delete)
         footer_layout.addWidget(self.btn_toggle)
 
         layout.addLayout(header_layout)
@@ -75,6 +84,9 @@ class TunnelCard(QFrame):
 
     def on_toggle_click(self):
         self.request_toggle.emit(self.tunnel_vm.tid)
+
+    def on_delete_click(self):
+        self.request_delete.emit(self.tunnel_vm.tid)
 
     def update_state(self):
         status = self.tunnel_vm.status

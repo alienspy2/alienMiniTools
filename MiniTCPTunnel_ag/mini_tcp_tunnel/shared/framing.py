@@ -14,44 +14,48 @@ class FrameCodec:
         self.writer = writer
         self.read_ctx = read_ctx
         self.write_ctx = write_ctx
+        self.read_lock = asyncio.Lock()
+        self.write_lock = asyncio.Lock()
 
     async def read_frame(self) -> bytes:
-        # Read length header
-        try:
-            head_data = await self.reader.readexactly(FRAME_HEAD_LEN)
-        except asyncio.IncompleteReadError:
-            raise ConnectionResetError("Connection closed while reading header")
+        async with self.read_lock:
+            # Read length header
+            try:
+                head_data = await self.reader.readexactly(FRAME_HEAD_LEN)
+            except asyncio.IncompleteReadError:
+                raise ConnectionResetError("Connection closed while reading header")
+                
+            length = struct.unpack(">I", head_data)[0]
             
-        length = struct.unpack(">I", head_data)[0]
-        
-        # Read payload (ciphertext)
-        try:
-            ciphertext = await self.reader.readexactly(length)
-        except asyncio.IncompleteReadError:
-            raise ConnectionResetError("Connection closed while reading body")
+            # Read payload (ciphertext)
+            try:
+                ciphertext = await self.reader.readexactly(length)
+            except asyncio.IncompleteReadError:
+                raise ConnectionResetError("Connection closed while reading body")
 
-        if self.read_ctx:
-            # Decrypt -> Decompress
-            compressed = self.read_ctx.decrypt(ciphertext)
-            plaintext = decompress_data(compressed)
-            return plaintext
-        else:
-            return ciphertext
+            if self.read_ctx:
+                # Decrypt -> Decompress
+                compressed = self.read_ctx.decrypt(ciphertext)
+                plaintext = decompress_data(compressed)
+                return plaintext
+            else:
+                return ciphertext
 
     async def write_frame(self, data: bytes):
-        if self.write_ctx:
-            compressed = compress_data(data)
-            ciphertext = self.write_ctx.encrypt(compressed)
-            payload = ciphertext
-        else:
-            payload = data
+        async with self.write_lock:
+            if self.write_ctx:
+                compressed = compress_data(data)
+                ciphertext = self.write_ctx.encrypt(compressed)
+                payload = ciphertext
+            else:
+                payload = data
 
 
-        length = len(payload)
-        header = struct.pack(">I", length)
-        
-        self.writer.write(header + payload)
-        await self.writer.drain()
+            length = len(payload)
+            header = struct.pack(">I", length)
+            
+            self.writer.write(header + payload)
+            await self.writer.drain()
 
     async def close(self):
         self.writer.close()
