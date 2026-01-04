@@ -95,34 +95,70 @@ python generate_client_key.py
 }
 ```
 
-> **주의:** 최초 실행 시 `identity_private_key_hex` 필드가 자동으로 생성됩니다. 이 키를 삭제하면 서버 등록을 다시 해야 합니다.
+> **주의:** 최초 실행 시 `identity_private_key_hex` 필드가 자동으로 생성됩니다. 이 키를 삭제하면## 4. 클라이언트 (Client) 사용법
 
-### 3) 실행
+### 4.1. 실행
 ```bash
 python main_client.py
 ```
-- 실행하면 GUI 창이 뜨고(트레이 아이콘 포함), 설정된 서버로 자동 접속을 시도합니다.
-- `auto_start`가 켜져 있다면 터널이 바로 활성화됩니다.
-- 카드 목록의 **"Start/Stop"** 버튼으로 수동 제어도 가능합니다.
+클라이언트 GUI가 실행됩니다.
+
+### 4.2. GUI 기능 및 사용 가이드
+MiniTCPTunnel 클라이언트는 직관적인 GUI를 제공합니다.
+
+1.  **서버 연결 (Connection)**:
+    *   상단의 `Host`와 `Port`에 서버 정보를 입력합니다.
+    *   `Connect` 버튼을 누르면 서버에 접속합니다.
+    *   연결이 성공하면 상태 바에 `Connected`가 표시됩니다.
+    *   **자동 재접속**: 네트워크가 끊기면 30초 카운트다운 후 자동으로 재접속을 시도합니다.
+
+2.  **터널 관리 (Tunnels)**:
+    *   **Add Tunnel**: 새로운 터널 설정을 추가합니다. (로컬 포트 -> 서버 포트 매핑)
+    *   **Edit/Delete**: 생성된 터널 카드의 `Edit` 또는 `Del` 버튼을 눌러 수정/삭제할 수 있습니다.
+    *   **Enable/Disable (체크박스)**: 각 터널 카드의 왼쪽 체크박스를 통해 해당 터널을 활성화(사용)할지 결정합니다.
+    *   **Apply to Server**: 설정 변경 후 상단의 `Apply to Server` 버튼을 눌러야 서버에 반영됩니다. 
+        *   체크된 터널은 서버에서 포트가 열립니다.
+        *   체크 해제된 터널은 서버에서 포트가 닫힙니다.
+
+3.  **트레이 아이콘 (System Tray)**:
+    *   앱을 닫으면(`X` 버튼) 종료되지 않고 트레이로 최소화됩니다.
+    *   트레이 아이콘을 더블 클릭하면 창이 다시 열립니다.
+    *   완전 종료하려면 트레이 아이콘 우클릭 -> `Exit`를 선택하세요.
 
 ---
 
-## 4. 구조 요약
+## 5. 문제 해결 (Troubleshooting)
 
-1. **Client** 실행 및 Server 접속 (9000번 포트)
-2. **Client**가 "내 로컬 80번을 Server의 8080번으로 연결해줘"라고 요청
-3. **Server**가 8080번 포트 리스닝 시작
-4. **외부 사용자**가 `ServerIP:8080` 접속
-5. 트래픽 경로: `User` -> `Server(8080)` -> `Secure Tunnel` -> `Client` -> `Local Service(80)`
+### Q1. "Failed to open tunnel ... [WinError 10013]" 오류가 뜹니다.
+*   **원인**: 서버 혹은 클라이언트 PC에서 해당 포트(예: 8081)가 이미 사용 중이거나, 권한이 없습니다.
+*   **해결**:
+    *   다른 프로그램이 해당 포트를 사용 중인지 확인하세요.
+    *   해당 포트를 변경하여 다시 `Add` 및 `Apply` 하세요.
+
+### Q2. 다른 PC에서 터널 서버로 접속이 안 됩니다. (Timeout / Connection Refused)
+*   **원인**: **Windows 방화벽**이 외부 접속을 차단하고 있을 확률이 높습니다.
+*   **해결**:
+    *   서버 PC(`main_server.py` 실행 PC)에서 방화벽 포트를 열어야 합니다.
+    *   동봉된 `open_firewall_ports.bat` 파일을 **관리자 권한**으로 실행하면 기본 포트(9000, 8080~8090)가 허용됩니다.
+    *   또는 제어판 > Windows Defender 방화벽 > 고급 설정 > 인바운드 규칙에서 해당 포트(예: 8081)를 허용(Allow)하세요.
+
+### Q3. "Bad signature" 오류
+*   **원인**: 클라이언트의 Public Key가 서버의 `allowed_clients.txt`에 등록되지 않았습니다.
+*   **해결**:
+    *   클라이언트에서 `show_client_key.bat`를 실행하여 키를 복사합니다.
+    *   서버의 `allowed_clients.txt`에 붙여넣고 서버를 재시작하세요.
 
 ---
 
-## 5. 문제 해결
+## 6. 테스트 (Test Echo Server)
+동봉된 `tests/test_http_echo` 폴더에는 테스트용 웹 서버가 포함되어 있습니다.
 
-- **접속 거부 (Connection Refused)**
-  - 서버 방화벽에서 9000번 포트가 열려있는지 확인하세요.
-- **인증 실패 (Auth Fail / Handshake Failed)**
-  - 클라이언트 키가 서버의 `allowed_clients.txt`에 정확히 등록되었는지 확인하세요.
-  - 리스트 갱신 후 서버를 재시작했는지 확인하세요.
-- **터널 오픈 실패**
-  - 서버에서 `remote_port` (예: 8080)가 이미 사용 중이거나 방화벽에 막혀있지 않은지 확인하세요.
+1.  **Echo Server 실행**: `cd tests/test_http_echo` -> `python server.py` (8000번 포트)
+2.  **Tunnel Client 설정**: Local Host `localhost`, Local Port `8000`, Remote Port `8081` -> `Apply`
+3.  **접속 테스트**: 브라우저에서 `http://<Tunnel_Server_IP>:8081` 접속
+4.  채팅창이 뜨면 성공입니다.
+
+---
+
+## 7. 라이선스
+MIT License
