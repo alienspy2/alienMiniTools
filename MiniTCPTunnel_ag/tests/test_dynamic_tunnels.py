@@ -3,6 +3,15 @@ import logging
 import sys
 import os
 
+# Windows 기본 인코딩(cp949)로 출력되면 로그가 깨질 수 있으므로,
+# stdout/stderr를 UTF-8로 재설정해 리다이렉션 파일도 UTF-8로 저장되게 한다.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    # 일부 환경에서는 reconfigure가 없을 수 있으니 안전하게 무시한다.
+    pass
+
 # Path hack
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 

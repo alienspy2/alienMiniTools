@@ -1,5 +1,5 @@
 {
-  "server_host": "192.168.0.22",
+  "server_host": "192.168.0.18",
   "server_port": 9000,
   "server_pub_key": null,
   "identity_private_key_hex": "60e865f12e8798e6c7ab4e652cb90a2bdd56b509d73d63321946002f254fdcf8",

@@ -1,0 +1,56 @@
+2026-01-04 21:12:40,390 [INFO] Starting MiniTCPTunnel Client...
+2026-01-04 21:12:40,535 [INFO] Client Identity Public Key (Add this to Server): 2f74ad5cdf4e53763787b182fa7ea92f93d7122d1cfbeb26792362dcf4689ea7
+2026-01-04 21:12:40,746 [INFO] Connection Manager Started
+2026-01-04 21:12:40,746 [INFO] Connecting to 192.168.0.18:9000...
+2026-01-04 21:12:40,749 [INFO] Connecting from ('192.168.0.18', 7328)
+2026-01-04 21:12:40,749 [INFO] TCP 연결 성립, 핸드셰이크 진행
+2026-01-04 21:12:40,749 [INFO] 클라이언트 핸드셰이크 시작
+2026-01-04 21:12:40,754 [INFO] ClientHello 전송 완료
+2026-01-04 21:12:40,761 [INFO] Server identity verified.
+2026-01-04 21:12:40,761 [INFO] 클라이언트 핸드셰이크 성공
+2026-01-04 21:12:40,761 [INFO] Handshake Success
+2026-01-04 21:12:40,762 [INFO] Syncing tunnels... total=0
+2026-01-04 21:12:40,762 [INFO] Sync 대상(활성) 수: 0
+2026-01-04 21:12:42,628 [INFO] Syncing tunnels... total=1
+2026-01-04 21:12:42,628 [INFO] Sync 대상(활성) 수: 1
+2026-01-04 21:12:42,628 [INFO] Open 대상: test -> remote_port=8081
+2026-01-04 21:12:42,628 [INFO] Requested OpenTunnel test (port=8081)
+2026-01-04 21:12:42,629 [INFO] TunnelStatus 수신: tunnel_id=test, status=Open
+2026-01-04 21:12:47,892 [INFO] Incoming connection for tunnel test, conn_id=7c98b667
+2026-01-04 21:12:47,892 [INFO] Data channel spawn requested: tunnel_id=test, conn_id=7c98b667
+2026-01-04 21:12:47,892 [INFO] Data channel 연결 시작: conn_id=7c98b667
+2026-01-04 21:12:47,893 [INFO] 클라이언트 핸드셰이크 시작
+2026-01-04 21:12:47,893 [INFO] ClientHello 전송 완료
+2026-01-04 21:12:47,894 [INFO] Server identity verified.
+2026-01-04 21:12:47,894 [INFO] 클라이언트 핸드셰이크 성공
+2026-01-04 21:12:47,894 [INFO] Data channel handshake 완료: conn_id=7c98b667
+2026-01-04 21:12:47,894 [INFO] DATA_CONN_READY 전송: conn_id=7c98b667
+2026-01-04 21:12:47,894 [INFO] Connecting to local target 127.0.0.1:8000
+2026-01-04 21:12:47,894 [INFO] Local target 연결 성공: 127.0.0.1:8000
+2026-01-04 21:12:47,894 [INFO] 브리지 시작: conn_id=7c98b667
+2026-01-04 21:12:47,894 [INFO] bridge_data 진입
+2026-01-04 21:12:47,895 [INFO] 첫 서버→로컬 데이터: 5 bytes
+2026-01-04 21:12:47,895 [INFO] 첫 로컬→서버 데이터: 10 bytes
+2026-01-04 21:12:57,898 [ERROR] 서버→로컬 read_frame 예외: Connection closed while reading header
+Traceback (most recent call last):
+  File "C:\git\public\alienMiniTools\MiniTCPTunnel_ag\mini_tcp_tunnel\shared\framing.py", line 24, in read_frame
+    head_data = await self.reader.readexactly(FRAME_HEAD_LEN)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alien\miniconda3\envs\tunnel\Lib\asyncio\streams.py", line 750, in readexactly
+    raise exceptions.IncompleteReadError(incomplete, n)
+asyncio.exceptions.IncompleteReadError: 0 bytes read on a total of 4 expected bytes
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\git\public\alienMiniTools\MiniTCPTunnel_ag\mini_tcp_tunnel\client\core.py", line 561, in pipe_server_to_local
+    data = await server_codec.read_frame()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\git\public\alienMiniTools\MiniTCPTunnel_ag\mini_tcp_tunnel\shared\framing.py", line 26, in read_frame
+    raise ConnectionResetError("Connection closed while reading header")
+ConnectionResetError: Connection closed while reading header
+2026-01-04 21:12:57,899 [INFO] 서버→로컬 종료, 로컬→서버 종료 대기 시작
+2026-01-04 21:13:07,897 [WARNING] 로컬→서버 종료 대기 시간 초과, 강제 종료
+2026-01-04 21:13:07,898 [INFO] bridge_data 종료
+2026-01-04 21:13:07,898 [INFO] 브리지 통계: server->local packets=1 bytes=5, local->server packets=1 bytes=10
+2026-01-04 21:13:07,898 [INFO] 브리지 종료: conn_id=7c98b667

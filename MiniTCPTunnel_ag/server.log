@@ -1,0 +1,28 @@
+2026-01-04 21:12:37,617 [INFO] Starting MiniTCPTunnel Server on port 9000...
+2026-01-04 21:12:37,652 [INFO] Added authorized client key: 2f74ad5cdf4e53763787b182fa7ea92f93d7122d1cfbeb26792362dcf4689ea7
+2026-01-04 21:12:37,652 [INFO]  -> Whitelisted Key: 2f74ad5c...f4689ea7
+2026-01-04 21:12:37,653 [INFO] Loaded allowed keys from allowed_clients.txt
+2026-01-04 21:12:37,653 [INFO] Control Server listening on 9000
+2026-01-04 21:12:40,748 [INFO] Connecting from ('192.168.0.18', 7328)
+2026-01-04 21:12:40,755 [INFO] Client signature verified. Identity authorized.
+2026-01-04 21:12:42,628 [INFO] 첫 프레임 수신: msg_type=10
+2026-01-04 21:12:42,628 [INFO] OpenTunnel 요청 수신: tunnel_id=test, port=8081
+2026-01-04 21:12:42,628 [INFO] Tunnel test listening on 0.0.0.0:8081
+2026-01-04 21:12:42,629 [INFO] Tunnel opened: test on port 8081
+2026-01-04 21:12:42,629 [INFO] Send TunnelStatus: tunnel_id=test, status=Open
+2026-01-04 21:12:47,892 [INFO] New public connection from ('127.0.0.1', 7331), conn_id=7c98b667
+2026-01-04 21:12:47,892 [INFO] [페어링] 대기 등록 conn_id=7c98b667, pending=1
+2026-01-04 21:12:47,892 [INFO] INCOMING_CONN sent: tunnel_id=test, conn_id=7c98b667
+2026-01-04 21:12:47,893 [INFO] Connecting from ('192.168.0.18', 7332)
+2026-01-04 21:12:47,893 [INFO] Client signature verified. Identity authorized.
+2026-01-04 21:12:47,894 [INFO] 첫 프레임 수신: msg_type=21
+2026-01-04 21:12:47,894 [INFO] Data Connection Ready for 7c98b667
+2026-01-04 21:12:47,894 [INFO] [페어링] 매칭 완료 conn_id=7c98b667, pending=0
+2026-01-04 21:12:47,894 [INFO] Bridging conn_id=7c98b667 public <-> data channel
+2026-01-04 21:12:47,894 [INFO] 첫 공용→클라이언트 데이터: 5 bytes
+2026-01-04 21:12:47,895 [INFO] 첫 클라이언트→공용 데이터: 10 bytes
+2026-01-04 21:12:47,896 [INFO] 공용→클라이언트 종료, 클라이언트→공용 응답 대기 시작
+2026-01-04 21:12:57,897 [WARNING] 클라이언트→공용 응답 대기 시간 초과, 강제 종료
+2026-01-04 21:12:57,897 [INFO] 브리지 통계: public->client packets=1 bytes=5, client->public packets=1 bytes=10
+2026-01-04 21:12:57,897 [INFO] Bridge finished conn_id=7c98b667
+2026-01-04 21:12:57,897 [INFO] Closing public socket conn_id=7c98b667
