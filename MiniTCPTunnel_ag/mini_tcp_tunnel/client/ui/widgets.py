@@ -10,9 +10,9 @@ class TunnelCard(QFrame):
     A card widget representing a single tunnel configuration.
     Displays: ID, Remote->Local Map, Status, Control Button
     """
-    request_toggle = Signal(str) # Emits tunnel_id
     request_delete = Signal(str) # Emits tunnel_id
     request_edit = Signal(str)
+    request_enabled_change = Signal(str, bool) # tid, enabled
 
     def __init__(self, tunnel_vm):
         super().__init__()
@@ -39,24 +39,30 @@ class TunnelCard(QFrame):
 
         layout = QVBoxLayout(self)
         
-        # Header: ID + Status Dot
+        # Header: Checkbox + ID + Status
         header_layout = QHBoxLayout()
+        
+        self.chk_enabled = QCheckBox()
+        self.chk_enabled.setChecked(self.tunnel_vm.enabled)
+        self.chk_enabled.stateChanged.connect(self.on_enabled_change)
+
         self.lbl_id = QLabel(self.tunnel_vm.tid)
         self.lbl_id.setStyleSheet("font-weight: bold; font-size: 14px; color: #FFFFFF;")
         
         self.lbl_status_dot = QLabel("●")
         self.lbl_status_dot.setFixedSize(20, 20)
         
+        header_layout.addWidget(self.chk_enabled)
         header_layout.addWidget(self.lbl_id)
         header_layout.addStretch()
         header_layout.addWidget(self.lbl_status_dot)
         
-        # Body: Port Mapping
+        # Body
         mapping_text = f"Remote :{self.tunnel_vm.remote_port}  ➔  {self.tunnel_vm.local_host}:{self.tunnel_vm.local_port}"
         self.lbl_mapping = QLabel(mapping_text)
         self.lbl_mapping.setStyleSheet("color: #AAAAAA; font-size: 12px;")
         
-        # Footer: Controls
+        # Footer
         footer_layout = QHBoxLayout()
         
         self.btn_edit = QPushButton("Edit")
@@ -71,11 +77,6 @@ class TunnelCard(QFrame):
         self.btn_delete.setStyleSheet("background-color: #444; color: #BBB;")
         self.btn_delete.clicked.connect(self.on_delete_click)
 
-        self.btn_toggle = QPushButton("Start")
-        self.btn_toggle.setCursor(Qt.PointingHandCursor)
-        self.btn_toggle.setFixedSize(80, 28)
-        self.btn_toggle.clicked.connect(self.on_toggle_click)
-        
         # Status Text
         self.lbl_status_text = QLabel("Stopped")
         self.lbl_status_text.setStyleSheet("color: #888888; font-size: 11px;")
@@ -84,14 +85,14 @@ class TunnelCard(QFrame):
         footer_layout.addStretch()
         footer_layout.addWidget(self.btn_edit)
         footer_layout.addWidget(self.btn_delete)
-        footer_layout.addWidget(self.btn_toggle)
 
         layout.addLayout(header_layout)
         layout.addWidget(self.lbl_mapping)
         layout.addLayout(footer_layout)
 
-    def on_toggle_click(self):
-        self.request_toggle.emit(self.tunnel_vm.tid)
+    def on_enabled_change(self, state):
+        enabled = (state == Qt.Checked)
+        self.request_enabled_change.emit(self.tunnel_vm.tid, enabled)
 
     def on_delete_click(self):
         self.request_delete.emit(self.tunnel_vm.tid)
@@ -103,17 +104,11 @@ class TunnelCard(QFrame):
         status = self.tunnel_vm.status
         self.lbl_status_text.setText(status)
         
-        if status == "Requested":
-            self.lbl_status_dot.setStyleSheet("color: #FFA500;") # Orange
-            self.btn_toggle.setText("...")
-            self.btn_toggle.setEnabled(False)
-        elif status == "Active" or status == "Open": # Need consistent status strings
-            self.lbl_status_dot.setStyleSheet("color: #00FF7F;") # Spring Green
-            self.btn_toggle.setText("Stop")
-            self.btn_toggle.setEnabled(True) # TODO: Implement Stop
-        else: # Stopped/Error
-            self.lbl_status_dot.setStyleSheet("color: #FF4500;") # OrangeRed
-            self.btn_toggle.setText("Start")
-            self.btn_toggle.setEnabled(True)
+        if status in ["Active", "Open"]:
+            self.lbl_status_dot.setStyleSheet("color: #00FF00;") # Green
+        elif status == "Requested":
+            self.lbl_status_dot.setStyleSheet("color: #FFFF00;") # Yellow
+        else: # Stopped/Error/Other
+            self.lbl_status_dot.setStyleSheet("color: #555555;") # Grey
             
         # Update connections count if needed

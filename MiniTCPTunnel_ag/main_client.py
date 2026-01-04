@@ -40,7 +40,13 @@ def main():
     
     # Populate Tunnels
     for t_def in cfg_mgr.config.tunnels:
-        vm = TunnelViewModel(t_def.id, t_def.remote_port, t_def.local_host, t_def.local_port)
+        vm = TunnelViewModel(
+            t_def.id, 
+            t_def.remote_port, 
+            t_def.local_host, 
+            t_def.local_port,
+            enabled=t_def.auto_start
+        )
         state.tunnels.append(vm)
 
     if not state.tunnels:

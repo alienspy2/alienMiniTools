@@ -55,8 +55,10 @@ class PublicListener:
 
     async def stop(self):
         if self.server:
-            self.server.close()
-            await self.server.wait_closed()
+            srv = self.server
+            self.server = None # Prevent double stop
+            srv.close()
+            await srv.wait_closed()
             self.logger.info(f"Stopped listener on {self.local_port}")
 
     async def handle_conn(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
@@ -218,6 +220,7 @@ class ControlSession:
             if tunnel_id in self.tunnels:
                 self.logger.warning(f"Tunnel {tunnel_id} already exists. Closing old one.")
                 await self.tunnels[tunnel_id].stop()
+                del self.tunnels[tunnel_id]
 
             listener = PublicListener(tunnel_id, remote_port, self, self.pairer)
             await listener.start()

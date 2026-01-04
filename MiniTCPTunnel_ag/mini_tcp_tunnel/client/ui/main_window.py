@@ -171,48 +171,62 @@ class MainWindow(QMainWindow):
         self.activateWindow()
 
     def refresh_tunnels(self):
-        # Clear/Rebuild is inefficient but simple for now
-        # Ideally, diff the list.
-        # Let's check for new ones.
-        
-        existing_ids = set(self.cards.keys())
-        current_ids = {vm.tid for vm in self.app_state.tunnels}
-        
-        # Remove deleted
-        for tid in existing_ids - current_ids:
-            card = self.cards.pop(tid)
-            card.deleteLater() # Remove widget
-            
+        # Remove old cards
+        for tid, card in list(self.cards.items()):
+            # If tunnel removed from state
+            if not any(t.tid == tid for t in self.app_state.tunnels):
+                self.scroll_layout.removeWidget(card)
+                card.deleteLater()
+                del self.cards[tid]
+            else:
+                card.update_state()
+
         # Add new
         for vm in self.app_state.tunnels:
             if vm.tid not in self.cards:
                 card = TunnelCard(vm)
-                card.request_toggle.connect(self.on_tunnel_toggle)
+                card.request_enabled_change.connect(self.on_tunnel_enabled_change)
                 card.request_edit.connect(self.on_tunnel_edit)
                 card.request_delete.connect(self.on_tunnel_delete)
-                self.scroll_layout.addWidget(card)
+                # My scroll_layout has stretch at end.
+                # insertWidget at count-1
+                self.scroll_layout.insertWidget(self.scroll_layout.count()-1, card)
                 self.cards[vm.tid] = card
                 
-    def save_config(self):
-        # ... logic as before ...
-        # (Rest of file unchanged, just inserting on_tunnel_edit below)
-        pass
+    @Slot()
+    def on_apply_click(self):
+        # Trigger Sync
+        # Convert AppState VMs to Client TunnelConfigs
+        # Update client.tunnels with current state (including enabled)
+        # Then call sync.
+        
+        # NOTE: self.client.tunnels is the "Registry".
+        # We need to ensure it matches AppState.
+        
+        configs = []
+        for vm in self.app_state.tunnels:
+            cfg = TunnelConfig(vm.tid, vm.remote_port, vm.local_host, vm.local_port, enabled=vm.enabled)
+            configs.append(cfg)
+            self.client.add_tunnel(cfg) # Update registry
+        
+        # Sync
+        asyncio.create_task(self.client.sync_tunnels(configs))
+        # Provide feedback? "Applied" toaster? 
+        # For now the status dots will update as 'Requested' -> 'Open'.
 
-    # ... (Keep existing code above save_config unchanged until here) ...
-    # Wait, 'save_config' is overwritten by previous edit. I should use 'refresh_tunnels' location or just update the class.
-    # To be safe and less error prone, I will update 'refresh_tunnels' to connect the signal, and add 'on_tunnel_edit' method.
-    
+    @Slot(str, bool)
+    def on_tunnel_enabled_change(self, tid, enabled):
+        vm = next((t for t in self.app_state.tunnels if t.tid == tid), None)
+        if vm:
+            vm.enabled = enabled
+            self.save_config()
+
     @Slot(str)
     def on_tunnel_edit(self, tid):
         # Find VM
         vm = next((t for t in self.app_state.tunnels if t.tid == tid), None)
         if not vm: return
 
-        # Check if active
-        if vm.status in ["Active", "Open", "Requested"]:
-            reply = QMessageBox.question(
-                self, "Edit Tunnel", 
-                "Tunnel is active. Must stop to edit.\nStop and proceed?", 
                 QMessageBox.Yes | QMessageBox.No
             )
             if reply == QMessageBox.No: return
@@ -348,21 +362,28 @@ class MainWindow(QMainWindow):
 
     async def do_connect(self):
         await self.client.connect()
-        # Auto-start logic needed here too if manual connect?
-        # Maybe reuse the logic from main_client or move it to MainWindow?
-        # For now let's just connect. Dynamic open is manual or user can click start.
-        # Ideally, we should check auto_start flags.
-        if self.client.is_connected:
-             self.auto_start_tunnels()
+        # Connection is managed in background. 
+        # Tunnels will be auto-requested by ControlClient._perform_connect upon success.
+        # Wait, MainWindow manual logic 'auto_start_tunnels' logic:
+        # MainWindow sends 'add_tunnel' -> 'request_open' manually for auto-start entries?
+        # ControlClient._perform_connect executes: for t in self.tunnels.values(): request_open...
+        # So if we added tunnels to ControlClient BEFORE connecting, they will auto-open.
+        # Check if we did that.
+        # main_client.py loads state and adds tunnels to client. So yes.
+        # MainWindow.auto_start_tunnels() logic was: "asyncio.create_task(self.on_tunnel_toggle(tid))"
+        # which calls 'client.add_tunnel' & 'request_open'.
+        # If they are already added, we just need request_open.
+        # ControlClient now does 'Request Existing Tunnels' on connect.
+        # So we just need to ensure `client.add_tunnel` is called for all config tunnels initially.
+        # It is done in main_client startup.
+        # So we mostly don't need manual auto_start here anymore, IF the 'status' of VM is set correctly.
+        # But VM status is UI side. ControlClient has 'TunnelConfig.status'.
+        # Let's ensure User Intention (Auto Start) is respected.
+        pass
 
     def auto_start_tunnels(self):
-        for vm in self.app_state.tunnels:
-            # Check config or VM state
-            # If we rely on VM state having 'auto_start' info, we need to store it there.
-            # Currently VM doesn't have it. We check Config.
-            cfg_def = next((t for t in self.cfg_mgr.config.tunnels if t.id == vm.tid), None)
-            if cfg_def and cfg_def.auto_start:
-                 asyncio.create_task(self.on_tunnel_toggle(vm.tid)) # Re-use toggle logic? Tunnel is stopped initially.
+        # Deprecated logic - ControlClient handles re-requesting added tunnels.
+        pass
 
     @Slot()
     def on_add_click(self):
@@ -424,20 +445,30 @@ class MainWindow(QMainWindow):
 
     def handle_global_status(self, status):
         self.lbl_conn_status.setText(f"Server: {status}")
+        
         is_connected = (status == "Connected")
         self.update_tray_icon(is_connected)
         
-        # Sync Button
+        # Update Inputs based on 'Connected' state
         if is_connected:
-            self.btn_connect.setChecked(True)
-            self.btn_connect.setText("Disconnect")
             self.inp_host.setEnabled(False)
             self.inp_port.setEnabled(False)
+            self.btn_connect.setText("Disconnect")
         else:
-            self.btn_connect.setChecked(False)
-            self.btn_connect.setText("Connect")
-            self.inp_host.setEnabled(True)
-            self.inp_port.setEnabled(True)
+            # If we are retrying or connecting, keep inputs disabled?
+            # 'status' can be "Retry in 30s...", "Connecting...", "Handshake Failed", "Disconnected"
+            if "Disconnected" in status:
+                self.inp_host.setEnabled(True)
+                self.inp_port.setEnabled(True)
+                self.btn_connect.setText("Connect")
+                self.btn_connect.setChecked(False) # Force Reset logic
+            else:
+                # Retrying, Connecting, Error...
+                # Keep inputs disabled to prevent changing while re-connecting
+                self.inp_host.setEnabled(False)
+                self.inp_port.setEnabled(False)
+                self.btn_connect.setText("Disconnect") # Allow aborting retry
+                self.btn_connect.setChecked(True) # Ensure it stays down
 
     def handle_tunnel_status(self, tid, status):
         if tid in self.cards:

@@ -120,13 +120,20 @@ class ClientHandshake:
             self.logger.error(f"Client Handshake failed: {e}")
             return None
 
-class TunnelConfig:
-    def __init__(self, tid: str, remote_port: int, local_host: str, local_port: int):
+    def __init__(self, tid: str, remote_port: int, local_host: str, local_port: int, enabled: bool = True):
         self.tid = tid
         self.remote_port = remote_port
         self.local_host = local_host
         self.local_port = local_port
         self.status = "Stopped"
+        self.enabled = enabled
+
+    def __eq__(self, other):
+        if not isinstance(other, TunnelConfig): return False
+        return (self.tid == other.tid and 
+                self.remote_port == other.remote_port and 
+                self.local_host == other.local_host and 
+                self.local_port == other.local_port)
 
 class ControlClient:
     def __init__(self, server_host: str, server_port: int, identity_key: nacl.signing.SigningKey, server_key: Optional[bytes] = None):
@@ -146,21 +153,163 @@ class ControlClient:
 
         self.write_lock = asyncio.Lock()
         
+        # Connection Manager
+        self.should_reconnect = False
+        self.connection_task = None
+        
         # Heartbeat settings
         self.last_activity = 0.0
         self.heartbeat_task = None
         self.HEARTBEAT_INTERVAL = 30
-        self.HEARTBEAT_TIMEOUT = 30 # Wait 15s after ping for response, or total idle time? Logic: if idle > interval + timeout -> Dead.
+        self.HEARTBEAT_TIMEOUT = 30 
 
+        self.running_tunnels: Dict[str, TunnelConfig] = {} # Currently active on server
+        
     def add_tunnel(self, config: TunnelConfig):
+        # Just store in a list? 
+        # ControlClient stores 'tunnels' as the "Goal State"? 
+        # Or "tunnels" is just a registry?
+        # Let's align: self.tunnels is the registry of ALL knowledge (Load from config).
+        # self.running_tunnels is what we believe is OPEN on server.
         self.tunnels[config.tid] = config
 
-    async def connect(self):
+    async def sync_tunnels(self, desired_configs: List[TunnelConfig]):
+        """
+        Syncs the server state to match the desired_configs (list).
+        Only tunnels with .enabled=True in desired_configs will be opened.
+        Others will be closed.
+        """
+        self.logger.info("Syncing tunnels...")
+        
+        desired_map = {t.tid: t for t in desired_configs if t.enabled}
+        
+        # 1. Identify tunnels to Close
+        # Close if: NOT in desired_map OR (in desired_map but config changed)
+        to_close = []
+        for tid, run_cfg in list(self.running_tunnels.items()):
+            if tid not in desired_map:
+                to_close.append(tid)
+            else:
+                # Check for config changes (Remote/Local ports)
+                target = desired_map[tid]
+                if target != run_cfg:
+                    self.logger.info(f"Tunnel {tid} configuration changed. Recreating.")
+                    to_close.append(tid)
+
+        for tid in to_close:
+            # We use the running config to close
+            if tid in self.running_tunnels:
+                await self.request_close_tunnel(self.running_tunnels[tid])
+                # request_close_tunnel removes from running_tunnels? 
+                # Currently it just sends msg. We should update state.
+        
+        # 2. Identify tunnels to Open
+        for tid, target in desired_map.items():
+            if tid not in self.running_tunnels:
+                await self.request_open_tunnel(target)
+
+    async def request_open_tunnel(self, tunnel: TunnelConfig):
+        if not self.codec: return
+        tid_bytes = tunnel.tid.encode('utf-8')
+        payload = struct.pack(">I", tunnel.remote_port) + \
+                  struct.pack(">I", len(tid_bytes)) + \
+                  tid_bytes
+        
+        async with self.write_lock:
+            await self.codec.write_frame(bytes([MsgType.OPEN_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
+        
+        self.logger.info(f"Requested OpenTunnel {tunnel.tid}")
+        tunnel.status = "Requested"
+        # Update running state
+        self.running_tunnels[tunnel.tid] = tunnel
+        
+        if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Requested")
+
+    async def request_close_tunnel(self, tunnel: TunnelConfig):
+        if not self.codec: return
+        tid_bytes = tunnel.tid.encode('utf-8')
+        payload = struct.pack(">I", len(tid_bytes)) + tid_bytes
+        
+        async with self.write_lock:
+            await self.codec.write_frame(bytes([MsgType.CLOSE_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
+        
+        self.logger.info(f"Requested CloseTunnel {tunnel.tid}")
+        tunnel.status = "Stopped"
+        
+        # Update running state
+        if tunnel.tid in self.running_tunnels:
+            del self.running_tunnels[tunnel.tid]
+            
+        if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Stopped")
+        """Starts the connection manager."""
+        if self.should_reconnect: return # Already trying
+        self.should_reconnect = True
+        self.connection_task = asyncio.create_task(self.connection_loop())
+
+    async def disconnect(self):
+        """Stops the connection manager and closes connection."""
+        self.should_reconnect = False
+        
+        if self.connection_task:
+            self.connection_task.cancel()
+            try:
+                await self.connection_task
+            except asyncio.CancelledError:
+                pass
+            self.connection_task = None
+
+        await self._close_connection()
+        if self.on_status_change: self.on_status_change("Disconnected")
+
+    async def _close_connection(self):
+        self.is_connected = False
+        if self.heartbeat_task:
+            self.heartbeat_task.cancel()
+            try:
+                await self.heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self.heartbeat_task = None
+            
+        if self.codec:
+            await self.codec.close()
+            self.codec = None
+
+    async def connection_loop(self):
+        self.logger.info("Connection Manager Started")
+        while self.should_reconnect:
+            if not self.is_connected:
+                success = await self._perform_connect()
+                if not success:
+                    # Retry Countdown
+                    if not self.should_reconnect: break
+                    
+                    retry_seconds = 30
+                    for i in range(retry_seconds, 0, -1):
+                        if not self.should_reconnect or self.is_connected: break
+                        if self.on_status_change: 
+                            self.on_status_change(f"Retry in {i}s...")
+                        await asyncio.sleep(1)
+            else:
+                # Already connected, sleep and check logic is handled by loop/heartbeat
+                await asyncio.sleep(1)
+
+    async def _perform_connect(self) -> bool:
         try:
             self.logger.info(f"Connecting to {self.server_host}:{self.server_port}...")
             if self.on_status_change: self.on_status_change("Connecting...")
             
-            reader, writer = await asyncio.open_connection(self.server_host, self.server_port)
+            # Timeout for connection attempt
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(self.server_host, self.server_port), 
+                    timeout=10
+                )
+            except (asyncio.TimeoutError, OSError) as e:
+                self.logger.error(f"Conn Error: {e}")
+                if self.on_status_change: self.on_status_change("Connection Failed")
+                return False
+
             self.logger.info(f"Connecting from {writer.get_extra_info('sockname')}")
             
             hs = ClientHandshake(reader, writer, self.identity_key, self.server_key)
@@ -176,35 +325,22 @@ class ControlClient:
                 self.heartbeat_task = asyncio.create_task(self.heartbeat_loop())
                 asyncio.create_task(self.loop())
                 
-                # Request Existing Tunnels
-                for t in self.tunnels.values():
-                    await self.request_open_tunnel(t)
+                # Sync Tunnels (Apply current config)
+                await self.sync_tunnels(list(self.tunnels.values()))
+                return True
             else:
                 self.logger.error("Handshake failed")
                 if self.on_status_change: self.on_status_change("Handshake Failed")
+                writer.close()
+                await writer.wait_closed()
+                return False
                 
         except Exception as e:
             self.logger.error(f"Connection failed: {e}")
-            if self.on_status_change: self.on_status_change("Connection Failed")
-            self.is_connected = False
-
-    async def disconnect(self):
-        self.is_connected = False
-        if self.heartbeat_task:
-            self.heartbeat_task.cancel()
-            try:
-                await self.heartbeat_task
-            except asyncio.CancelledError:
-                pass
-            self.heartbeat_task = None
-            
-        if self.codec:
-            await self.codec.close()
-            
-        if self.on_status_change: self.on_status_change("Disconnected")
+            if self.on_status_change: self.on_status_change("Error")
+            return False
 
     async def heartbeat_loop(self):
-        self.logger.info("Heartbeat task started")
         try:
             while self.is_connected:
                 await asyncio.sleep(self.HEARTBEAT_INTERVAL)
@@ -212,38 +348,27 @@ class ControlClient:
                 
                 now = asyncio.get_event_loop().time()
                 
-                # Check Timeout: If last data received was too long ago
-                # We allow silence up to 5s if we haven't sent anything? No.
-                # If we send Ping at T, and no data by T+Timeout, assume dead.
-                # But here we just check idle time.
-                # If network is busy with DATA, last_activity is updated constantly.
-                # If idle, we send Ping. If Server Pong comes back, last_activity updated.
-                # So if last_activity is older than Interval + Timeout, it means we sent a Ping last cycle and got NO response.
+                # Check Timeout
                 if now - self.last_activity > (self.HEARTBEAT_INTERVAL + self.HEARTBEAT_TIMEOUT):
                     self.logger.error("Heartbeat Timeout! Server is silent.")
-                    await self.disconnect()
-                    
-                    # Auto Reconnect Logic
-                    if self.on_status_change: self.on_status_change("Timeout - Reconnecting...")
-                    await asyncio.sleep(2)
-                    await self.connect()
+                    await self._close_connection() # Just close, let connection_loop handle reconnect
                     return 
 
                 # Send Heartbeat
                 if self.codec:
                     try:
                         async with self.write_lock:
-                             # Empty payload or timestamp
                              await self.codec.write_frame(bytes([MsgType.HEARTBEAT, 0]) + struct.pack(">I", 0))
                     except Exception as e:
                         self.logger.error(f"Heartbeat send failed: {e}")
-                        await self.disconnect()
+                        await self._close_connection()
                         return
                         
         except asyncio.CancelledError:
             pass
         except Exception as e:
             self.logger.error(f"Heartbeat loop error: {e}")
+            await self._close_connection()
 
     async def loop(self):
         try:
@@ -263,11 +388,11 @@ class ControlClient:
         except Exception as e:
             self.logger.error(f"Loop Exception: {e}")
         finally:
-            self.is_connected = False
-            if self.heartbeat_task: self.heartbeat_task.cancel()
             self.logger.info("Loop ended")
-            if self.on_status_change: self.on_status_change("Disconnected")
-            if self.codec: await self.codec.close()
+            # We don't call disconnect() here because it stops the manager.
+            # We just close the connection state.
+            # The manager will see is_connected=False and retry.
+            await self._close_connection()
 
     async def handle_message(self, msg_type: int, payload: bytes):
         if msg_type == MsgType.INCOMING_CONN:
