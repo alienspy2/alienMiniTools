@@ -211,110 +211,111 @@ internal sealed class TcpListenerService
                     switch (kind)
                     {
                         case MessageKind.Keyboard:
-                        {
-                            var message = reader.ReadInt32();
-                            var vkCode = reader.ReadInt32();
-                            var scanCode = reader.ReadInt32();
-                            var flags = reader.ReadInt32();
-                            if (Program.VerboseFlag)
                             {
-                                Console.WriteLine($"Recv Keyboard: msg=0x{message:X} vk={vkCode} scan={scanCode} flags=0x{flags:X}");
+                                var message = reader.ReadInt32();
+                                var vkCode = reader.ReadInt32();
+                                var scanCode = reader.ReadInt32();
+                                var flags = reader.ReadInt32();
+                                if (Program.VerboseFlag)
+                                {
+                                    Console.WriteLine($"Recv Keyboard: msg=0x{message:X} vk={vkCode} scan={scanCode} flags=0x{flags:X}");
+                                }
+                                _player.PlayKeyboard(new KeyboardEvent(message, vkCode, scanCode, flags));
+                                break;
                             }
-                            _player.PlayKeyboard(new KeyboardEvent(message, vkCode, scanCode, flags));
-                            break;
-                        }
                         case MessageKind.Mouse:
-                        {
-                            var message = reader.ReadInt32();
-                            var x = reader.ReadInt32();
-                            var y = reader.ReadInt32();
-                            var mouseData = reader.ReadInt32();
-                            var flags = reader.ReadInt32();
-                            if (Program.VerboseFlag)
                             {
-                                Console.WriteLine($"Recv Mouse: msg=0x{message:X} x={x} y={y} data={mouseData} flags=0x{flags:X}");
+                                var message = reader.ReadInt32();
+                                var x = reader.ReadInt32();
+                                var y = reader.ReadInt32();
+                                var mouseData = reader.ReadInt32();
+                                var flags = reader.ReadInt32();
+                                if (Program.VerboseFlag)
+                                {
+                                    Console.WriteLine($"Recv Mouse: msg=0x{message:X} x={x} y={y} data={mouseData} flags=0x{flags:X}");
+                                }
+                                _player.PlayMouse(new MouseEvent(message, x, y, mouseData, flags));
+                                break;
                             }
-                            _player.PlayMouse(new MouseEvent(message, x, y, mouseData, flags));
-                            break;
-                        }
                         case MessageKind.Control:
-                        {
-                            var control = (ControlMessage)reader.ReadInt32();
-                            var value = reader.ReadInt32();
-                            if (control == ControlMessage.CaptureStart)
                             {
-                                _player.BeginCapture((CaptureEdge)value);
+                                var control = (ControlMessage)reader.ReadInt32();
+                                var value = reader.ReadInt32();
+                                if (control == ControlMessage.CaptureStart)
+                                {
+                                    _player.BeginCapture((CaptureEdge)value);
+                                }
+                                else if (control == ControlMessage.CaptureStop)
+                                {
+                                    _player.EndCapture();
+                                }
+                                break;
                             }
-                            else if (control == ControlMessage.CaptureStop)
-                            {
-                                _player.EndCapture();
-                            }
-                            break;
-                        }
                         case MessageKind.Clipboard:
-                        {
-                            var contentKind = (ClipboardContentKind)reader.ReadInt32();
-                            if (contentKind == ClipboardContentKind.Text)
                             {
-                                var length = reader.ReadInt32();
-                                if (length < 0 || length > ClipboardConstants.MaxBytes)
+                                var contentKind = (ClipboardContentKind)reader.ReadInt32();
+                                if (contentKind == ClipboardContentKind.Text)
+                                {
+                                    var length = reader.ReadInt32();
+                                    if (length < 0 || length > ClipboardConstants.MaxBytes)
+                                    {
+                                        if (Program.VerboseFlag)
+                                        {
+                                            Console.WriteLine($"Invalid clipboard payload: kind={contentKind} length={length}");
+                                        }
+                                        return Task.CompletedTask;
+                                    }
+
+
+                                    if (length == 0)
+                                    {
+                                        break;
+                                    }
+
+                                    var bytes = reader.ReadBytes(length);
+                                    if (bytes.Length != length)
+                                    {
+                                        return Task.CompletedTask;
+                                    }
+
+                                    var text = Encoding.UTF8.GetString(bytes);
+                                    ClipboardReceived?.Invoke(text);
+                                    break;
+                                }
+
+                                if (contentKind == ClipboardContentKind.FileList)
+                                {
+                                    if (!HandleFileListAnnouncement(reader))
+                                    {
+                                        return Task.CompletedTask;
+                                    }
+                                    break;
+                                }
+
+                                if (contentKind == ClipboardContentKind.FileTransferRequest)
+                                {
+                                    if (!HandleFileTransferRequestControl(reader))
+                                    {
+                                        return Task.CompletedTask;
+                                    }
+                                    break;
+                                }
+
+                                if (contentKind == ClipboardContentKind.FileTransferData)
                                 {
                                     if (Program.VerboseFlag)
                                     {
-                                        Console.WriteLine($"Invalid clipboard payload: kind={contentKind} length={length}");
+                                        Console.WriteLine("File transfer data received on control channel; ignoring.");
                                     }
                                     return Task.CompletedTask;
                                 }
 
-                                if (length == 0)
+                                if (Program.VerboseFlag)
                                 {
-                                    break;
-                                }
-
-                                var bytes = reader.ReadBytes(length);
-                                if (bytes.Length != length)
-                                {
-                                    return Task.CompletedTask;
-                                }
-
-                                var text = Encoding.UTF8.GetString(bytes);
-                                ClipboardReceived?.Invoke(text);
-                                break;
-                            }
-
-                            if (contentKind == ClipboardContentKind.FileList)
-                            {
-                                if (!HandleFileListAnnouncement(reader))
-                                {
-                                    return Task.CompletedTask;
+                                    Console.WriteLine($"Invalid clipboard payload: kind={contentKind}");
                                 }
                                 break;
                             }
-
-                        if (contentKind == ClipboardContentKind.FileTransferRequest)
-                        {
-                            if (!HandleFileTransferRequestControl(reader))
-                            {
-                                return Task.CompletedTask;
-                            }
-                            break;
-                        }
-
-                        if (contentKind == ClipboardContentKind.FileTransferData)
-                        {
-                            if (Program.VerboseFlag)
-                            {
-                                Console.WriteLine("File transfer data received on control channel; ignoring.");
-                            }
-                            return Task.CompletedTask;
-                        }
-
-                            if (Program.VerboseFlag)
-                            {
-                                Console.WriteLine($"Invalid clipboard payload: kind={contentKind}");
-                            }
-                            break;
-                        }
                         default:
                             Console.WriteLine($"Unknown message: {kind}");
                             return Task.CompletedTask;
@@ -490,6 +491,11 @@ internal sealed class TcpListenerService
                 return false;
             }
         }
+    }
+
+    internal void SendCaptureStop()
+    {
+        SendControl(ControlMessage.CaptureStop, 0);
     }
 
     private void SendControl(ControlMessage message, int value)

@@ -268,6 +268,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
     {
+        if (e.Mode == PowerModes.Suspend)
+        {
+            _service?.SendCaptureStop();
+            return;
+        }
+
         if (e.Mode != PowerModes.Resume)
         {
             return;
