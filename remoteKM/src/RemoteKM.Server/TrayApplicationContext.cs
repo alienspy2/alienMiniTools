@@ -3,6 +3,7 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace RemoteKM.Server;
 
@@ -50,6 +51,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _transferPopup = new TransferProgressPopup("RemoteKM Server");
         _pasteMonitor = new PasteMonitor(TryStartFileTransfer);
         StartServer();
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
     }
 
     protected override void ExitThreadCore()
@@ -58,6 +60,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _trayIcon?.Dispose();
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         _pasteMonitor.Dispose();
         _transferPopup.Dispose();
         _clipboardSync.Dispose();
@@ -229,7 +232,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         return _service?.TryRequestFileTransfer(destinationPath) ?? false;
     }
-    
+
     private static Icon? LoadTrayIcon()
     {
         using var stream = GetTrayIconStream();
@@ -261,5 +264,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         var iconPath = Path.Combine(AppContext.BaseDirectory, "portal.png");
         return File.Exists(iconPath) ? File.OpenRead(iconPath) : null;
+    }
+
+    private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode != PowerModes.Resume)
+        {
+            return;
+        }
+
+        _uiContext.Post(async _ =>
+        {
+            // Give the network stack a moment to wake up
+            await Task.Delay(2000);
+            StopServer();
+            StartServer();
+            _notifyIcon.ShowBalloonTip(
+                3000,
+                "RemoteKM Server",
+                "Server restarted after resume.",
+                ToolTipIcon.Info);
+        }, null);
     }
 }
