@@ -2,10 +2,19 @@ import asyncio
 import logging
 import struct
 import base64
+import hmac
+import hashlib
+import secrets
 from typing import Dict, Optional, Set
 from uuid import uuid4
 
-from ..shared.constants import MsgType, DEFAULT_CONTROL_PORT
+from ..shared.constants import (
+    MsgType,
+    DEFAULT_CONTROL_PORT,
+    HMAC_KEY_LEN,
+    HMAC_TOKEN_LEN,
+    MAX_CONN_ID_LEN,
+)
 from ..shared.framing import FrameCodec
 from .protocol import ServerHandshake, ALLOWED_CLIENT_KEYS, add_allowed_client_key
 import nacl.signing
@@ -225,9 +234,20 @@ class PublicListener:
         await data_codec.close()
 
 class ControlSession:
-    def __init__(self, codec: FrameCodec, pairer: ConnectionPairer):
+    def __init__(
+        self,
+        codec: FrameCodec,
+        pairer: ConnectionPairer,
+        server: "Server",
+        client_key: bytes,
+        session_hmac_key: bytes,
+    ):
         self.codec = codec
         self.pairer = pairer
+        # 단일 클라이언트 제한 및 세션 바인딩을 위해 서버 레퍼런스를 보관한다.
+        self.server = server
+        self.client_key = client_key
+        self.session_hmac_key = session_hmac_key
         # tunnel_id -> PublicListener
         self.tunnels: Dict[str, PublicListener] = {}
         self.logger = logging.getLogger("ControlSession")
@@ -238,6 +258,13 @@ class ControlSession:
         # Control channel uses StreamID 0 usually.
         header = bytes([msg_type, 0]) + struct.pack(">I", 0)
         await self.codec.write_frame(header + payload)
+
+    async def send_auth_ok(self):
+        """
+        제어 채널이 연결되었음을 알리고, 데이터 채널 바인딩에 사용할
+        HMAC 세션 키를 클라이언트에 전달한다.
+        """
+        await self.send_message(MsgType.AUTH_OK, self.session_hmac_key)
 
     async def send_tunnel_status(self, tunnel_id: str, status: str):
         """
@@ -359,6 +386,8 @@ class ControlSession:
 
     async def cleanup(self):
         self.is_active = False
+        # 제어 세션 종료 시 단일 클라이언트 락을 해제한다.
+        await self.server.release_control_session(self.client_key, self.session_hmac_key)
         for t in self.tunnels.values():
             await t.stop()
         self.tunnels.clear()
@@ -370,6 +399,72 @@ class Server:
         self.identity_key = identity_key
         self.pairer = ConnectionPairer()
         self.logger = logging.getLogger("Server")
+        # 단일 클라이언트 정책: 한 번에 하나의 제어 세션만 허용한다.
+        self.active_client_key: Optional[bytes] = None
+        self.active_session_hmac_key: Optional[bytes] = None
+        self.active_session: Optional[ControlSession] = None
+        self.control_lock = asyncio.Lock()
+
+    async def register_control_session(self, client_key: bytes) -> Optional[bytes]:
+        """
+        단일 클라이언트 정책을 적용하고, 데이터 채널 바인딩용 HMAC 세션 키를 생성한다.
+        이미 다른 제어 세션이 활성 상태라면 None을 반환해 신규 연결을 거부한다.
+        """
+        async with self.control_lock:
+            if self.active_client_key is not None:
+                return None
+            self.active_client_key = client_key
+            # 제어 세션별로 난수 기반 HMAC 키를 생성하여 데이터 채널을 바인딩한다.
+            self.active_session_hmac_key = secrets.token_bytes(HMAC_KEY_LEN)
+            return self.active_session_hmac_key
+
+    async def release_control_session(self, client_key: bytes, session_hmac_key: bytes):
+        """
+        제어 세션이 종료될 때 상태를 정리한다.
+        다른 세션이 이미 교체된 경우를 대비해 키가 일치할 때만 해제한다.
+        """
+        async with self.control_lock:
+            if self.active_client_key == client_key and self.active_session_hmac_key == session_hmac_key:
+                self.active_client_key = None
+                self.active_session_hmac_key = None
+                self.active_session = None
+
+    def verify_data_conn_ready(self, payload: bytes, session_hmac_key: bytes) -> Optional[str]:
+        """
+        DATA_CONN_READY 페이로드를 파싱하고, HMAC 토큰으로 conn_id를 검증한다.
+        payload 포맷: | token_len(4) | token | conn_id_len(4) | conn_id |
+        """
+        if len(payload) < 8:
+            self.logger.warning("DATA_CONN_READY payload too short")
+            return None
+        token_len = struct.unpack(">I", payload[0:4])[0]
+        if token_len != HMAC_TOKEN_LEN:
+            self.logger.warning(f"Invalid HMAC token length: {token_len}")
+            return None
+        offset = 4
+        if len(payload) < offset + token_len + 4:
+            self.logger.warning("DATA_CONN_READY payload truncated (token)")
+            return None
+        token = payload[offset:offset + token_len]
+        offset += token_len
+        conn_id_len = struct.unpack(">I", payload[offset:offset + 4])[0]
+        offset += 4
+        if conn_id_len == 0 or conn_id_len > MAX_CONN_ID_LEN:
+            self.logger.warning(f"Invalid conn_id length: {conn_id_len}")
+            return None
+        if len(payload) < offset + conn_id_len:
+            self.logger.warning("DATA_CONN_READY payload truncated (conn_id)")
+            return None
+        try:
+            conn_id = payload[offset:offset + conn_id_len].decode("utf-8")
+        except UnicodeDecodeError:
+            self.logger.warning("DATA_CONN_READY conn_id decode failed")
+            return None
+        expected = hmac.new(session_hmac_key, conn_id.encode("utf-8"), hashlib.sha256).digest()
+        if not hmac.compare_digest(token, expected):
+            self.logger.warning("DATA_CONN_READY HMAC verification failed")
+            return None
+        return conn_id
 
     async def listen(self):
         server = await asyncio.start_server(self.handle_client, '0.0.0.0', self.port)
@@ -383,13 +478,14 @@ class Server:
         
         # 1. Handshake
         hs = ServerHandshake(reader, writer, self.identity_key)
-        codec = await hs.perform_handshake()
+        hs_result = await hs.perform_handshake()
         
-        if not codec:
+        if not hs_result:
             self.logger.warning("Handshake failed. Closing.")
             writer.close()
             await writer.wait_closed()
             return
+        codec, client_key = hs_result
 
         # 2. Check First Packet for Intent (Control vs Data)
         try:
@@ -405,18 +501,20 @@ class Server:
             self.logger.debug(f"첫 프레임 수신: msg_type={msg_type}")
             
             if msg_type == MsgType.DATA_CONN_READY:
-                # Payload: conn_id_len | conn_id
-                # Or just conn_id as string? Plan 4.4 says payload: conn_id.
-                # Let's assume conn_id is proper string or bytes.
-                # In PublicListener we pack it as: len(4) + bytes.
-                # Let's stick to standard payload parsing.
-                offset = 6 # skip header
-                payload = first_frame_bytes[offset:]
-                # Let's assume payload is directly 'conn_id' string (utf8)
-                # Or parsing length-prefixed.
-                # To be safe, let's treat payload as the conn_id string directly if no other fields.
-                conn_id = payload.decode('utf-8')
-                
+                # 데이터 채널은 이미 승인된 제어 세션의 HMAC 토큰으로만 허용한다.
+                if not self.active_client_key or not self.active_session_hmac_key:
+                    self.logger.warning("No active control session. Data channel ignored.")
+                    await codec.close()
+                    return
+                if client_key != self.active_client_key:
+                    self.logger.warning("Data channel from different client ignored.")
+                    await codec.close()
+                    return
+                payload = first_frame_bytes[6:]
+                conn_id = self.verify_data_conn_ready(payload, self.active_session_hmac_key)
+                if not conn_id:
+                    await codec.close()
+                    return
                 self.logger.info(f"Data Connection Ready for {conn_id}")
                 self.pairer.fulfill(conn_id, codec)
                 # Do NOT close codec here; it is handed off.
@@ -429,11 +527,23 @@ class Server:
                 # The first frame AFTER handshake is what we are looking at.
                 # It could be 'OpenTunnel' or 'Heartbeat'.
                 
-                session = ControlSession(codec, self.pairer)
-                # We already read the first frame, we should handle it!
-                await session.handle_message(msg_type, first_frame_bytes[6:])
-                # Now enter loop
-                await session.run()
+                session_hmac_key = await self.register_control_session(client_key)
+                if not session_hmac_key:
+                    self.logger.warning("Another control session is active. Connection ignored.")
+                    await codec.close()
+                    return
+                session = ControlSession(codec, self.pairer, self, client_key, session_hmac_key)
+                self.active_session = session
+                try:
+                    # 제어 채널이 연결되면 HMAC 키를 먼저 전달한다.
+                    await session.send_auth_ok()
+                    # We already read the first frame, we should handle it!
+                    await session.handle_message(msg_type, first_frame_bytes[6:])
+                    # Now enter loop
+                    await session.run()
+                except Exception as e:
+                    self.logger.error(f"Control session error: {e}")
+                    await session.cleanup()
 
         except Exception as e:
             self.logger.error(f"Error in client handler: {e}")

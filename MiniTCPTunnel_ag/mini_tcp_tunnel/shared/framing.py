@@ -1,7 +1,7 @@
 import struct
 import asyncio
 from typing import Optional, Tuple
-from .constants import FRAME_HEAD_LEN, MsgType
+from .constants import FRAME_HEAD_LEN, MsgType, MAX_FRAME_LEN, MAX_PLAINTEXT_LEN
 from .crypto_utils import CryptoContext, compress_data, decompress_data
 
 class FrameCodec:
@@ -26,6 +26,9 @@ class FrameCodec:
                 raise ConnectionResetError("Connection closed while reading header")
                 
             length = struct.unpack(">I", head_data)[0]
+            # 비정상적으로 큰 프레임은 즉시 차단한다.
+            if length > MAX_FRAME_LEN:
+                raise ValueError(f"Frame too large: {length} > {MAX_FRAME_LEN}")
             
             # Read payload (ciphertext)
             try:
@@ -36,7 +39,7 @@ class FrameCodec:
             if self.read_ctx:
                 # Decrypt -> Decompress
                 compressed = self.read_ctx.decrypt(ciphertext)
-                plaintext = decompress_data(compressed)
+                plaintext = decompress_data(compressed, MAX_PLAINTEXT_LEN)
                 return plaintext
             else:
                 return ciphertext
@@ -44,10 +47,16 @@ class FrameCodec:
     async def write_frame(self, data: bytes):
         async with self.write_lock:
             if self.write_ctx:
+                # 평문 길이가 과도하면 압축/암호화 전에 차단한다.
+                if len(data) > MAX_PLAINTEXT_LEN:
+                    raise ValueError(f"Plaintext too large: {len(data)} > {MAX_PLAINTEXT_LEN}")
                 compressed = compress_data(data)
                 ciphertext = self.write_ctx.encrypt(compressed)
                 payload = ciphertext
             else:
+                # 비암호화 모드에서도 프레임 길이는 제한한다.
+                if len(data) > MAX_FRAME_LEN:
+                    raise ValueError(f"Frame too large: {len(data)} > {MAX_FRAME_LEN}")
                 payload = data
 
 

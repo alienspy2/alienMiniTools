@@ -1,10 +1,20 @@
 import asyncio
 import logging
 import struct
+import hmac
+import hashlib
 import nacl.signing
 import nacl.encoding
 from typing import Optional, List, Dict, Callable
-from ..shared.constants import PROTOCOL_VERSION, Role, MsgType
+from ..shared.constants import (
+    PROTOCOL_VERSION,
+    Role,
+    MsgType,
+    HANDSHAKE_HELLO_LEN,
+    MAX_HANDSHAKE_LEN,
+    HMAC_KEY_LEN,
+    HMAC_TOKEN_LEN,
+)
 from ..shared.crypto_utils import (
     CryptoContext,
     generate_ephemeral_key,
@@ -62,6 +72,11 @@ class ClientHandshake:
             try:
                 len_bytes = await self.reader.readexactly(4)
                 resp_len = struct.unpack(">I", len_bytes)[0]
+                # 서버 헬로는 고정 길이여야 한다.
+                # 과대 길이는 공격 가능성이 있으므로 읽기 전에 차단한다.
+                if resp_len != HANDSHAKE_HELLO_LEN or resp_len > MAX_HANDSHAKE_LEN:
+                    self.logger.error(f"Invalid server hello length: {resp_len}")
+                    return None
                 server_hello_bytes = await self.reader.readexactly(resp_len)
             except asyncio.IncompleteReadError:
                 self.logger.error("Handshake conn closed")
@@ -153,6 +168,8 @@ class ControlClient:
         self.is_connected = False
         self.tunnels: Dict[str, TunnelConfig] = {} # id -> config
         self.logger = logging.getLogger("ControlClient")
+        # 제어 세션에서 수신한 HMAC 키(데이터 채널 바인딩에 사용)
+        self.session_hmac_key: Optional[bytes] = None
         
         # Callbacks for UI updates
         self.on_status_change: Optional[Callable[[str], None]] = None
@@ -290,6 +307,8 @@ class ControlClient:
 
     async def _close_connection(self):
         self.is_connected = False
+        # 제어 세션이 끊기면 데이터 채널 바인딩 키도 폐기한다.
+        self.session_hmac_key = None
         if self.heartbeat_task:
             self.heartbeat_task.cancel()
             try:
@@ -323,6 +342,8 @@ class ControlClient:
 
     async def _perform_connect(self) -> bool:
         try:
+            # 재연결 시 이전 세션의 HMAC 키가 남아 있지 않도록 초기화한다.
+            self.session_hmac_key = None
             self.logger.info(f"Connecting to {self.server_host}:{self.server_port}...")
             if self.on_status_change: self.on_status_change("Connecting...")
             
@@ -434,12 +455,26 @@ class ControlClient:
             await self.handle_incoming_conn(payload)
         elif msg_type == MsgType.TUNNEL_STATUS:
             await self.handle_tunnel_status(payload)
+        elif msg_type == MsgType.AUTH_OK:
+            await self.handle_auth_ok(payload)
         elif msg_type == MsgType.HEARTBEAT:
             # Just Pong receiving. Activity already updated.
             # self.logger.debug("Received Heartbeat Echo")
             pass
         else:
             self.logger.warning(f"Received unknown message type: {msg_type}")
+
+    async def handle_auth_ok(self, payload: bytes):
+        """
+        서버가 전달한 HMAC 세션 키를 수신한다.
+        이 키는 데이터 채널 연결 시 conn_id를 HMAC으로 서명해 서버에서 검증하도록 하는 용도다.
+        """
+        if len(payload) != HMAC_KEY_LEN:
+            self.logger.error(f"AUTH_OK payload length invalid: {len(payload)}")
+            return
+        self.session_hmac_key = payload
+        # 보안 상 키 값을 로그에 남기지 않고 수신 완료만 기록한다.
+        self.logger.info("HMAC 세션 키 수신 완료")
 
     async def handle_tunnel_status(self, payload: bytes):
         """
@@ -519,7 +554,20 @@ class ControlClient:
             self.logger.debug(f"Data channel handshake 완료: conn_id={conn_id}")
             
             # 3. Send DATA_CONN_READY
-            payload = conn_id.encode('utf-8')
+            if not self.session_hmac_key:
+                # 제어 세션에서 HMAC 키를 받지 못했다면 데이터 채널은 즉시 중단한다.
+                self.logger.error("HMAC 세션 키가 없어 데이터 채널을 생성할 수 없습니다.")
+                await codec.close()
+                return
+            conn_id_bytes = conn_id.encode('utf-8')
+            token = hmac.new(self.session_hmac_key, conn_id_bytes, hashlib.sha256).digest()
+            if len(token) != HMAC_TOKEN_LEN:
+                self.logger.error("HMAC 토큰 길이가 예상과 다릅니다.")
+                await codec.close()
+                return
+            # payload 포맷: | token_len(4) | token | conn_id_len(4) | conn_id |
+            payload = struct.pack(">I", len(token)) + token + \
+                      struct.pack(">I", len(conn_id_bytes)) + conn_id_bytes
             header = bytes([MsgType.DATA_CONN_READY, 0]) + struct.pack(">I", 0)
             await codec.write_frame(header + payload)
             # 데이터 채널 준비 완료 통지 로그

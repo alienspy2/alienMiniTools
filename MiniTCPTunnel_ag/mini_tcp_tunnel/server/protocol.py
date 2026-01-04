@@ -3,8 +3,8 @@ import logging
 import struct
 import nacl.signing
 import nacl.encoding
-from typing import Optional, List
-from ..shared.constants import PROTOCOL_VERSION, Role, MsgType
+from typing import Optional, List, Tuple
+from ..shared.constants import PROTOCOL_VERSION, Role, MsgType, HANDSHAKE_HELLO_LEN, MAX_HANDSHAKE_LEN
 from ..shared.crypto_utils import (
     CryptoContext,
     generate_ephemeral_key,
@@ -36,10 +36,10 @@ class ServerHandshake:
         self.server_identity_key = server_identity_key
         self.logger = logging.getLogger("ServerHandshake")
 
-    async def perform_handshake(self) -> Optional[FrameCodec]:
+    async def perform_handshake(self) -> Optional[Tuple[FrameCodec, bytes]]:
         """
         Performs the server-side handshake.
-        Returns a configured FrameCodec if successful, None otherwise.
+        Returns (configured FrameCodec, client identity public key) if successful, None otherwise.
         """
         try:
             # 1. Receive Client Hello
@@ -59,6 +59,11 @@ class ServerHandshake:
             
             len_bytes = await self.reader.readexactly(4)
             msg_len = struct.unpack(">I", len_bytes)[0]
+            # 핸드셰이크 메시지는 고정 길이여야 한다.
+            # 과대 길이/비정상 길이는 메모리/시간 소모 공격이 될 수 있으므로 즉시 종료한다.
+            if msg_len != HANDSHAKE_HELLO_LEN or msg_len > MAX_HANDSHAKE_LEN:
+                self.logger.warning(f"Invalid client hello length: {msg_len}")
+                return None
             client_hello_bytes = await self.reader.readexactly(msg_len)
             
             # Parse Client Hello
@@ -158,7 +163,9 @@ class ServerHandshake:
             # Create properly configured Codec
             codec = FrameCodec(self.reader, self.writer, read_ctx=read_ctx, write_ctx=write_ctx)
             
-            return codec
+            # 서버는 후속 단계(단일 클라이언트 제한/데이터 채널 검증)를 위해
+            # 클라이언트의 ID 공개키를 함께 반환한다.
+            return codec, client_id_key_bytes
             
         except Exception as e:
             self.logger.error(f"Handshake failed: {e}")

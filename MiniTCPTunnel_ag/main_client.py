@@ -50,6 +50,18 @@ def main():
     state = AppState()
     state.server_host = cfg_mgr.config.server_host
     state.server_port = cfg_mgr.config.server_port
+
+    # 서버 공개키 핀닝: 사용자가 수동으로 복사한 server_pub_key(hex)를 검증에 사용한다.
+    server_pub_key_bytes = None
+    if cfg_mgr.config.server_pub_key:
+        try:
+            server_pub_key_bytes = bytes.fromhex(cfg_mgr.config.server_pub_key)
+            if len(server_pub_key_bytes) != 32:
+                logging.error("server_pub_key 길이가 올바르지 않습니다. (32 bytes 필요)")
+                server_pub_key_bytes = None
+        except ValueError:
+            logging.error("server_pub_key 형식이 올바르지 않습니다. (hex 문자열 필요)")
+            server_pub_key_bytes = None
     
     # Populate Tunnels
     for t_def in cfg_mgr.config.tunnels:
@@ -75,7 +87,8 @@ def main():
     client = ControlClient(
         server_host=state.server_host, 
         server_port=state.server_port, 
-        identity_key=id_key
+        identity_key=id_key,
+        server_key=server_pub_key_bytes,
     )
 
     # 4. Setup UI

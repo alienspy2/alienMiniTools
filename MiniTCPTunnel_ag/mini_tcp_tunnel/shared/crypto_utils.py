@@ -59,5 +59,12 @@ def derive_session_keys(shared_secret: bytes, salt: bytes, info: bytes):
 def compress_data(data: bytes) -> bytes:
     return lz4.frame.compress(data)
 
-def decompress_data(data: bytes) -> bytes:
-    return lz4.frame.decompress(data)
+def decompress_data(data: bytes, max_size: int) -> bytes:
+    """
+    압축 해제 결과가 과도하게 커지면 공격(압축 폭탄) 가능성이 있으므로
+    상한을 넘는 경우 예외를 발생시킨다.
+    """
+    plaintext = lz4.frame.decompress(data)
+    if len(plaintext) > max_size:
+        raise ValueError(f"Decompressed data too large: {len(plaintext)} > {max_size}")
+    return plaintext

@@ -2,6 +2,7 @@ import sys
 import argparse
 import asyncio
 import logging
+import os
 
 def main():
     parser = argparse.ArgumentParser(description="MiniTCPTunnel Server")
@@ -29,11 +30,26 @@ def main():
     from mini_tcp_tunnel.shared.crypto_utils import generate_identity_key
     from mini_tcp_tunnel.server.protocol import add_allowed_client_key
     import nacl.encoding
+    import nacl.signing
 
-    # Demo: Generate a random server identity key on startup
-    # In production, this should be loaded from a file
-    id_key = generate_identity_key()
+    # 서버 identity 키를 파일에 고정해 서버 재시작 시에도 동일한 공개키를 유지한다.
+    server_key_file = "server_identity_key.hex"
+    if os.path.exists(server_key_file):
+        try:
+            with open(server_key_file, "r", encoding="utf-8") as f:
+                key_hex = f.read().strip()
+            id_key = nacl.signing.SigningKey(bytes.fromhex(key_hex))
+        except Exception as e:
+            logging.error(f"Failed to load server identity key: {e}")
+            return
+    else:
+        id_key = generate_identity_key()
+        key_hex = id_key.encode(encoder=nacl.encoding.HexEncoder).decode("utf-8")
+        with open(server_key_file, "w", encoding="utf-8") as f:
+            f.write(key_hex)
+        logging.info(f"Generated new server identity key: {server_key_file}")
     pub_hex = id_key.verify_key.encode(encoder=nacl.encoding.HexEncoder).decode('utf-8')
+    logging.info(f"Server Identity Public Key (Pin in client config): {pub_hex}")
     # Load Allowed Keys from File
     allowed_keys_file = "allowed_clients.txt"
     try:
