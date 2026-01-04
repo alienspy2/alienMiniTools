@@ -55,11 +55,18 @@ class ClientHandshake:
             await self.writer.drain()
 
             # --- RECEIVE SERVER HELLO ---
-            len_bytes = await self.reader.readexactly(4)
-            resp_len = struct.unpack(">I", len_bytes)[0]
-            server_hello_bytes = await self.reader.readexactly(resp_len)
+            try:
+                len_bytes = await self.reader.readexactly(4)
+                resp_len = struct.unpack(">I", len_bytes)[0]
+                server_hello_bytes = await self.reader.readexactly(resp_len)
+            except asyncio.IncompleteReadError:
+                self.logger.error("Handshake conn closed")
+                return None
 
             # | Ver(2) | Role(1) | ID_Key(32) | Eph_Key(32) | Nonce(12) | Sig(64) |
+            if len(server_hello_bytes) < 143:
+                return None
+                
             ver = struct.unpack(">H", server_hello_bytes[0:2])[0]
             role = server_hello_bytes[2]
             server_id_key_bytes = server_hello_bytes[3:35]
@@ -81,7 +88,6 @@ class ClientHandshake:
 
             # Verify Signature
             # Server signs: ServerHelloBody + ClientSig
-            # ServerHelloBody is bytes[0:79]
             server_hello_body = server_hello_bytes[0:79]
             sig_payload = server_hello_body + client_sig
             
@@ -138,85 +144,166 @@ class ControlClient:
         self.on_status_change: Optional[Callable[[str], None]] = None
         self.on_tunnel_status_change: Optional[Callable[[str, str], None]] = None
 
+        self.write_lock = asyncio.Lock()
+        
+        # Heartbeat settings
+        self.last_activity = 0.0
+        self.heartbeat_task = None
+        self.HEARTBEAT_INTERVAL = 30
+        self.HEARTBEAT_TIMEOUT = 30 # Wait 15s after ping for response, or total idle time? Logic: if idle > interval + timeout -> Dead.
+
     def add_tunnel(self, config: TunnelConfig):
         self.tunnels[config.tid] = config
 
     async def connect(self):
-        self.logger.info(f"Connecting to {self.server_host}:{self.server_port}...")
         try:
+            self.logger.info(f"Connecting to {self.server_host}:{self.server_port}...")
+            if self.on_status_change: self.on_status_change("Connecting...")
+            
             reader, writer = await asyncio.open_connection(self.server_host, self.server_port)
+            self.logger.info(f"Connecting from {writer.get_extra_info('sockname')}")
+            
             hs = ClientHandshake(reader, writer, self.identity_key, self.server_key)
             self.codec = await hs.perform_handshake()
             
-            if not self.codec:
+            if self.codec:
+                self.is_connected = True
+                self.last_activity = asyncio.get_event_loop().time()
+                self.logger.info("Handshake Success")
+                if self.on_status_change: self.on_status_change("Connected")
+                
+                # Start Tasks
+                self.heartbeat_task = asyncio.create_task(self.heartbeat_loop())
+                asyncio.create_task(self.loop())
+                
+                # Request Existing Tunnels
+                for t in self.tunnels.values():
+                    await self.request_open_tunnel(t)
+            else:
                 self.logger.error("Handshake failed")
-                return
-            
-            self.is_connected = True
-            if self.on_status_change: self.on_status_change("Connected")
-            
-            # Start Loop
-            asyncio.create_task(self.loop())
-            
-            # Request Tunnels
-            for t in self.tunnels.values():
-                await self.request_open_tunnel(t)
+                if self.on_status_change: self.on_status_change("Handshake Failed")
                 
         except Exception as e:
             self.logger.error(f"Connection failed: {e}")
-            if self.on_status_change: self.on_status_change(f"Error: {e}")
+            if self.on_status_change: self.on_status_change("Connection Failed")
             self.is_connected = False
+
+    async def disconnect(self):
+        self.is_connected = False
+        if self.heartbeat_task:
+            self.heartbeat_task.cancel()
+            try:
+                await self.heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self.heartbeat_task = None
+            
+        if self.codec:
+            await self.codec.close()
+            
+        if self.on_status_change: self.on_status_change("Disconnected")
+
+    async def heartbeat_loop(self):
+        self.logger.info("Heartbeat task started")
+        try:
+            while self.is_connected:
+                await asyncio.sleep(self.HEARTBEAT_INTERVAL)
+                if not self.is_connected: break
+                
+                now = asyncio.get_event_loop().time()
+                
+                # Check Timeout: If last data received was too long ago
+                # We allow silence up to 5s if we haven't sent anything? No.
+                # If we send Ping at T, and no data by T+Timeout, assume dead.
+                # But here we just check idle time.
+                # If network is busy with DATA, last_activity is updated constantly.
+                # If idle, we send Ping. If Server Pong comes back, last_activity updated.
+                # So if last_activity is older than Interval + Timeout, it means we sent a Ping last cycle and got NO response.
+                if now - self.last_activity > (self.HEARTBEAT_INTERVAL + self.HEARTBEAT_TIMEOUT):
+                    self.logger.error("Heartbeat Timeout! Server is silent.")
+                    await self.disconnect()
+                    
+                    # Auto Reconnect Logic
+                    if self.on_status_change: self.on_status_change("Timeout - Reconnecting...")
+                    await asyncio.sleep(2)
+                    await self.connect()
+                    return 
+
+                # Send Heartbeat
+                if self.codec:
+                    try:
+                        async with self.write_lock:
+                             # Empty payload or timestamp
+                             await self.codec.write_frame(bytes([MsgType.HEARTBEAT, 0]) + struct.pack(">I", 0))
+                    except Exception as e:
+                        self.logger.error(f"Heartbeat send failed: {e}")
+                        await self.disconnect()
+                        return
+                        
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self.logger.error(f"Heartbeat loop error: {e}")
+
+    async def loop(self):
+        try:
+            while self.is_connected and self.codec:
+                try:
+                    plaintext = await self.codec.read_frame()
+                    self.last_activity = asyncio.get_event_loop().time() # Update activity on ANY data
+                except (ConnectionError, ConnectionResetError) as e:
+                    self.logger.error(f"Control loop error: {e}")
+                    break
+                
+                if not plaintext: break 
+                if len(plaintext) < 2: continue
+                
+                msg_type = plaintext[0]
+                await self.handle_message(msg_type, plaintext[1:])
+        except Exception as e:
+            self.logger.error(f"Loop Exception: {e}")
+        finally:
+            self.is_connected = False
+            if self.heartbeat_task: self.heartbeat_task.cancel()
+            self.logger.info("Loop ended")
+            if self.on_status_change: self.on_status_change("Disconnected")
+            if self.codec: await self.codec.close()
+
+    async def handle_message(self, msg_type: int, payload: bytes):
+        if msg_type == MsgType.INCOMING_CONN:
+            await self.handle_incoming_conn(payload[5:])
+        elif msg_type == MsgType.TUNNEL_STATUS:
+            pass # TODO: Handle status ack
+        elif msg_type == MsgType.HEARTBEAT:
+            # Just Pong receiving. Activity already updated.
+            # self.logger.debug("Received Heartbeat Echo")
+            pass
+        else:
+            self.logger.warning(f"Received unknown message type: {msg_type}")
 
     async def request_open_tunnel(self, tunnel: TunnelConfig):
         if not self.codec: return
-        # Payload: | remote_port(4) | tunnel_id_len(4) | tunnel_id |
         tid_bytes = tunnel.tid.encode('utf-8')
         payload = struct.pack(">I", tunnel.remote_port) + \
                   struct.pack(">I", len(tid_bytes)) + \
                   tid_bytes
         
-        await self.codec.write_frame(bytes([MsgType.OPEN_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
+        async with self.write_lock:
+            await self.codec.write_frame(bytes([MsgType.OPEN_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
         self.logger.info(f"Requested OpenTunnel {tunnel.tid}")
         tunnel.status = "Requested"
         if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Requested")
 
     async def request_close_tunnel(self, tunnel: TunnelConfig):
         if not self.codec: return
-        # Payload: | tunnel_id_len(4) | tunnel_id |
-        # Wait, server handle_close_tunnel needs payload format.
-        # Let's define simple format: same as others.
-        # Just sending Tunnel ID is enough if Server maps ID -> Listener.
-        
         tid_bytes = tunnel.tid.encode('utf-8')
         payload = struct.pack(">I", len(tid_bytes)) + tid_bytes
         
-        await self.codec.write_frame(bytes([MsgType.CLOSE_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
+        async with self.write_lock:
+            await self.codec.write_frame(bytes([MsgType.CLOSE_TUNNEL, 0]) + struct.pack(">I", 0) + payload)
         self.logger.info(f"Requested CloseTunnel {tunnel.tid}")
-        tunnel.status = "Stopped" # Assume stopped immediately or wait for ack?
+        tunnel.status = "Stopped"
         if self.on_tunnel_status_change: self.on_tunnel_status_change(tunnel.tid, "Stopped")
-
-    async def loop(self):
-        try:
-            while self.is_connected and self.codec:
-                frame = await self.codec.read_frame()
-                if not frame: break
-                
-                # Parse
-                if len(frame) < 6: continue
-                msg_type = frame[0]
-                payload = frame[6:]
-                
-                if msg_type == MsgType.INCOMING_CONN:
-                    await self.handle_incoming_conn(payload)
-                elif msg_type == MsgType.TUNNEL_STATUS:
-                    pass # Handle status ack
-                    
-        except Exception as e:
-            self.logger.error(f"Control loop error: {e}")
-        finally:
-            self.is_connected = False
-            if self.on_status_change: self.on_status_change("Disconnected")
-            if self.codec: await self.codec.close()
 
     async def handle_incoming_conn(self, payload: bytes):
         # Payload: | len(4) | tid | len(4) | conn_id |
@@ -234,7 +321,6 @@ class ControlClient:
                 self.logger.warning(f"Unknown tunnel id {tid}")
                 return
 
-            # Spawn Data Channel
             asyncio.create_task(self.spawn_data_channel(tunnel, conn_id))
             
         except Exception as e:
@@ -246,7 +332,6 @@ class ControlClient:
             s_reader, s_writer = await asyncio.open_connection(self.server_host, self.server_port)
             
             # 2. Handshake for Data Channel
-            # Same identity key, NEW ephemeral key
             hs = ClientHandshake(s_reader, s_writer, self.identity_key, self.server_key)
             codec = await hs.perform_handshake()
             if not codec:
@@ -254,13 +339,6 @@ class ControlClient:
                 return
             
             # 3. Send DATA_CONN_READY
-            # Payload: conn_id (string)
-            # The FIRST frame after handshake identifies the channel purpose.
-            # No header needed? Server.handle_client checks first byte.
-            # MsgType.DATA_CONN_READY (1 byte) + ...
-            # Wait, Server.handle_client expects FrameCodec frame.
-            # Frame content: | Type | ...
-            # Let's construct standard frame format: | Type | Flags | StreamID | Payload |
             payload = conn_id.encode('utf-8')
             header = bytes([MsgType.DATA_CONN_READY, 0]) + struct.pack(">I", 0)
             await codec.write_frame(header + payload)
@@ -287,36 +365,11 @@ class ControlClient:
                     data = await server_codec.read_frame()
                     if not data: break
                     if len(data) == 0: continue
-                    # Strip Data Header? Server sends RAW data with header?
-                    # Server.bridge logic: "public_r.read -> data_codec.write_frame(data)"
-                    # Server wraps raw data into Frame.
-                    # Does Server add Type Header?
-                    # My Server.bridge implementation: "data_codec.write_frame(data)"
-                    # => It puts raw data as payload.
-                    # Wait, our FrameCodec only adds Length + Encryption.
-                    # It does NOT add Type/Flags automatically.
-                    # The Server.bridge code I wrote:
-                    #   await data_codec.write_frame(data)
-                    # This implies payload IS just raw data.
-                    # BUT Client.handle_incoming_conn logic above checks msg_type = data[0].
-                    # If Server sends RAW without Type Header, Client reading frame[0] gets first byte of data!
-                    # CRITICAL MISMATCH.
-                    
-                    # Correction: Data Channel should encapsulate Data frames properly OR use Raw stream?
-                    # Plan 4.3 says: "plaintext: | type | flags | stream_id | payload |"
-                    # So Server.bridge MUST prepend header.
-                    # And Client.bridge MUST prepend header.
-                    
-                    # BUT for simplicity and max throughput, maybe Data Channel (dedicated) should be RAW inside the Frame?
-                    # Except we need to support 'CloseTunnel' or signals.
-                    # So Header is needed.
-                    
-                    # Let's fix decode here assuming Header is present.
-                    # If Server code didn't add it, I need to fix Server code too.
-                    # Let's assume standard framing.
                     
                     if len(data) > 6:
-                         # type = data[0]
+                         # Plaintext checks (Type, Flags, StreamID)
+                         # We assume Type(1)+Flags(1)+StreamID(4) = 6 bytes header
+                         # Payload starts at 6
                          local_w.write(data[6:])
                          await local_w.drain()
             except Exception:
@@ -329,7 +382,8 @@ class ControlClient:
                     if not data: break
                     # Wrap with DATA Type
                     header = bytes([MsgType.DATA, 0]) + struct.pack(">I", 0)
-                    await server_codec.write_frame(header + data)
+                    async with server_codec.write_lock: # Use Lock for Data Channel too? Yes if needed.
+                        await server_codec.write_frame(header + data)
             except Exception:
                 pass
 

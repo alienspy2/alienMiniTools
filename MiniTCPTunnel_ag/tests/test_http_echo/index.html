@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON-RPC Echo Chat</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .chat-container { width: 400px; height: 600px; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+        .header { background: #007bff; color: white; padding: 15px; text-align: center; font-weight: bold; }
+        .messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+        .message { padding: 10px 14px; border-radius: 18px; max-width: 75%; word-wrap: break-word; font-size: 14px; }
+        .message.sent { background: #007bff; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .message.received { background: #e4e6eb; color: black; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .input-area { padding: 15px; border-top: 1px solid #ddd; display: flex; gap: 10px; background: #fff; }
+        input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 20px; outline: none; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="header">Echo Server (JSON-RPC 2.0)</div>
+        <div class="messages" id="messages">
+            <div class="message received">안녕하세요! 메시지를 보내면 에코해드립니다.</div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="메시지 입력..." onkeypress="if(event.key === 'Enter') sendMessage()">
+            <button onclick="sendMessage()" id="sendBtn">전송</button>
+        </div>
+    </div>
+
+    <script>
+        let msgId = 1;
+
+        async function sendMessage() {
+            const input = document.getElementById('userInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            addMessage(text, 'sent');
+            input.value = '';
+            input.focus();
+            
+            try {
+                const response = await fetch('/rpc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: "2.0",
+                        method: "echo",
+                        params: [text],
+                        id: msgId++
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    addMessage(`Error: ${data.error.message}`, 'received');
+                } else {
+                    addMessage(data.result, 'received');
+                }
+            } catch (err) {
+                addMessage(`System Error: ${err.message}`, 'received');
+            }
+        }
+
+        function addMessage(text, type) {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.textContent = text;
+            const container = document.getElementById('messages');
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+    </script>
+</body>
+</html>

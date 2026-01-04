@@ -4,25 +4,33 @@ from PySide6.QtWidgets import (
 )
 
 class AddTunnelDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, current_data=None):
         super().__init__(parent)
-        self.setWindowTitle("Add New Tunnel")
+        self.setWindowTitle("Edit Tunnel" if current_data else "Add New Tunnel")
         self.setFixedWidth(350)
+        self.current_data = current_data
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
 
         form = QFormLayout()
-        self.inp_id = QLineEdit()
+        
+        # Pre-fill values
+        id_val = self.current_data['id'] if self.current_data else ""
+        remote_val = str(self.current_data['remote_port']) if self.current_data else ""
+        local_host_val = self.current_data['local_host'] if self.current_data else "127.0.0.1"
+        local_port_val = str(self.current_data['local_port']) if self.current_data else ""
+
+        self.inp_id = QLineEdit(id_val)
         self.inp_id.setPlaceholderText("e.g. web-server-1")
         
-        self.inp_remote = QLineEdit()
+        self.inp_remote = QLineEdit(remote_val)
         self.inp_remote.setPlaceholderText("e.g. 8080")
         
-        self.inp_local_host = QLineEdit("127.0.0.1")
+        self.inp_local_host = QLineEdit(local_host_val)
         
-        self.inp_local_port = QLineEdit()
+        self.inp_local_port = QLineEdit(local_port_val)
         self.inp_local_port.setPlaceholderText("e.g. 80")
 
         form.addRow("Tunnel ID:", self.inp_id)

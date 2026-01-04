@@ -198,8 +198,14 @@ class ControlSession:
              # So ControlSession only sees Control types.
              pass
         elif msg_type == MsgType.HEARTBEAT:
-             # Echo back or ignore (if client sends heartbeat, we can ack?)
-             pass
+             # Echo back for keep-alive check
+             if self.codec:
+                 try:
+                     # Send back raw heartbeat frame
+                     # Payload is usually empty or timestamp, just echo it.
+                     await self.send_message(MsgType.HEARTBEAT, payload)
+                 except Exception:
+                     pass
 
     async def handle_open_tunnel(self, payload: bytes):
         # Payload: | remote_port(4) | tunnel_id_len(4) | tunnel_id |

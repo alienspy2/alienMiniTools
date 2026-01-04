@@ -72,16 +72,15 @@ def main():
 
     # 5. Auto-connect
     async def run_client():
-        await client.connect()
-        # ... Auto-start logic same as before but now we pass cfg_mgr into UI so it can save too.
-        if client.is_connected:
-            for vm in state.tunnels:
-                cfg_def = next((t for t in cfg_mgr.config.tunnels if t.id == vm.tid), None)
-                if cfg_def and cfg_def.auto_start:
-                    logging.info(f"Auto-starting tunnel: {vm.tid}")
-                    tunnel_cfg = TunnelConfig(vm.tid, vm.remote_port, vm.local_host, vm.local_port)
-                    client.add_tunnel(tunnel_cfg) 
-                    await client.request_open_tunnel(tunnel_cfg)
+        # Trigger connect via UI to reuse logic
+        # We manually check the button or call on_connect_toggle?
+        # on_connect_toggle toggles state. State is disconnected initially.
+        # But we want to 'auto connect' if configured?
+        # Let's simple call window.on_connect_toggle() if intended, or just do nothing and let user click?
+        # Req: "Auto-connect". 
+        
+        # Simulate click to "Connect"
+        window.btn_connect.click()
 
     loop.create_task(run_client())
     
