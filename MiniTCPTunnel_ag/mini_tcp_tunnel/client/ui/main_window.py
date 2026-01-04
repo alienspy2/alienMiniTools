@@ -259,7 +259,6 @@ class MainWindow(QMainWindow):
         if self.tray.isVisible():
             self.hide()
             event.ignore()
-            self.tray.showMessage("MiniTCPTunnel", "App minimized to tray.", QSystemTrayIcon.Information, 2000)
         else:
             event.accept()
 
