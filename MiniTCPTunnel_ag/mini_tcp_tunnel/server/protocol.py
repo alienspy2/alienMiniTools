@@ -36,6 +36,16 @@ class ServerHandshake:
         self.server_identity_key = server_identity_key
         self.logger = logging.getLogger("ServerHandshake")
 
+    def _log_security(self, reason: str, detail: Optional[str] = None):
+        """
+        공격 징후로 의심되는 상황을 명확히 남긴다.
+        서버 운영 시 보안 관련 로그를 빠르게 필터링할 수 있도록 'SECURITY' 접두사를 붙인다.
+        """
+        if detail:
+            self.logger.warning(f"SECURITY: {reason} ({detail})")
+        else:
+            self.logger.warning(f"SECURITY: {reason}")
+
     async def perform_handshake(self) -> Optional[Tuple[FrameCodec, bytes]]:
         """
         Performs the server-side handshake.
@@ -62,7 +72,8 @@ class ServerHandshake:
             # 핸드셰이크 메시지는 고정 길이여야 한다.
             # 과대 길이/비정상 길이는 메모리/시간 소모 공격이 될 수 있으므로 즉시 종료한다.
             if msg_len != HANDSHAKE_HELLO_LEN or msg_len > MAX_HANDSHAKE_LEN:
-                self.logger.warning(f"Invalid client hello length: {msg_len}")
+                # 핸드셰이크 길이 이상은 공격 시도 가능성이 있으므로 보안 로그로 남긴다.
+                self._log_security("Invalid client hello length", f"len={msg_len}")
                 return None
             client_hello_bytes = await self.reader.readexactly(msg_len)
             
@@ -79,16 +90,18 @@ class ServerHandshake:
             client_sig = client_hello_bytes[79:143] # 64 bytes
             
             if ver != PROTOCOL_VERSION:
-                self.logger.warning(f"Version mismatch: {ver}")
+                # 정상 버전 범위를 벗어난 경우 공격 또는 오접속 가능성이 높다.
+                self._log_security("Protocol version mismatch", f"ver={ver}")
                 return None
                 
             if role != Role.CLIENT:
-                self.logger.warning("Invalid role in Hello")
+                self._log_security("Invalid role in client hello", f"role={role}")
                 return None
 
             # Verify Client Identity (Allow-list check)
             if client_id_key_bytes not in ALLOWED_CLIENT_KEYS:
-                self.logger.warning("Client identity not in whitelist.")
+                # 등록되지 않은 클라이언트 키는 접근 시도로 보고 기록한다.
+                self._log_security("Client identity not in whitelist")
                 # Send AuthFail?
                 # For security, maybe silent close or generic error.
                 # await self._send_error(MsgType.AUTH_FAIL)
@@ -100,7 +113,8 @@ class ServerHandshake:
             try:
                 verify_key.verify(signed_data, client_sig)
             except nacl.exceptions.BadSignatureError:
-                self.logger.error("Bad signature from client")
+                # 서명 검증 실패는 위·변조 시도로 볼 수 있어 보안 로그로 기록한다.
+                self._log_security("Bad signature from client")
                 return None
                 
             self.logger.info("Client signature verified. Identity authorized.")

@@ -154,9 +154,12 @@ class PublicListener:
                     try:
                         data = await data_codec.read_frame()
                     except Exception as e:
-                        # 복호화/압축 해제 실패 등은 여기서 발생할 수 있다.
-                        # 실제 문제 원인 파악을 위해 예외를 상세 로그로 남긴다.
-                        self.logger.exception(f"클라이언트→공용 read_frame 예외: {e}")
+                        # read_frame에서 길이 초과 등 비정상 데이터가 감지되면 공격 시도일 수 있다.
+                        # 예외를 기록하고 해당 연결만 종료해 서버 전체가 멈추지 않게 한다.
+                        if isinstance(e, ValueError):
+                            self.logger.warning(f"SECURITY: Invalid data frame on data channel: {e}")
+                        else:
+                            self.logger.exception(f"클라이언트→공용 read_frame 예외: {e}")
                         break
                     if not data: break # End of stream check? Length 0?
                     # Special check: Length 0 frame might be heartbeat or keepalive?
@@ -282,7 +285,13 @@ class ControlSession:
     async def run(self):
         try:
             while self.is_active:
-                data = await self.codec.read_frame()
+                try:
+                    data = await self.codec.read_frame()
+                except ValueError as e:
+                    # 프레임 길이 과다 등 비정상 데이터는 공격 시도 가능성이 있다.
+                    # 보안 로그로 남기고 세션을 종료해 서버 전체가 멈추지 않게 한다.
+                    self.logger.warning(f"SECURITY: Invalid control frame: {e}")
+                    break
                 if not data: break
                 
                 # Parse | Type | Flags | StreamID | Payload |
@@ -435,34 +444,35 @@ class Server:
         payload 포맷: | token_len(4) | token | conn_id_len(4) | conn_id |
         """
         if len(payload) < 8:
-            self.logger.warning("DATA_CONN_READY payload too short")
+            # 페이로드가 최소 길이보다 짧으면 비정상 데이터로 간주한다.
+            self.logger.warning("SECURITY: DATA_CONN_READY payload too short")
             return None
         token_len = struct.unpack(">I", payload[0:4])[0]
         if token_len != HMAC_TOKEN_LEN:
-            self.logger.warning(f"Invalid HMAC token length: {token_len}")
+            self.logger.warning(f"SECURITY: Invalid HMAC token length: {token_len}")
             return None
         offset = 4
         if len(payload) < offset + token_len + 4:
-            self.logger.warning("DATA_CONN_READY payload truncated (token)")
+            self.logger.warning("SECURITY: DATA_CONN_READY payload truncated (token)")
             return None
         token = payload[offset:offset + token_len]
         offset += token_len
         conn_id_len = struct.unpack(">I", payload[offset:offset + 4])[0]
         offset += 4
         if conn_id_len == 0 or conn_id_len > MAX_CONN_ID_LEN:
-            self.logger.warning(f"Invalid conn_id length: {conn_id_len}")
+            self.logger.warning(f"SECURITY: Invalid conn_id length: {conn_id_len}")
             return None
         if len(payload) < offset + conn_id_len:
-            self.logger.warning("DATA_CONN_READY payload truncated (conn_id)")
+            self.logger.warning("SECURITY: DATA_CONN_READY payload truncated (conn_id)")
             return None
         try:
             conn_id = payload[offset:offset + conn_id_len].decode("utf-8")
         except UnicodeDecodeError:
-            self.logger.warning("DATA_CONN_READY conn_id decode failed")
+            self.logger.warning("SECURITY: DATA_CONN_READY conn_id decode failed")
             return None
         expected = hmac.new(session_hmac_key, conn_id.encode("utf-8"), hashlib.sha256).digest()
         if not hmac.compare_digest(token, expected):
-            self.logger.warning("DATA_CONN_READY HMAC verification failed")
+            self.logger.warning("SECURITY: DATA_CONN_READY HMAC verification failed")
             return None
         return conn_id
 
@@ -489,7 +499,13 @@ class Server:
 
         # 2. Check First Packet for Intent (Control vs Data)
         try:
-            first_frame_bytes = await codec.read_frame()
+            try:
+                first_frame_bytes = await codec.read_frame()
+            except ValueError as e:
+                # 첫 프레임부터 비정상 길이면 공격 시도로 보고 기록 후 종료한다.
+                self.logger.warning(f"SECURITY: Invalid first frame: {e}")
+                await codec.close()
+                return
             if len(first_frame_bytes) < 6:
                 # 헤더가 부족하면 정상 메시지로 볼 수 없어 종료한다.
                 self.logger.warning("첫 프레임 길이가 너무 짧아 연결 종료")
@@ -503,11 +519,13 @@ class Server:
             if msg_type == MsgType.DATA_CONN_READY:
                 # 데이터 채널은 이미 승인된 제어 세션의 HMAC 토큰으로만 허용한다.
                 if not self.active_client_key or not self.active_session_hmac_key:
-                    self.logger.warning("No active control session. Data channel ignored.")
+                    # 활성 제어 세션이 없는데 데이터 채널이 오면 비정상 시도로 간주한다.
+                    self.logger.warning("SECURITY: No active control session. Data channel ignored.")
                     await codec.close()
                     return
                 if client_key != self.active_client_key:
-                    self.logger.warning("Data channel from different client ignored.")
+                    # 다른 클라이언트 키로 데이터 채널이 접속하면 차단한다.
+                    self.logger.warning("SECURITY: Data channel from different client ignored.")
                     await codec.close()
                     return
                 payload = first_frame_bytes[6:]
