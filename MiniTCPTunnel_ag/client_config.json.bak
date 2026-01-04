@@ -1,0 +1,7 @@
+{
+  "server_host": "127.0.0.1",
+  "server_port": 9000,
+  "server_pub_key": null,
+  "identity_private_key_hex": "6417629498c9a8c4bb6e5863f4a0fdfbb840595a3cff0f7cac43d58e28219beb",
+  "tunnels": []
+}

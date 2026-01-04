@@ -1,0 +1,14 @@
+{
+  "server_host": "127.0.0.1",
+  "server_port": 9010,
+  "identity_private_key_hex": "60e865f12e8798e6c7ab4e652cb90a2bdd56b509d73d63321946002f254fdcf8",
+  "tunnels": [
+    {
+      "id": "test-echo-tunnel",
+      "remote_port": 9999,
+      "local_host": "127.0.0.1",
+      "local_port": 9980,
+      "auto_start": true
+    }
+  ]
+}
