@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QFormLayout, QLineEdit, 
-    QDialogButtonBox, QMessageBox
+    QDialogButtonBox, QMessageBox, QCheckBox
 )
 
 class AddTunnelDialog(QDialog):
@@ -21,6 +21,7 @@ class AddTunnelDialog(QDialog):
         remote_val = str(self.current_data['remote_port']) if self.current_data else ""
         local_host_val = self.current_data['local_host'] if self.current_data else "127.0.0.1"
         local_port_val = str(self.current_data['local_port']) if self.current_data else ""
+        auto_start_val = bool(self.current_data.get('auto_start')) if self.current_data else False
 
         self.inp_id = QLineEdit(id_val)
         self.inp_id.setPlaceholderText("e.g. web-server-1")
@@ -32,11 +33,16 @@ class AddTunnelDialog(QDialog):
         
         self.inp_local_port = QLineEdit(local_port_val)
         self.inp_local_port.setPlaceholderText("e.g. 80")
+        
+        # Auto Start 체크박스
+        self.chk_auto_start = QCheckBox("Auto Start")
+        self.chk_auto_start.setChecked(auto_start_val)
 
         form.addRow("Tunnel ID:", self.inp_id)
         form.addRow("Remote Port:", self.inp_remote)
         form.addRow("Local Host:", self.inp_local_host)
         form.addRow("Local Port:", self.inp_local_port)
+        form.addRow("Auto Start:", self.chk_auto_start)
         
         layout.addLayout(form)
 
@@ -50,7 +56,8 @@ class AddTunnelDialog(QDialog):
             "id": self.inp_id.text().strip(),
             "remote_port": int(self.inp_remote.text().strip()),
             "local_host": self.inp_local_host.text().strip(),
-            "local_port": int(self.inp_local_port.text().strip())
+            "local_port": int(self.inp_local_port.text().strip()),
+            "auto_start": self.chk_auto_start.isChecked()
         }
     
     def accept(self):

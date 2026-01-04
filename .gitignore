@@ -5,3 +5,7 @@ MMMarkDown/MDDoc
 MMMarkDown/mindmap.mmm
 InvokeComfyUI/output
 .claude/settings.local.json
+MiniTCPTunnel_ag/server.9000.err.log
+MiniTCPTunnel_ag/server.9000.out.log
+MiniTCPTunnel_ag/server.err.log
+MiniTCPTunnel_ag/server.out.log

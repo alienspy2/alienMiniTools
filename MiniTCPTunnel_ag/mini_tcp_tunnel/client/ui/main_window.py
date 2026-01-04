@@ -203,7 +203,6 @@ class MainWindow(QMainWindow):
         for vm in self.app_state.tunnels:
             if vm.tid not in self.cards:
                 card = TunnelCard(vm)
-                card.request_enabled_change.connect(self.on_tunnel_enabled_change)
                 card.request_edit.connect(self.on_tunnel_edit)
                 card.request_delete.connect(self.on_tunnel_delete)
                 # My scroll_layout has stretch at end.
@@ -245,13 +244,6 @@ class MainWindow(QMainWindow):
         #     ControlClient가 Open/Close 요청을 전송한다.
         asyncio.create_task(self.client.sync_tunnels(configs))
 
-    @Slot(str, bool)
-    def on_tunnel_enabled_change(self, tid, enabled):
-        vm = next((t for t in self.app_state.tunnels if t.tid == tid), None)
-        if vm:
-            vm.enabled = enabled
-            self.save_config()
-
     @Slot(str)
     def on_tunnel_edit(self, tid):
         # Find VM
@@ -265,7 +257,8 @@ class MainWindow(QMainWindow):
             "id": vm.tid,
             "remote_port": vm.remote_port,
             "local_host": vm.local_host,
-            "local_port": vm.local_port
+            "local_port": vm.local_port,
+            "auto_start": vm.enabled
         }
         
         dlg = AddTunnelDialog(self, current_data=data)
@@ -287,7 +280,13 @@ class MainWindow(QMainWindow):
                 self.app_state.tunnels.remove(vm)
                 self.refresh_tunnels() # This removes old card
                 
-                new_vm = TunnelViewModel(new_tid, new_data['remote_port'], new_data['local_host'], new_data['local_port'])
+                new_vm = TunnelViewModel(
+                    new_tid,
+                    new_data['remote_port'],
+                    new_data['local_host'],
+                    new_data['local_port'],
+                    enabled=new_data.get('auto_start', False)
+                )
                 self.app_state.tunnels.append(new_vm)
                 self.refresh_tunnels() # Adds new card
                 
@@ -306,6 +305,7 @@ class MainWindow(QMainWindow):
                 vm.remote_port = new_data['remote_port']
                 vm.local_host = new_data['local_host']
                 vm.local_port = new_data['local_port']
+                vm.enabled = new_data.get('auto_start', False)
                 # Card update (text)
                 if tid in self.cards:
                     # Update labels manually or refresh?
@@ -417,7 +417,13 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Error", f"Tunnel ID '{tid}' already exists.")
                 return
             
-            vm = TunnelViewModel(tid, data['remote_port'], data['local_host'], data['local_port'])
+            vm = TunnelViewModel(
+                tid,
+                data['remote_port'],
+                data['local_host'],
+                data['local_port'],
+                enabled=data.get('auto_start', False)
+            )
             self.app_state.tunnels.append(vm)
             self.refresh_tunnels()
             self.save_config()

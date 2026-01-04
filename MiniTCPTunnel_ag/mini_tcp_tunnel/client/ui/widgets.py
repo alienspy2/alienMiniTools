@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QFrame, QGraphicsDropShadowEffect, QCheckBox
+    QFrame, QGraphicsDropShadowEffect
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
@@ -12,7 +12,6 @@ class TunnelCard(QFrame):
     """
     request_delete = Signal(str) # Emits tunnel_id
     request_edit = Signal(str)
-    request_enabled_change = Signal(str, bool) # tid, enabled
 
     def __init__(self, tunnel_vm):
         super().__init__()
@@ -39,20 +38,15 @@ class TunnelCard(QFrame):
 
         layout = QVBoxLayout(self)
         
-        # Header: Checkbox + ID + Status
+        # Header: ID + Status
         header_layout = QHBoxLayout()
         
-        self.chk_enabled = QCheckBox()
-        self.chk_enabled.setChecked(self.tunnel_vm.enabled)
-        self.chk_enabled.stateChanged.connect(self.on_enabled_change)
-
         self.lbl_id = QLabel(self.tunnel_vm.tid)
         self.lbl_id.setStyleSheet("font-weight: bold; font-size: 14px; color: #FFFFFF;")
         
         self.lbl_status_dot = QLabel("●")
         self.lbl_status_dot.setFixedSize(20, 20)
         
-        header_layout.addWidget(self.chk_enabled)
         header_layout.addWidget(self.lbl_id)
         header_layout.addStretch()
         header_layout.addWidget(self.lbl_status_dot)
@@ -89,10 +83,6 @@ class TunnelCard(QFrame):
         layout.addLayout(header_layout)
         layout.addWidget(self.lbl_mapping)
         layout.addLayout(footer_layout)
-
-    def on_enabled_change(self, state):
-        enabled = (state == Qt.Checked)
-        self.request_enabled_change.emit(self.tunnel_vm.tid, enabled)
 
     def on_delete_click(self):
         self.request_delete.emit(self.tunnel_vm.tid)
