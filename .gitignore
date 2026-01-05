@@ -14,3 +14,5 @@ MiniTCPTunnel_ag/client_config.json
 MiniTCPTunnel_ag/server.log
 MiniTCPTunnel_ag/simple_echo.log
 MiniTCPTunnel_ag/tests/test_http_echo/test_server.log
+MMMarkDown/mmm_app.lock
+MMMarkDown/mmm_config.json
