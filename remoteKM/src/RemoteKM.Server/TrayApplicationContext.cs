@@ -28,6 +28,34 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add("Settings...", null, (_, _) => ShowSettings());
         menu.Items.Add(new ToolStripSeparator());
+
+        var autoStartItem = new ToolStripMenuItem("Start with Windows");
+        autoStartItem.Checked = TaskSchedulerService.IsTaskRegistered();
+        autoStartItem.Click += (_, _) =>
+        {
+            try
+            {
+                var isRegistered = TaskSchedulerService.ToggleRegistration();
+                autoStartItem.Checked = isRegistered;
+
+                var message = isRegistered
+                    ? "RemoteKM Server will start automatically when you log in."
+                    : "Automatic startup has been disabled.";
+
+                _notifyIcon.ShowBalloonTip(3000, "RemoteKM Server", message, ToolTipIcon.Info);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Failed to update startup settings:\n{ex.Message}",
+                    "RemoteKM Server",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        };
+        menu.Items.Add(autoStartItem);
+        menu.Items.Add(new ToolStripSeparator());
+
         menu.Items.Add("Quit", null, (_, _) => ExitThread());
 
         _trayIcon = LoadTrayIcon();
