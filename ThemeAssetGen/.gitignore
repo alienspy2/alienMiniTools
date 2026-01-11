@@ -1,0 +1,63 @@
+# Logs
+logs/
+*.log
+log.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.pyo
+.Python
+pip-log.txt
+
+# Data directories
+data/
+
+# Hunyuan models (large files)
+hunyuan2/
+hunyuan21/
+
+# Model weights (large files)
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.bin
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+*.env
+venv/
+.venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+desktop.ini
+
+# Claude Code
+.claude/
+
+# Temp/test files
+bash_test.txt
+0.31.0
+
+# Generated/cache
+*.cache
+gradio_cache/
+.gradio/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

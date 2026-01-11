@@ -1,0 +1,22 @@
+# FastAPI
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+
+# Database
+sqlalchemy>=2.0.0
+
+# HTTP Client
+aiohttp>=3.9.0
+
+# Gradio Client (Hunyuan3D 연동)
+gradio_client>=1.0.0
+
+# Data validation
+pydantic>=2.0.0
+
+# 3D 모델 변환
+trimesh>=4.0.0
+
+# 유틸리티
+python-dotenv>=1.0.0

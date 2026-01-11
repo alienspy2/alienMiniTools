@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThemeAssetGen - 3D 에셋 생성기</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>ThemeAssetGen</h1>
+            <span class="subtitle">테마 기반 3D 에셋 자동 생성</span>
+        </header>
+
+        <!-- 테마 입력 -->
+        <section class="theme-input">
+            <h2>테마 입력</h2>
+            <form id="themeForm">
+                <input type="text" id="themeInput" placeholder="테마를 입력하세요 (예: 중세 판타지 성)" required>
+                <button type="submit" id="generateBtn">에셋 생성</button>
+            </form>
+        </section>
+
+        <!-- 카탈로그 선택 -->
+        <section class="catalog-section" id="catalogSection" style="display:none;">
+            <h2>카탈로그</h2>
+            <select id="catalogSelect">
+                <option value="">카탈로그 선택...</option>
+            </select>
+            <button id="loadCatalogBtn">불러오기</button>
+            <button id="addAssetsBtn">10개 추가</button>
+        </section>
+
+        <!-- 에셋 리스트 -->
+        <section class="asset-list" id="assetSection" style="display:none;">
+            <div class="section-header">
+                <h2>에셋 리스트</h2>
+                <div class="actions">
+                    <button id="generateAllBtn">전체 생성</button>
+                    <button id="exportBtn">내보내기 (ZIP)</button>
+                </div>
+            </div>
+            <div id="assetList"></div>
+        </section>
+
+        <!-- 생성 진행률 -->
+        <section class="progress-section" id="progressSection" style="display:none;">
+            <h2>생성 진행률</h2>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">대기 중...</div>
+        </section>
+
+        <!-- 3D 뷰어 -->
+        <section class="viewer-section" id="viewerSection" style="display:none;">
+            <h2>3D 미리보기</h2>
+            <div id="viewer3d"></div>
+            <div class="viewer-controls">
+                <button id="downloadGlb">GLB 다운로드</button>
+                <button id="downloadObj">OBJ 다운로드</button>
+            </div>
+        </section>
+    </div>
+
+    <!-- 에셋 편집 모달 -->
+    <div class="modal" id="editModal" style="display:none;">
+        <div class="modal-content">
+            <h3>에셋 편집</h3>
+            <form id="editForm">
+                <input type="hidden" id="editAssetId">
+                <label>영문 이름</label>
+                <input type="text" id="editName">
+                <label>한글 이름</label>
+                <input type="text" id="editNameKr">
+                <label>카테고리</label>
+                <select id="editCategory">
+                    <option value="prop">소품</option>
+                    <option value="furniture">가구</option>
+                    <option value="wall">벽</option>
+                    <option value="ceiling">천장</option>
+                    <option value="floor">바닥</option>
+                    <option value="decoration">장식</option>
+                    <option value="lighting">조명</option>
+                    <option value="other">기타</option>
+                </select>
+                <label>설명</label>
+                <textarea id="editDescription"></textarea>
+                <label>2D 생성 프롬프트</label>
+                <textarea id="editPrompt2d"></textarea>
+                <div class="modal-actions">
+                    <button type="submit">저장</button>
+                    <button type="button" id="cancelEdit">취소</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/3d-viewer.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

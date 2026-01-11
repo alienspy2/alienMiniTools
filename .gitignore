@@ -17,3 +17,16 @@ MiniTCPTunnel_ag/tests/test_http_echo/test_server.log
 remoteKM/nul
 MMMarkDown/mmm_app.lock
 MMMarkDown/mmm_config.json
+
+# ThemeAssetGen
+ThemeAssetGen/data/
+ThemeAssetGen/logs/
+ThemeAssetGen/hunyuan2/
+ThemeAssetGen/hunyuan21/
+ThemeAssetGen/.claude/
+ThemeAssetGen/nul
+ThemeAssetGen/bash_test.txt
+ThemeAssetGen/0.31.0
+ThemeAssetGen/log.txt
+ThemeAssetGen/**/__pycache__/
+ThemeAssetGen/*.db
