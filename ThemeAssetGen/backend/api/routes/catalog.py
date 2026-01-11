@@ -78,9 +78,9 @@ async def delete_catalog(catalog_id: str, db: Session = Depends(get_db)):
     return {"message": "Catalog deleted"}
 
 
-@router.post("/{catalog_id}/generate-all")
-async def generate_all_assets(catalog_id: str, db: Session = Depends(get_db)):
-    """전체 에셋 배치 생성 시작"""
+@router.post("/{catalog_id}/generate-2d")
+async def generate_2d_assets(catalog_id: str, db: Session = Depends(get_db)):
+    """2D 이미지 배치 생성 시작"""
     catalog = db.query(Catalog).filter(Catalog.id == catalog_id).first()
     if not catalog:
         raise HTTPException(status_code=404, detail="Catalog not found")
@@ -89,26 +89,53 @@ async def generate_all_assets(catalog_id: str, db: Session = Depends(get_db)):
     import logging
     logger = logging.getLogger(__name__)
 
-    async def run_batch_generation():
-        """별도 세션으로 배치 생성 실행"""
+    async def run_2d_batch():
         from backend.models.database import SessionLocal
         from backend.services.pipeline_service import PipelineService
 
         batch_db = SessionLocal()
         try:
-            logger.info(f"[BATCH-API] 배치 생성 백그라운드 태스크 시작: {catalog_id}")
+            logger.info(f"[BATCH-2D-API] 2D 배치 생성 시작: {catalog_id}")
             pipeline = PipelineService(batch_db)
-            await pipeline.generate_batch(catalog_id)
-            logger.info(f"[BATCH-API] 배치 생성 완료: {catalog_id}")
+            await pipeline.generate_2d_batch(catalog_id)
+            logger.info(f"[BATCH-2D-API] 2D 배치 생성 완료: {catalog_id}")
         except Exception as e:
-            logger.error(f"[BATCH-API] 배치 생성 실패: {catalog_id} - {e}")
+            logger.error(f"[BATCH-2D-API] 2D 배치 생성 실패: {catalog_id} - {e}")
         finally:
             batch_db.close()
 
-    # 백그라운드 태스크로 실행
-    asyncio.create_task(run_batch_generation())
+    asyncio.create_task(run_2d_batch())
+    return {"message": "2D batch generation started", "catalog_id": catalog_id}
 
-    return {"message": "Batch generation started", "catalog_id": catalog_id}
+
+@router.post("/{catalog_id}/generate-3d")
+async def generate_3d_assets(catalog_id: str, db: Session = Depends(get_db)):
+    """3D 모델 배치 생성 시작 (2D 이미지가 있는 에셋만)"""
+    catalog = db.query(Catalog).filter(Catalog.id == catalog_id).first()
+    if not catalog:
+        raise HTTPException(status_code=404, detail="Catalog not found")
+
+    import asyncio
+    import logging
+    logger = logging.getLogger(__name__)
+
+    async def run_3d_batch():
+        from backend.models.database import SessionLocal
+        from backend.services.pipeline_service import PipelineService
+
+        batch_db = SessionLocal()
+        try:
+            logger.info(f"[BATCH-3D-API] 3D 배치 생성 시작: {catalog_id}")
+            pipeline = PipelineService(batch_db)
+            await pipeline.generate_3d_batch(catalog_id)
+            logger.info(f"[BATCH-3D-API] 3D 배치 생성 완료: {catalog_id}")
+        except Exception as e:
+            logger.error(f"[BATCH-3D-API] 3D 배치 생성 실패: {catalog_id} - {e}")
+        finally:
+            batch_db.close()
+
+    asyncio.create_task(run_3d_batch())
+    return {"message": "3D batch generation started", "catalog_id": catalog_id}
 
 
 @router.get("/{catalog_id}/export")

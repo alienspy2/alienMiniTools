@@ -10,61 +10,70 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>ThemeAssetGen</h1>
-            <span class="subtitle">테마 기반 3D 에셋 자동 생성</span>
-        </header>
+    <!-- 상단 스크롤 영역 -->
+    <div class="main-content" id="mainContent">
+        <div class="container">
+            <header>
+                <h1>ThemeAssetGen</h1>
+                <span class="subtitle">테마 기반 3D 에셋 자동 생성</span>
+            </header>
 
-        <!-- 테마 입력 -->
-        <section class="theme-input">
-            <h2>테마 입력</h2>
-            <form id="themeForm">
-                <input type="text" id="themeInput" placeholder="테마를 입력하세요 (예: 중세 판타지 성)" required>
-                <button type="submit" id="generateBtn">에셋 생성</button>
-            </form>
-        </section>
+            <!-- 테마 입력 -->
+            <section class="theme-input">
+                <h2>테마 입력</h2>
+                <form id="themeForm">
+                    <input type="text" id="themeInput" placeholder="테마를 입력하세요 (예: 중세 판타지 성)" required>
+                    <button type="submit" id="generateBtn">에셋 생성</button>
+                </form>
+            </section>
 
-        <!-- 카탈로그 선택 -->
-        <section class="catalog-section" id="catalogSection" style="display:none;">
-            <h2>카탈로그</h2>
-            <select id="catalogSelect">
-                <option value="">카탈로그 선택...</option>
-            </select>
-            <button id="loadCatalogBtn">불러오기</button>
-            <button id="addAssetsBtn">10개 추가</button>
-        </section>
+            <!-- 카탈로그 선택 -->
+            <section class="catalog-section" id="catalogSection" style="display:none;">
+                <h2>카탈로그</h2>
+                <select id="catalogSelect">
+                    <option value="">카탈로그 선택...</option>
+                </select>
+                <button id="loadCatalogBtn">불러오기</button>
+                <button id="addAssetsBtn">10개 추가</button>
+            </section>
 
-        <!-- 에셋 리스트 -->
-        <section class="asset-list" id="assetSection" style="display:none;">
-            <div class="section-header">
-                <h2>에셋 리스트</h2>
-                <div class="actions">
-                    <button id="generateAllBtn">전체 생성</button>
-                    <button id="exportBtn">내보내기 (ZIP)</button>
+            <!-- 에셋 리스트 -->
+            <section class="asset-list" id="assetSection" style="display:none;">
+                <div class="section-header">
+                    <h2>에셋 리스트</h2>
+                    <div class="actions">
+                        <button id="generate2DBtn">2D 생성</button>
+                        <button id="generate3DBtn">3D 생성</button>
+                        <button id="exportBtn">내보내기 (ZIP)</button>
+                    </div>
                 </div>
-            </div>
-            <div id="assetList"></div>
-        </section>
+                <div id="assetList"></div>
+            </section>
 
-        <!-- 생성 진행률 -->
-        <section class="progress-section" id="progressSection" style="display:none;">
-            <h2>생성 진행률</h2>
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <div class="progress-text" id="progressText">대기 중...</div>
-        </section>
+            <!-- 생성 진행률 -->
+            <section class="progress-section" id="progressSection" style="display:none;">
+                <h2>생성 진행률</h2>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">대기 중...</div>
+            </section>
+        </div>
+    </div>
 
-        <!-- 3D 뷰어 -->
-        <section class="viewer-section" id="viewerSection" style="display:none;">
-            <h2>3D 미리보기</h2>
+    <!-- 하단 고정 3D 뷰어 패널 -->
+    <div class="viewer-panel collapsed" id="viewerPanel">
+        <div class="viewer-header" id="viewerHeader">
+            <span class="viewer-title">3D 미리보기</span>
+            <div class="viewer-header-controls">
+                <button id="downloadGlb" class="btn-small">GLB</button>
+                <button id="downloadObj" class="btn-small">OBJ</button>
+                <button id="toggleViewer" class="btn-toggle">▲</button>
+            </div>
+        </div>
+        <div class="viewer-content" id="viewerContent">
             <div id="viewer3d"></div>
-            <div class="viewer-controls">
-                <button id="downloadGlb">GLB 다운로드</button>
-                <button id="downloadObj">OBJ 다운로드</button>
-            </div>
-        </section>
+        </div>
     </div>
 
     <!-- 에셋 편집 모달 -->

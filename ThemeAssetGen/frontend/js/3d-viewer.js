@@ -2,18 +2,29 @@
 
 class Viewer3D {
     constructor(containerId) {
-        this.container = document.getElementById(containerId);
+        this.containerId = containerId;
+        this.container = null;
         this.scene = null;
         this.camera = null;
         this.renderer = null;
         this.controls = null;
         this.currentModel = null;
         this.animationId = null;
-
-        this.init();
+        this.initialized = false;
     }
 
     init() {
+        if (this.initialized) return;
+
+        this.container = document.getElementById(this.containerId);
+        if (!this.container) return;
+
+        // 컨테이너가 보이지 않으면 초기화 건너뛰기
+        if (this.container.clientWidth === 0 || this.container.clientHeight === 0) {
+            return;
+        }
+
+        this.initialized = true;
         // Scene
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x1a1a2e);
@@ -75,6 +86,17 @@ class Viewer3D {
 
     loadModel(url) {
         return new Promise((resolve, reject) => {
+            // 지연 초기화 - 처음 로드할 때 초기화
+            if (!this.initialized) {
+                this.init();
+            }
+
+            // 초기화 실패 시
+            if (!this.initialized) {
+                reject(new Error('3D 뷰어 초기화 실패'));
+                return;
+            }
+
             // 기존 모델 제거
             if (this.currentModel) {
                 this.scene.remove(this.currentModel);
@@ -87,23 +109,30 @@ class Viewer3D {
                 (gltf) => {
                     this.currentModel = gltf.scene;
 
-                    // 모델 중앙 정렬 및 크기 조정
+                    // 모델 크기 조정
                     const box = new THREE.Box3().setFromObject(this.currentModel);
-                    const center = box.getCenter(new THREE.Vector3());
                     const size = box.getSize(new THREE.Vector3());
-
                     const maxDim = Math.max(size.x, size.y, size.z);
                     const scale = 2 / maxDim;
                     this.currentModel.scale.multiplyScalar(scale);
 
-                    this.currentModel.position.sub(center.multiplyScalar(scale));
-                    this.currentModel.position.y = 0;
+                    // 스케일 적용 후 바운딩 박스 재계산
+                    const scaledBox = new THREE.Box3().setFromObject(this.currentModel);
+                    const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+                    const scaledMin = scaledBox.min;
+
+                    // XZ 중앙 정렬, Y는 바닥이 그리드 위에 오도록 배치
+                    this.currentModel.position.x = -scaledCenter.x;
+                    this.currentModel.position.z = -scaledCenter.z;
+                    this.currentModel.position.y = -scaledMin.y;  // 바닥을 y=0에 배치
 
                     this.scene.add(this.currentModel);
 
-                    // 카메라 위치 조정
+                    // 모델 높이에 따라 카메라 타겟 조정
+                    const scaledSize = scaledBox.getSize(new THREE.Vector3());
+                    const targetY = scaledSize.y / 2;
                     this.camera.position.set(3, 2, 3);
-                    this.controls.target.set(0, 0.5, 0);
+                    this.controls.target.set(0, targetY, 0);
                     this.controls.update();
 
                     resolve(gltf);

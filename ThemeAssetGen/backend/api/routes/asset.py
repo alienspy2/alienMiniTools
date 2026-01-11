@@ -8,6 +8,9 @@ router = APIRouter()
 
 def asset_to_response(asset: Asset) -> AssetResponse:
     """Asset 엔티티를 응답 스키마로 변환"""
+    # 캐시 버스팅을 위한 타임스탬프
+    cache_buster = int(asset.updated_at.timestamp()) if asset.updated_at else 0
+
     return AssetResponse(
         id=asset.id,
         name=asset.name,
@@ -17,7 +20,7 @@ def asset_to_response(asset: Asset) -> AssetResponse:
         prompt_2d=asset.prompt_2d,
         status=asset.status.value if asset.status else "pending",
         error_message=asset.error_message,
-        preview_url=f"/files/preview/{asset.id}" if asset.preview_image_path else None,
+        preview_url=f"/files/preview/{asset.id}?t={cache_buster}" if asset.preview_image_path else None,
         model_glb_url=f"/files/model/{asset.id}/glb" if asset.model_glb_path else None,
         model_obj_url=f"/files/model/{asset.id}/obj" if asset.model_obj_path else None,
         created_at=asset.created_at,
@@ -89,4 +92,35 @@ async def generate_asset(asset_id: str, db: Session = Depends(get_db)):
 
     pipeline = PipelineService(db)
     updated_asset = await pipeline.generate_single_asset(asset_id)
+    return asset_to_response(updated_asset)
+
+
+@router.post("/{asset_id}/generate-2d", response_model=AssetResponse)
+async def generate_asset_2d(asset_id: str, db: Session = Depends(get_db)):
+    """단일 에셋 2D 이미지만 생성 (재생성 가능)"""
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    from backend.services.pipeline_service import PipelineService
+
+    pipeline = PipelineService(db)
+    updated_asset = await pipeline._generate_2d_only(asset_id)
+    return asset_to_response(updated_asset)
+
+
+@router.post("/{asset_id}/generate-3d", response_model=AssetResponse)
+async def generate_asset_3d(asset_id: str, db: Session = Depends(get_db)):
+    """단일 에셋 3D 모델만 생성 (2D 이미지 필요)"""
+    asset = db.query(Asset).filter(Asset.id == asset_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    if not asset.preview_image_path:
+        raise HTTPException(status_code=400, detail="2D 이미지가 없습니다. 먼저 2D를 생성하세요.")
+
+    from backend.services.pipeline_service import PipelineService
+
+    pipeline = PipelineService(db)
+    updated_asset = await pipeline._generate_3d_only(asset_id)
     return asset_to_response(updated_asset)

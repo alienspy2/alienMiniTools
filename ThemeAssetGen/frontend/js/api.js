@@ -47,6 +47,22 @@ const api = {
         return response.json();
     },
 
+    async generateAsset2D(assetId) {
+        const response = await fetch(`${API_BASE}/asset/${assetId}/generate-2d`, {
+            method: 'POST',
+        });
+        if (!response.ok) throw new Error('2D 생성 실패');
+        return response.json();
+    },
+
+    async generateAsset3D(assetId) {
+        const response = await fetch(`${API_BASE}/asset/${assetId}/generate-3d`, {
+            method: 'POST',
+        });
+        if (!response.ok) throw new Error('3D 생성 실패');
+        return response.json();
+    },
+
     // 카탈로그 관련
     async getCatalogs() {
         const response = await fetch(`${API_BASE}/catalog/list`);
@@ -68,11 +84,19 @@ const api = {
         return response.json();
     },
 
-    async generateAllAssets(catalogId) {
-        const response = await fetch(`${API_BASE}/catalog/${catalogId}/generate-all`, {
+    async generate2DAssets(catalogId) {
+        const response = await fetch(`${API_BASE}/catalog/${catalogId}/generate-2d`, {
             method: 'POST',
         });
-        if (!response.ok) throw new Error('배치 생성 시작 실패');
+        if (!response.ok) throw new Error('2D 배치 생성 시작 실패');
+        return response.json();
+    },
+
+    async generate3DAssets(catalogId) {
+        const response = await fetch(`${API_BASE}/catalog/${catalogId}/generate-3d`, {
+            method: 'POST',
+        });
+        if (!response.ok) throw new Error('3D 배치 생성 시작 실패');
         return response.json();
     },
 

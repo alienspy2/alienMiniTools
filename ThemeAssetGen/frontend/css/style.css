@@ -9,6 +9,8 @@
     --success: #4ecca3;
     --warning: #ffc107;
     --error: #e94560;
+    --viewer-height: 350px;
+    --viewer-header-height: 50px;
 }
 
 * {
@@ -17,12 +19,25 @@
     padding: 0;
 }
 
+html, body {
+    height: 100%;
+    overflow: hidden;
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: var(--bg-color);
     color: var(--text);
-    min-height: 100vh;
     line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 메인 콘텐츠 (스크롤 영역) */
+.main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 20px;
 }
 
 .container {
@@ -207,6 +222,14 @@ button:disabled {
     background: var(--success);
 }
 
+.btn-2d {
+    background: #3498db;
+}
+
+.btn-3d {
+    background: #9b59b6;
+}
+
 .btn-view {
     background: #0f3460;
 }
@@ -265,19 +288,85 @@ button:disabled {
     font-weight: 500;
 }
 
-/* 3D 뷰어 */
-#viewer3d {
-    width: 100%;
-    height: 400px;
-    background: var(--bg-color);
-    border-radius: 8px;
-    margin-bottom: 15px;
+/* 하단 고정 3D 뷰어 패널 */
+.viewer-panel {
+    position: relative;
+    background: var(--card-bg);
+    border-top: 2px solid var(--border);
+    transition: height 0.3s ease;
+    height: calc(var(--viewer-height) + var(--viewer-header-height));
+    flex-shrink: 0;
 }
 
-.viewer-controls {
+.viewer-panel.collapsed {
+    height: var(--viewer-header-height);
+}
+
+.viewer-header {
+    height: var(--viewer-header-height);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+}
+
+.viewer-header:hover {
+    background: var(--bg-color);
+}
+
+.viewer-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.viewer-header-controls {
     display: flex;
     gap: 10px;
-    justify-content: center;
+    align-items: center;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 0.85em;
+    background: var(--border);
+}
+
+.btn-small:hover {
+    background: var(--accent);
+}
+
+.btn-toggle {
+    padding: 6px 12px;
+    font-size: 1em;
+    background: transparent;
+    border: 1px solid var(--border);
+    min-width: 40px;
+}
+
+.btn-toggle:hover {
+    background: var(--border);
+}
+
+.viewer-content {
+    height: var(--viewer-height);
+    overflow: hidden;
+    padding: 10px;
+}
+
+.viewer-panel.collapsed .viewer-content {
+    display: none;
+}
+
+#viewer3d {
+    width: 100%;
+    height: 100%;
+    background: var(--bg-color);
+    border-radius: 8px;
 }
 
 /* 모달 */
@@ -356,6 +445,14 @@ button:disabled {
     background: var(--success);
 }
 
+#generate2DBtn {
+    background: #3498db;
+}
+
+#generate3DBtn {
+    background: #9b59b6;
+}
+
 /* 로딩 */
 .loading {
     display: inline-block;
@@ -389,5 +486,9 @@ button:disabled {
 
     .theme-input form {
         flex-direction: column;
+    }
+
+    :root {
+        --viewer-height: 250px;
     }
 }
