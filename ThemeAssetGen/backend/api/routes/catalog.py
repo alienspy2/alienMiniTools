@@ -1,6 +1,7 @@
 import io
 import zipfile
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -172,10 +173,15 @@ async def export_catalog(catalog_id: str, db: Session = Depends(get_db)):
 
     zip_buffer.seek(0)
 
+    # 한글 파일명을 위한 RFC 5987 인코딩 (safe='' 로 모든 특수문자 인코딩)
+    filename_encoded = quote(f"{catalog.name}.zip", safe='')
+
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={catalog.name}.zip"}
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"
+        }
     )
 
 

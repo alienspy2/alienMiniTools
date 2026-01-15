@@ -371,6 +371,8 @@ async function startBatchGeneration(type, apiFunc, button) {
                     progressSection.style.display = 'none';
                     generate2DBtn.disabled = false;
                     generate3DBtn.disabled = false;
+                    generate2DBtn.textContent = '2D 모두 생성';
+                    generate3DBtn.textContent = '3D 모두 생성';
                 }, 2000);
             } else if (data.waiting) {
                 progressText.textContent = '서버 응답 대기 중...';
@@ -407,6 +409,8 @@ async function startBatchGeneration(type, apiFunc, button) {
         alert(`${typeLabel} 배치 생성 시작 실패: ` + error.message);
         generate2DBtn.disabled = false;
         generate3DBtn.disabled = false;
+        generate2DBtn.textContent = '2D 모두 생성';
+        generate3DBtn.textContent = '3D 모두 생성';
         progressSection.style.display = 'none';
         if (eventSource) eventSource.close();
     }

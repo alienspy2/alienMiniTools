@@ -263,10 +263,11 @@ class PipelineService:
         if not catalog:
             raise Exception(f"Catalog not found: {catalog_id}")
 
-        # 2D 이미지가 없는 에셋만 조회 (pending 또는 failed)
+        # 2D 이미지가 없는 에셋 조회 (pending, failed, 또는 2D 이미지 없는 모든 에셋)
         assets = self.db.query(Asset).filter(
             Asset.catalog_id == catalog_id,
-            Asset.status.in_([GenerationStatus.PENDING, GenerationStatus.FAILED])
+            (Asset.status.in_([GenerationStatus.PENDING, GenerationStatus.FAILED])) |
+            (Asset.preview_image_path.is_(None))
         ).all()
 
         total = len(assets)
@@ -362,10 +363,10 @@ class PipelineService:
         if not catalog:
             raise Exception(f"Catalog not found: {catalog_id}")
 
-        # 2D 이미지가 있고 3D가 아직 없는 에셋 (generating_3d 상태)
+        # 2D 이미지가 있고 3D가 아직 없는 에셋 (generating_3d 또는 failed 상태)
         assets = self.db.query(Asset).filter(
             Asset.catalog_id == catalog_id,
-            Asset.status == GenerationStatus.GENERATING_3D,
+            Asset.status.in_([GenerationStatus.GENERATING_3D, GenerationStatus.FAILED]),
             Asset.preview_image_path.isnot(None)
         ).all()
 
