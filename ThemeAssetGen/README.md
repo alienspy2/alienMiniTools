@@ -2,6 +2,18 @@
 
 테마를 입력하면 해당 테마에 맞는 3D 에셋을 자동 생성하는 웹 앱
 
+## 빠른 시작 (Quick Start)
+
+모든 서비스를 순서대로 실행해야 합니다.
+
+| 순서 | 실행 방법 | 설명 | 비고 |
+|:----:|-----------|------|------|
+| 1 | Ollama | LLM 서버 (에셋 리스트 생성) | 백그라운드 자동 실행 |
+| 2 | ComfyUI 실행 | 2D 이미지 생성 서버 | 포트 8188 |
+| 3 | `run_hunyuan2.bat` | 3D 모델 생성 서버 (Gradio) | 초기 로딩 1~2분 소요 |
+| 4 | `run_server.bat` | ThemeAssetGen 메인 서버 | 포트 8000 |
+| 5 | http://localhost:8000 접속 | 웹 브라우저에서 열기 | |
+
 ## 기능
 
 - 테마 입력 → AI가 에셋 리스트 자동 생성
@@ -47,20 +59,23 @@ ollama serve
 
 ### 3. ComfyUI 설치 (2D 이미지 생성)
 
-```bash
-# 저장소 클론
-git clone https://github.com/comfyanonymous/ComfyUI
-cd ComfyUI
+1. **ComfyUI 다운로드**
+   - [ComfyUI 릴리즈 페이지](https://github.com/comfyanonymous/ComfyUI/releases)에서 최신 버전 다운로드
+   - 압축 해제 후 실행
 
-# 의존성 설치
-pip install -r requirements.txt
+2. **Developer 모드 활성화**
+   - ComfyUI 실행 후 우측 상단 설정(⚙️) 클릭
+   - `Enable Dev mode Options` 활성화
 
-# 모델 다운로드 (SDXL 권장)
-# models/checkpoints/ 폴더에 sd_xl_base_1.0.safetensors 배치
+3. **포트 설정**
+   - Settings → `Server` 섹션
+   - `Port` 를 `8188` 로 변경
+   - ComfyUI 재시작
 
-# 실행
-python main.py --listen 0.0.0.0 --port 8188
-```
+4. **모델 설치**
+   - `models/checkpoints/` 폴더에 모델 배치
+   - 사용 모델: `dreamshaper_8LCM.safetensors` (SD 1.5 기반 LCM 모델)
+   - [다운로드 링크](https://civitai.com/models/4384/dreamshaper)
 
 **포트:** 8188
 
