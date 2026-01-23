@@ -146,9 +146,9 @@ async def export_catalog(catalog_id: str, db: Session = Depends(get_db)):
     if not catalog:
         raise HTTPException(status_code=404, detail="Catalog not found")
 
-    # ZIP 파일 생성
+    # ZIP 파일 생성 (compresslevel=1: 빠른 압축)
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
         for asset in catalog.assets:
             if asset.status != GenerationStatus.COMPLETED:
                 continue
@@ -170,6 +170,22 @@ async def export_catalog(catalog_id: str, db: Session = Depends(get_db)):
                 obj_path = Path(asset.model_obj_path)
                 if obj_path.exists():
                     zf.write(obj_path, f"{asset.name}/model.obj")
+
+            # description.txt 생성
+            description_content = f"""Name: {asset.name}
+Name (Korean): {asset.name_kr or ''}
+Category: {asset.category.value if asset.category else 'other'}
+
+=== Description ===
+{asset.description or 'No description available.'}
+
+=== 설명 ===
+{asset.description_kr or '설명이 없습니다.'}
+
+=== Generation Prompt ===
+{asset.prompt_2d or 'No prompt available.'}
+"""
+            zf.writestr(f"{asset.name}/description.txt", description_content.encode('utf-8'))
 
     zip_buffer.seek(0)
 

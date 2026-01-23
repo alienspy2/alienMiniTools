@@ -57,6 +57,7 @@ class PipelineService:
                 name_kr=item.get("name_kr", ""),
                 category=category,
                 description=item.get("description", ""),
+                description_kr=item.get("description_kr", ""),
                 prompt_2d=item.get("prompt_2d", ""),
                 status=GenerationStatus.PENDING,
             )
@@ -67,6 +68,7 @@ class PipelineService:
                 name_kr=asset.name_kr,
                 category=category.value,
                 description=asset.description,
+                description_kr=asset.description_kr,
                 prompt_2d=asset.prompt_2d,
             ))
 

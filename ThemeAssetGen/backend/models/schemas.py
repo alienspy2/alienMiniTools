@@ -14,6 +14,7 @@ class AssetEditRequest(BaseModel):
     name_kr: Optional[str] = None
     category: Optional[str] = None
     description: Optional[str] = None
+    description_kr: Optional[str] = None
     prompt_2d: Optional[str] = None
 
 
@@ -22,6 +23,7 @@ class AssetAddRequest(BaseModel):
     name_kr: str
     category: str
     description: str
+    description_kr: str
     prompt_2d: str
 
 
@@ -36,6 +38,7 @@ class AssetListItem(BaseModel):
     name_kr: str
     category: str
     description: str
+    description_kr: str
     prompt_2d: str
 
 
@@ -45,6 +48,7 @@ class AssetResponse(BaseModel):
     name_kr: Optional[str]
     category: str
     description: Optional[str]
+    description_kr: Optional[str]
     prompt_2d: Optional[str]
     status: str
     error_message: Optional[str]

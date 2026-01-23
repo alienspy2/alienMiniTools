@@ -17,6 +17,7 @@ def asset_to_response(asset: Asset) -> AssetResponse:
         name_kr=asset.name_kr,
         category=asset.category.value if asset.category else "other",
         description=asset.description,
+        description_kr=asset.description_kr,
         prompt_2d=asset.prompt_2d,
         status=asset.status.value if asset.status else "pending",
         error_message=asset.error_message,
@@ -61,6 +62,8 @@ async def update_asset(
             asset.category = AssetCategory.OTHER
     if request.description is not None:
         asset.description = request.description
+    if request.description_kr is not None:
+        asset.description_kr = request.description_kr
     if request.prompt_2d is not None:
         asset.prompt_2d = request.prompt_2d
 

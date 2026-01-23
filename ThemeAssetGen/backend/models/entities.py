@@ -65,6 +65,7 @@ class Asset(Base):
     name_kr = Column(String(255))
     category = Column(Enum(AssetCategory), default=AssetCategory.OTHER)
     description = Column(Text)
+    description_kr = Column(Text)
     prompt_2d = Column(Text)
 
     status = Column(Enum(GenerationStatus), default=GenerationStatus.PENDING)

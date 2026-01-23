@@ -24,7 +24,8 @@ ASSET_LIST_PROMPT = """당신은 전문 3D 환경 아티스트입니다.
       "name": "영문 이름 (snake_case)",
       "name_kr": "한글 이름",
       "category": "카테고리",
-      "description": "에셋에 대한 간단한 설명",
+      "description": "에셋에 대한 간단한 영문 설명 (1-2문장)",
+      "description_kr": "에셋에 대한 간단한 한글 설명 (1-2문장)",
       "prompt_2d": "2D 이미지 생성용 영문 프롬프트 (상세하게, 배경 없이, 단일 오브젝트, 스튜디오 조명)"
     }}
   ]
@@ -34,6 +35,7 @@ ASSET_LIST_PROMPT = """당신은 전문 3D 환경 아티스트입니다.
 ## 프롬프트 작성 규칙 (중요!)
 - 반드시 "isolated on pure white background" 또는 "on solid white background" 포함
 - "single object, centered" 포함
+- "full object visible, not cropped, entire object in frame" 포함
 - "no background, no shadow, no floor" 포함
 - "product photography style, studio lighting" 포함
 
@@ -45,8 +47,9 @@ ASSET_LIST_PROMPT = """당신은 전문 3D 환경 아티스트입니다.
       "name": "royal_throne",
       "name_kr": "왕좌",
       "category": "furniture",
-      "description": "화려한 장식의 중세 왕좌",
-      "prompt_2d": "medieval royal throne, ornate wooden chair with red velvet cushion, gold leaf decorations, carved armrests with lion heads, single object centered, isolated on pure white background, no shadow, no floor, product photography, studio lighting, 3D asset reference, high detail"
+      "description": "An ornate medieval throne with gold decorations and red velvet cushion, fit for royalty.",
+      "description_kr": "금색 장식과 빨간 벨벳 쿠션이 있는 화려한 중세 왕좌입니다. 왕실에 어울리는 가구입니다.",
+      "prompt_2d": "medieval royal throne, ornate wooden chair with red velvet cushion, gold leaf decorations, carved armrests with lion heads, single object centered, full object visible, not cropped, entire object in frame, isolated on pure white background, no shadow, no floor, product photography, studio lighting, 3D asset reference, high detail"
     }}
   ]
 }}
@@ -86,7 +89,8 @@ ADDITIONAL_ASSETS_PROMPT = """당신은 전문 3D 환경 아티스트입니다.
       "name": "영문 이름 (snake_case)",
       "name_kr": "한글 이름",
       "category": "카테고리",
-      "description": "에셋에 대한 간단한 설명",
+      "description": "에셋에 대한 간단한 영문 설명 (1-2문장)",
+      "description_kr": "에셋에 대한 간단한 한글 설명 (1-2문장)",
       "prompt_2d": "2D 이미지 생성용 영문 프롬프트 (상세하게, 배경 없이, 단일 오브젝트, 스튜디오 조명)"
     }}
   ]
@@ -96,6 +100,7 @@ ADDITIONAL_ASSETS_PROMPT = """당신은 전문 3D 환경 아티스트입니다.
 ## 프롬프트 작성 규칙 (중요!)
 - 반드시 "isolated on pure white background" 또는 "on solid white background" 포함
 - "single object, centered" 포함
+- "full object visible, not cropped, entire object in frame" 포함
 - "no background, no shadow, no floor" 포함
 - "product photography style, studio lighting" 포함
 
