@@ -18,7 +18,7 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:23000")
 COMFYUI_WORKFLOW_PATH = os.environ.get("COMFYUI_WORKFLOW_PATH", str(BASE_DIR / "backend" / "workflows" / "asset_generation.json"))
 
-HUNYUAN3D_URL = os.environ.get("HUNYUAN3D_URL", "http://127.0.0.1:7860")
+HUNYUAN3D_URL = os.environ.get("HUNYUAN3D_URL", "http://127.0.0.1:23003")
 
 # 타임아웃 설정 (초)
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "120"))
