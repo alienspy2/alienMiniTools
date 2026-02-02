@@ -10,3 +10,8 @@ dependencies = [
 
 [project.scripts]
 mmm = "mmm_app:main"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.18.0",
+]

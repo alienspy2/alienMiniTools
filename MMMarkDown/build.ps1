@@ -10,14 +10,15 @@ if (-not (Test-Path $dist)) { New-Item -ItemType Directory -Path $dist | Out-Nul
 
 Get-Process -Name MMMarkDown -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-conda run -n n8n python -m pip install --upgrade pyinstaller
+# Install pyinstaller using uv
+uv add --dev pyinstaller
 
 $exeName = 'MMMarkDown'
 $entry = Join-Path $root 'mmm_app.py'
 $icon = Join-Path $root 'assets\\mmm_app.ico'
 $static = Join-Path $root 'static'
 
-conda run -n n8n python -m PyInstaller --noconsole --onefile --name $exeName `
+uv run python -m PyInstaller --noconsole --onefile --name $exeName `
     --icon $icon `
     --add-data "$static;static" `
     --hidden-import=pystray._win32 `
