@@ -322,16 +322,20 @@ function handleMinimapClick(event) {
 }
 
 function handleWheel(event) {
-  if (!event.ctrlKey) {
-    return;
-  }
+  // 마우스 휠로 확대/축소 (Ctrl 키 없이도 동작)
   event.preventDefault();
   const zoomFactor = event.deltaY > 0 ? 1 / ZOOM_STEP : ZOOM_STEP;
   setZoom(state.zoom * zoomFactor, { x: event.clientX, y: event.clientY });
 }
 
 function startPan(event) {
-  if (event.button !== 1) {
+  // 좌클릭(0) 또는 중간 버튼(1)으로 패닝 시작
+  // 노드를 클릭한 경우에는 패닝하지 않음
+  if (event.button !== 0 && event.button !== 1) {
+    return;
+  }
+  // 노드나 버튼 클릭 시 패닝 방지
+  if (event.target.closest(".node") || event.target.closest("button")) {
     return;
   }
   event.preventDefault();
@@ -515,31 +519,65 @@ function layoutForest(rootId, nodes, edges) {
   const childrenMap = buildChildrenMap(edges);
   const positions = {};
   const visited = new Set();
+  const RADIUS_STEP = 350; // 각 레벨별 반지름 증가량
 
-  function walk(nodeId, depth, yTop) {
+  // 각 노드의 하위 트리에서 리프 노드 개수를 계산
+  function countLeaves(nodeId) {
     if (visited.has(nodeId)) {
-      return { height: Y_SPACING, center: yTop };
+      return 0;
     }
-    visited.add(nodeId);
     const children = childrenMap.get(nodeId) || [];
     if (children.length === 0) {
-      positions[nodeId] = { x: depth * X_SPACING, y: yTop };
-      return { height: Y_SPACING, center: yTop };
+      return 1;
     }
-    let currentY = yTop;
-    const centers = [];
+    let count = 0;
     for (const childId of children) {
-      const result = walk(childId, depth + 1, currentY);
-      centers.push(result.center);
-      currentY += result.height;
+      count += countLeaves(childId);
     }
-    if (centers.length === 0) {
-      positions[nodeId] = { x: depth * X_SPACING, y: yTop };
-      return { height: Y_SPACING, center: yTop };
+    return count;
+  }
+
+  // 방사형 레이아웃: 부모 주위로 자식들을 원형으로 배치
+  function walkRadial(nodeId, depth, angleStart, angleEnd, centerX, centerY) {
+    if (visited.has(nodeId)) {
+      return;
     }
-    const center = (centers[0] + centers[centers.length - 1]) / 2;
-    positions[nodeId] = { x: depth * X_SPACING, y: center };
-    return { height: Math.max(currentY - yTop, Y_SPACING), center };
+    visited.add(nodeId);
+
+    const angleSpan = angleEnd - angleStart;
+    const angle = (angleStart + angleEnd) / 2;
+    const radius = depth * RADIUS_STEP;
+
+    // 노드 위치 계산 (극좌표 -> 직교좌표)
+    const x = centerX + radius * Math.cos(angle);
+    const y = centerY + radius * Math.sin(angle);
+    positions[nodeId] = { x, y };
+
+    const children = childrenMap.get(nodeId) || [];
+    if (children.length === 0) {
+      return;
+    }
+
+    // 각 자식의 리프 노드 수에 따라 각도 할당
+    const leafCounts = children.map((childId) => {
+      visited.delete(childId); // countLeaves용 임시 해제
+      const count = countLeaves(childId);
+      return count || 1;
+    });
+    // countLeaves가 visited를 오염시키지 않도록 초기화
+    children.forEach((childId) => visited.delete(childId));
+
+    const totalLeaves = leafCounts.reduce((sum, c) => sum + c, 0);
+    let currentAngle = angleStart;
+
+    children.forEach((childId, index) => {
+      const proportion = leafCounts[index] / totalLeaves;
+      const childAngleSpan = angleSpan * proportion;
+      const childAngleStart = currentAngle;
+      const childAngleEnd = currentAngle + childAngleSpan;
+      walkRadial(childId, depth + 1, childAngleStart, childAngleEnd, centerX, centerY);
+      currentAngle = childAngleEnd;
+    });
   }
 
   const nodeIds = Object.keys(nodes);
@@ -547,25 +585,41 @@ function layoutForest(rootId, nodes, edges) {
     return { positions, bounds: { minX: 0, minY: 0, maxX: NODE_WIDTH, maxY: NODE_HEIGHT } };
   }
 
+  // 루트 노드들 찾기 (부모가 없는 노드들)
+  const parentMap = buildParentMap(edges);
   const roots = [];
   if (rootId && nodes[rootId]) {
     roots.push(rootId);
   }
   for (const nodeId of nodeIds) {
-    if (!roots.includes(nodeId)) {
+    if (!parentMap.has(nodeId) && !roots.includes(nodeId)) {
       roots.push(nodeId);
     }
   }
 
-  let yOffset = 0;
-  roots.forEach((nodeId) => {
-    if (visited.has(nodeId)) {
-      return;
-    }
-    const result = walk(nodeId, 0, yOffset);
-    yOffset += result.height + Y_SPACING;
-  });
+  // 캔버스 중심 계산 (여러 루트가 있을 경우를 대비)
+  const estimatedRadius = 4 * RADIUS_STEP; // 예상 최대 반지름
+  const centerX = estimatedRadius + PADDING;
+  const centerY = estimatedRadius + PADDING;
 
+  // 각 루트에 대해 방사형 레이아웃 적용
+  if (roots.length === 1) {
+    // 단일 루트: 전체 360도 사용
+    walkRadial(roots[0], 0, 0, 2 * Math.PI, centerX, centerY);
+  } else {
+    // 다중 루트: 각 루트에 균등하게 각도 할당
+    const anglePerRoot = (2 * Math.PI) / roots.length;
+    roots.forEach((nodeId, index) => {
+      if (visited.has(nodeId)) {
+        return;
+      }
+      const angleStart = index * anglePerRoot;
+      const angleEnd = (index + 1) * anglePerRoot;
+      walkRadial(nodeId, 0, angleStart, angleEnd, centerX, centerY);
+    });
+  }
+
+  // 경계 계산
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -607,14 +661,30 @@ function renderEdges(edges, positions, offsetX, offsetY) {
     if (!from || !to) {
       return;
     }
-    const startX = from.x + offsetX + NODE_WIDTH;
+    // 방사형 레이아웃: 노드 중심에서 중심으로 연결
+    const startX = from.x + offsetX + NODE_WIDTH / 2;
     const startY = from.y + offsetY + NODE_HEIGHT / 2;
-    const endX = to.x + offsetX;
+    const endX = to.x + offsetX + NODE_WIDTH / 2;
     const endY = to.y + offsetY + NODE_HEIGHT / 2;
+
+    // 베지어 곡선으로 부드럽게 연결
+    const dx = endX - startX;
+    const dy = endY - startY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const curveFactor = Math.min(dist * 0.3, 100);
+
+    // 중간 제어점 계산 (부모와 자식 사이의 곡선)
     const midX = (startX + endX) / 2;
+    const midY = (startY + endY) / 2;
+
+    // 수직 방향으로 곡선 생성
+    const perpX = -dy / dist * curveFactor;
+    const perpY = dx / dist * curveFactor;
+    const ctrlX = midX + perpX * 0.3;
+    const ctrlY = midY + perpY * 0.3;
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`);
+    path.setAttribute("d", `M ${startX} ${startY} Q ${ctrlX} ${ctrlY} ${endX} ${endY}`);
     path.setAttribute("fill", "none");
     path.setAttribute("stroke", "rgba(51, 39, 26, 0.3)");
     path.setAttribute("stroke-width", "2");
@@ -632,10 +702,12 @@ function attachNodeToggle(card, node, childrenMap) {
   toggle.type = "button";
   toggle.className = "node-toggle";
   toggle.textContent = isCollapsed ? "+" : "-";
-  toggle.title = isCollapsed ? "Expand" : "Collapse";
+  toggle.title = isCollapsed ? "Expand (Alt+click: expand all)" : "Collapse (Alt+click: collapse all)";
   toggle.addEventListener("click", (event) => {
     event.stopPropagation();
-    toggleNodeCollapse(node.id, !isCollapsed);
+    // Alt 키를 누른 상태면 모든 하위 노드도 함께 펼치기/접기
+    const recursive = event.altKey;
+    toggleNodeCollapse(node.id, !isCollapsed, recursive);
   });
   card.appendChild(toggle);
   if (isCollapsed) {
@@ -656,6 +728,10 @@ function attachNodeInteractions(card, nodeId) {
 function buildNodeCard(node, index, targetX, targetY, childrenMap) {
   const card = document.createElement("div");
   card.className = "node";
+  // 루트 노드 표시
+  if (node.id === state.data?.root) {
+    card.classList.add("node--root");
+  }
   if (node.id === state.selectedId) {
     card.classList.add("node--selected");
   }
@@ -984,8 +1060,61 @@ async function setNodeCollapsed(nodeId, collapsed, focusAfter = false) {
   }
 }
 
-async function toggleNodeCollapse(nodeId, collapsed) {
-  await setNodeCollapsed(nodeId, collapsed, true);
+async function toggleNodeCollapse(nodeId, collapsed, recursive = false) {
+  if (recursive) {
+    // Alt+클릭: 해당 노드와 모든 하위 노드를 재귀적으로 펼치기/접기
+    await toggleNodeCollapseRecursive(nodeId, collapsed);
+  } else {
+    await setNodeCollapsed(nodeId, collapsed, true);
+  }
+}
+
+// 하위 노드를 모두 수집하는 함수
+function collectDescendantIds(nodeId) {
+  const edges = state.data?.edges || [];
+  const childrenMap = buildChildrenMap(edges);
+  const descendants = [];
+
+  function walk(id) {
+    const children = childrenMap.get(id) || [];
+    for (const childId of children) {
+      descendants.push(childId);
+      walk(childId);
+    }
+  }
+
+  walk(nodeId);
+  return descendants;
+}
+
+// 모든 하위 노드를 재귀적으로 펼치기/접기
+async function toggleNodeCollapseRecursive(nodeId, collapsed) {
+  const descendants = collectDescendantIds(nodeId);
+  const allNodeIds = [nodeId, ...descendants];
+
+  try {
+    // 모든 노드를 순차적으로 처리 (서버 부하 방지를 위해)
+    for (const id of allNodeIds) {
+      const node = state.data?.nodes?.[id];
+      if (node) {
+        await apiPost("/api/node/collapse", { node_id: id, collapsed });
+      }
+    }
+    // 마지막에 상태 갱신
+    const result = await apiPost("/api/node/collapse", { node_id: nodeId, collapsed });
+    if (result?.state) {
+      state.selectedId = nodeId;
+      applyState(result.state);
+      if (!collapsed) {
+        requestAnimationFrame(() => {
+          focusSelected();
+        });
+      }
+    }
+    showToast(collapsed ? `${allNodeIds.length}개 노드 접음` : `${allNodeIds.length}개 노드 펼침`);
+  } catch (error) {
+    showToast(error.message, true);
+  }
 }
 
 function findMatchingNodeId(keyword) {

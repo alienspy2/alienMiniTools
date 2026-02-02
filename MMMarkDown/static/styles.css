@@ -190,6 +190,16 @@ button.ghost:hover {
   box-shadow: 0 14px 26px rgba(47, 127, 115, 0.25);
 }
 
+.node--root {
+  border: 3px solid #e53935;
+  box-shadow: 0 14px 26px rgba(229, 57, 53, 0.25);
+}
+
+.node--root.node--selected {
+  border: 3px solid #e53935;
+  box-shadow: 0 0 0 3px rgba(47, 127, 115, 0.4), 0 14px 26px rgba(229, 57, 53, 0.25);
+}
+
 .node-title {
   font-weight: 700;
   font-size: 13px;

@@ -1,2 +1,8 @@
 ﻿buildOutput/
 mmm_app.log
+mmm_app.lock
+
+# uv / Python
+.venv/
+__pycache__/
+*.pyc
