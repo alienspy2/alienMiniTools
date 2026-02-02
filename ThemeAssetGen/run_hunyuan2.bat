@@ -6,15 +6,12 @@ echo ========================================
 echo.
 
 set HUNYUAN_DIR=%~dp0hunyuan2
-set CONDA_ENV=hunyuan2
+
 
 :: Check installation
 if not exist "%HUNYUAN_DIR%" goto :not_installed
 
-:: Activate conda environment
-echo Activating conda environment [%CONDA_ENV%]...
-call conda activate %CONDA_ENV%
-if errorlevel 1 goto :conda_error
+
 
 cd /d "%HUNYUAN_DIR%"
 
@@ -27,11 +24,11 @@ echo  VRAM: 16GB required
 echo ========================================
 echo.
 echo Starting Gradio server...
-echo Access: http://localhost:7860
+echo Access: http://0.0.0.0:7860
 echo Press Ctrl+C to stop
 echo.
 
-python gradio_app.py --model_path tencent/Hunyuan3D-2 --subfolder hunyuan3d-dit-v2-0 --texgen_model_path tencent/Hunyuan3D-2 --low_vram_mode --port 7860
+uv run gradio_app.py --model_path tencent/Hunyuan3D-2 --subfolder hunyuan3d-dit-v2-0 --texgen_model_path tencent/Hunyuan3D-2 --low_vram_mode --port 7860 --host 0.0.0.0
 
 pause
 exit /b 0
@@ -42,8 +39,4 @@ echo Please run install_hunyuan2.bat first.
 pause
 exit /b 1
 
-:conda_error
-echo [ERROR] Failed to activate conda environment.
-echo Check if environment exists: conda env list
-pause
-exit /b 1
+
