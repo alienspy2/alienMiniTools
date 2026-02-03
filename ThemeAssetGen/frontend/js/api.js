@@ -1,23 +1,23 @@
-// API 호출 모듈
+// API Module
 
 const API_BASE = '/api';
 
 const api = {
-    // 테마 관련
+    // Theme related
     async generateTheme(theme) {
         const response = await fetch(`${API_BASE}/theme/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ theme }),
         });
-        if (!response.ok) throw new Error('테마 생성 실패');
+        if (!response.ok) throw new Error('Theme generation failed');
         return response.json();
     },
 
-    // 에셋 관련
+    // Asset related
     async getAsset(assetId) {
         const response = await fetch(`${API_BASE}/asset/${assetId}`);
-        if (!response.ok) throw new Error('에셋 조회 실패');
+        if (!response.ok) throw new Error('Asset fetch failed');
         return response.json();
     },
 
@@ -27,7 +27,7 @@ const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        if (!response.ok) throw new Error('에셋 수정 실패');
+        if (!response.ok) throw new Error('Asset update failed');
         return response.json();
     },
 
@@ -35,7 +35,7 @@ const api = {
         const response = await fetch(`${API_BASE}/asset/${assetId}`, {
             method: 'DELETE',
         });
-        if (!response.ok) throw new Error('에셋 삭제 실패');
+        if (!response.ok) throw new Error('Asset delete failed');
         return response.json();
     },
 
@@ -43,7 +43,7 @@ const api = {
         const response = await fetch(`${API_BASE}/asset/${assetId}/generate`, {
             method: 'POST',
         });
-        if (!response.ok) throw new Error('에셋 생성 실패');
+        if (!response.ok) throw new Error('Asset generation failed');
         return response.json();
     },
 
@@ -51,7 +51,7 @@ const api = {
         const response = await fetch(`${API_BASE}/asset/${assetId}/generate-2d`, {
             method: 'POST',
         });
-        if (!response.ok) throw new Error('2D 생성 실패');
+        if (!response.ok) throw new Error('2D generation failed');
         return response.json();
     },
 
@@ -59,20 +59,20 @@ const api = {
         const response = await fetch(`${API_BASE}/asset/${assetId}/generate-3d`, {
             method: 'POST',
         });
-        if (!response.ok) throw new Error('3D 생성 실패');
+        if (!response.ok) throw new Error('3D generation failed');
         return response.json();
     },
 
-    // 카탈로그 관련
+    // Catalog related
     async getCatalogs() {
         const response = await fetch(`${API_BASE}/catalog/list`);
-        if (!response.ok) throw new Error('카탈로그 목록 조회 실패');
+        if (!response.ok) throw new Error('Catalog list fetch failed');
         return response.json();
     },
 
     async getCatalog(catalogId) {
         const response = await fetch(`${API_BASE}/catalog/${catalogId}`);
-        if (!response.ok) throw new Error('카탈로그 조회 실패');
+        if (!response.ok) throw new Error('Catalog fetch failed');
         return response.json();
     },
 
@@ -80,7 +80,7 @@ const api = {
         const response = await fetch(`${API_BASE}/catalog/${catalogId}`, {
             method: 'DELETE',
         });
-        if (!response.ok) throw new Error('카탈로그 삭제 실패');
+        if (!response.ok) throw new Error('Catalog delete failed');
         return response.json();
     },
 
@@ -88,7 +88,7 @@ const api = {
         const response = await fetch(`${API_BASE}/catalog/${catalogId}/generate-2d`, {
             method: 'POST',
         });
-        if (!response.ok) throw new Error('2D 배치 생성 시작 실패');
+        if (!response.ok) throw new Error('2D batch start failed');
         return response.json();
     },
 
@@ -96,7 +96,15 @@ const api = {
         const response = await fetch(`${API_BASE}/catalog/${catalogId}/generate-3d`, {
             method: 'POST',
         });
-        if (!response.ok) throw new Error('3D 배치 생성 시작 실패');
+        if (!response.ok) throw new Error('3D batch start failed');
+        return response.json();
+    },
+
+    async generateAllAssets(catalogId) {
+        const response = await fetch(`${API_BASE}/catalog/${catalogId}/generate-all`, {
+            method: 'POST',
+        });
+        if (!response.ok) throw new Error('Batch start failed');
         return response.json();
     },
 
@@ -104,7 +112,7 @@ const api = {
         const response = await fetch(`${API_BASE}/catalog/${catalogId}/add-assets?count=${count}`, {
             method: 'POST',
         });
-        if (!response.ok) throw new Error('에셋 추가 실패');
+        if (!response.ok) throw new Error('Asset addition failed');
         return response.json();
     },
 
@@ -112,27 +120,48 @@ const api = {
         return `${API_BASE}/catalog/${catalogId}/export`;
     },
 
-    // 생성 진행률 SSE
-    streamGenerationStatus(catalogId, onMessage) {
+    // Generation queue SSE stream
+    streamQueueStatus(catalogId, onMessage) {
         const eventSource = new EventSource(`${API_BASE}/generation/stream/${catalogId}`);
 
         eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            onMessage(data);
+            try {
+                const data = JSON.parse(event.data);
+                onMessage(data);
 
-            if (data.done) {
-                eventSource.close();
+                if (data.done) {
+                    eventSource.close();
+                }
+            } catch (e) {
+                console.error('SSE parse error:', e);
             }
         };
 
-        eventSource.onerror = () => {
+        eventSource.onerror = (err) => {
+            console.error('SSE error:', err);
             eventSource.close();
         };
 
         return eventSource;
     },
 
-    // 파일 URL
+    // Get queue status (REST)
+    async getQueueStatus(catalogId) {
+        const response = await fetch(`${API_BASE}/generation/status/${catalogId}`);
+        if (!response.ok) throw new Error('Queue status fetch failed');
+        return response.json();
+    },
+
+    // Clear queue
+    async clearQueue(catalogId) {
+        const response = await fetch(`${API_BASE}/generation/clear/${catalogId}`, {
+            method: 'POST',
+        });
+        if (!response.ok) throw new Error('Queue clear failed');
+        return response.json();
+    },
+
+    // File URLs
     getPreviewUrl(assetId) {
         return `/files/preview/${assetId}`;
     },

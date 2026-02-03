@@ -3,10 +3,10 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 
-# === 요청 스키마 ===
+# === Request Schemas ===
 
 class ThemeGenerateRequest(BaseModel):
-    theme: str = Field(..., description="테마 (예: '중세 판타지 성', '현대 오피스')")
+    theme: str = Field(..., description="Theme (e.g., 'Medieval Fantasy Castle', 'Modern Office')")
 
 
 class AssetEditRequest(BaseModel):
@@ -28,10 +28,10 @@ class AssetAddRequest(BaseModel):
 
 
 class BatchGenerateRequest(BaseModel):
-    asset_ids: Optional[List[str]] = None  # None이면 전체 생성
+    asset_ids: Optional[List[str]] = None  # None = generate all
 
 
-# === 응답 스키마 ===
+# === Response Schemas ===
 
 class AssetListItem(BaseModel):
     name: str
@@ -108,6 +108,30 @@ class GenerationStatusResponse(BaseModel):
     message: str
 
 
+# === Queue Status (Simplified and Robust) ===
+
+class QueueItem(BaseModel):
+    """Single item in generation queue"""
+    asset_id: str
+    asset_name: str
+    queue_type: str  # "2d" or "3d"
+    status: str  # "pending", "running", "completed", "failed"
+    started_at: Optional[str] = None
+    error: Optional[str] = None
+
+
+class QueueStatus(BaseModel):
+    """Overall queue status for a catalog"""
+    catalog_id: str
+    queue_2d: List[QueueItem] = []
+    queue_3d: List[QueueItem] = []
+    is_running_2d: bool = False
+    is_running_3d: bool = False
+    current_2d: Optional[QueueItem] = None
+    current_3d: Optional[QueueItem] = None
+
+
+# Legacy - kept for backward compatibility
 class BatchGenerationStatus(BaseModel):
     catalog_id: str
     total: int
@@ -115,3 +139,6 @@ class BatchGenerationStatus(BaseModel):
     failed: int
     current_asset: Optional[str]
     current_status: Optional[str]
+    current_index: int = 0
+    pending_assets: List[str] = []
+    started_at: Optional[str] = None

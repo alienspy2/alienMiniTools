@@ -13,4 +13,6 @@ from .schemas import (
     CatalogListItem,
     GenerationStatusResponse,
     BatchGenerationStatus,
+    QueueItem,
+    QueueStatus,
 )

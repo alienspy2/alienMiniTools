@@ -1,12 +1,14 @@
+import asyncio
 import logging
 import time
+from datetime import datetime
 import traceback
 from pathlib import Path
 from sqlalchemy.orm import Session
 
 from backend.config import CATALOGS_DIR
 from backend.models.entities import Theme, Catalog, Asset, AssetCategory, GenerationStatus
-from backend.models.schemas import ThemeGenerateResponse, AssetListItem, BatchGenerationStatus
+from backend.models.schemas import ThemeGenerateResponse, AssetListItem, QueueItem, QueueStatus
 from backend.services.ollama_service import OllamaService
 from backend.services.comfyui_service import ComfyUIService
 from backend.services.hunyuan2_service import Hunyuan3DService
@@ -22,27 +24,23 @@ class PipelineService:
         self.hunyuan3d = Hunyuan3DService()
 
     async def generate_theme_assets(self, theme_name: str) -> ThemeGenerateResponse:
-        """테마 → 에셋 리스트 생성 파이프라인"""
-        logger.info(f"테마 에셋 생성 시작: {theme_name}")
+        """Theme -> Asset list generation pipeline"""
+        logger.info(f"Starting theme asset generation: {theme_name}")
 
-        # 1. Ollama로 에셋 리스트 생성
         asset_list = await self.ollama.generate_asset_list(theme_name)
 
-        # 2. Theme 생성
-        theme = Theme(name=theme_name, description=f"'{theme_name}' 테마의 3D 에셋")
+        theme = Theme(name=theme_name, description=f"3D assets for '{theme_name}' theme")
         self.db.add(theme)
         self.db.flush()
 
-        # 3. Catalog 생성
         catalog = Catalog(
-            name=f"{theme_name} 카탈로그",
+            name=f"{theme_name} Catalog",
             theme_id=theme.id,
-            description=f"'{theme_name}' 테마를 위한 에셋 카탈로그"
+            description=f"Asset catalog for '{theme_name}' theme"
         )
         self.db.add(catalog)
         self.db.flush()
 
-        # 4. Asset 엔티티 생성
         response_assets = []
         for item in asset_list:
             category_str = item.get("category", "other").lower()
@@ -73,7 +71,7 @@ class PipelineService:
             ))
 
         self.db.commit()
-        logger.info(f"에셋 {len(response_assets)}개 생성 완료")
+        logger.info(f"Created {len(response_assets)} assets")
 
         return ThemeGenerateResponse(
             theme_id=theme.id,
@@ -82,249 +80,360 @@ class PipelineService:
             assets=response_assets,
         )
 
-    async def generate_single_asset(self, asset_id: str) -> Asset:
-        """단일 에셋 생성 파이프라인 (2D → 3D)"""
-        logger.info(f"=" * 60)
-        logger.info(f"[PIPELINE] 단일 에셋 생성 시작: {asset_id}")
+    async def generate_all_parallel(self, catalog_id: str):
+        """
+        True parallel pipeline: 2D completes -> immediately start 3D for that asset
+        2D and 3D run concurrently
+        """
+        from backend.api.routes.generation import get_queue, update_queue
 
-        asset = self.db.query(Asset).filter(Asset.id == asset_id).first()
-        if not asset:
-            logger.error(f"[PIPELINE] 에셋을 찾을 수 없음: {asset_id}")
-            raise Exception(f"Asset not found: {asset_id}")
-
-        logger.info(f"[PIPELINE] 에셋 정보:")
-        logger.info(f"  - 이름: {asset.name_kr or asset.name}")
-        logger.info(f"  - 카테고리: {asset.category.value}")
-        logger.info(f"  - 2D 프롬프트: {asset.prompt_2d[:100]}...")
-
-        catalog_id = asset.catalog_id
-        asset_dir = CATALOGS_DIR / catalog_id / "assets" / asset_id
-        asset_dir.mkdir(parents=True, exist_ok=True)
-        logger.debug(f"[PIPELINE] 출력 디렉토리: {asset_dir}")
-
-        try:
-            # 1. 2D 이미지 생성
-            logger.info(f"[PIPELINE] === 1단계: 2D 이미지 생성 ===")
-            asset.status = GenerationStatus.GENERATING_2D
-            self.db.commit()
-
-            preview_path = asset_dir / "preview.png"
-            logger.info(f"[PIPELINE] ComfyUI 호출 시작...")
-            start_time = time.time()
-
-            await self.comfyui.generate_image(asset.prompt_2d, preview_path)
-
-            elapsed = time.time() - start_time
-            logger.info(f"[PIPELINE] ComfyUI 완료: {elapsed:.1f}초")
-            logger.info(f"[PIPELINE] 2D 이미지 저장: {preview_path}")
-
-            asset.preview_image_path = str(preview_path)
-            self.db.commit()
-
-            # 파일 존재 확인
-            if not preview_path.exists():
-                raise Exception(f"2D 이미지 파일이 생성되지 않음: {preview_path}")
-            logger.info(f"[PIPELINE] 2D 이미지 크기: {preview_path.stat().st_size} bytes")
-
-            # 2. 3D 모델 생성
-            logger.info(f"[PIPELINE] === 2단계: 3D 모델 생성 ===")
-            asset.status = GenerationStatus.GENERATING_3D
-            self.db.commit()
-
-            logger.info(f"[PIPELINE] Hunyuan3D 호출 시작...")
-            start_time = time.time()
-
-            result = await self.hunyuan3d.generate_3d_from_image(
-                str(preview_path),
-                asset_dir,
-                asset_id,
-                enable_texture=True,
-            )
-
-            elapsed = time.time() - start_time
-            logger.info(f"[PIPELINE] Hunyuan3D 완료: {elapsed:.1f}초")
-            logger.info(f"[PIPELINE] 결과: {result}")
-
-            asset.model_glb_path = result.get("glb_path")
-            asset.model_obj_path = result.get("obj_path")
-            asset.status = GenerationStatus.COMPLETED
-            asset.error_message = None  # 성공 시 에러 메시지 삭제
-            self.db.commit()
-
-            logger.info(f"[PIPELINE] 에셋 생성 완료: {asset.name}")
-            logger.info(f"=" * 60)
-            return asset
-
-        except Exception as e:
-            logger.error(f"[PIPELINE] 에셋 생성 실패: {asset.name}")
-            logger.error(f"[PIPELINE] 에러: {e}")
-            logger.debug(f"[PIPELINE] 스택 트레이스:\n{traceback.format_exc()}")
-            asset.status = GenerationStatus.FAILED
-            asset.error_message = str(e)
-            self.db.commit()
-            raise
-
-    async def generate_batch(self, catalog_id: str, asset_ids: list[str] = None):
-        """배치 에셋 생성"""
-        from backend.api.routes.generation import set_status
-
-        logger.info(f"=" * 60)
-        logger.info(f"[BATCH] 배치 생성 시작: catalog_id={catalog_id}")
+        logger.info("=" * 60)
+        logger.info(f"[PIPELINE] Starting parallel 2D+3D generation: {catalog_id}")
 
         catalog = self.db.query(Catalog).filter(Catalog.id == catalog_id).first()
         if not catalog:
-            logger.error(f"[BATCH] 카탈로그를 찾을 수 없음: {catalog_id}")
             raise Exception(f"Catalog not found: {catalog_id}")
 
-        logger.info(f"[BATCH] 카탈로그: {catalog.name}")
+        # Get assets that need 2D (no preview image yet)
+        assets_need_2d = self.db.query(Asset).filter(
+            Asset.catalog_id == catalog_id,
+            Asset.preview_image_path.is_(None),
+            Asset.status != GenerationStatus.COMPLETED
+        ).all()
 
-        # 생성할 에셋 목록
-        if asset_ids:
-            logger.info(f"[BATCH] 지정된 에셋 ID: {len(asset_ids)}개")
-            assets = self.db.query(Asset).filter(
-                Asset.catalog_id == catalog_id,
-                Asset.id.in_(asset_ids)
-            ).all()
-        else:
-            logger.info(f"[BATCH] 미완료 에셋 전체 조회")
-            assets = self.db.query(Asset).filter(
-                Asset.catalog_id == catalog_id,
-                Asset.status != GenerationStatus.COMPLETED
-            ).all()
+        # Get assets that already have 2D but need 3D (not completed yet)
+        assets_need_3d = self.db.query(Asset).filter(
+            Asset.catalog_id == catalog_id,
+            Asset.preview_image_path.isnot(None),
+            Asset.status != GenerationStatus.COMPLETED
+        ).all()
 
-        total = len(assets)
-        completed = 0
-        failed = 0
+        logger.info(f"[PIPELINE] Need 2D: {len(assets_need_2d)}, Already have 2D (need 3D): {len(assets_need_3d)}")
 
-        logger.info(f"[BATCH] 생성할 에셋: {total}개")
-        for i, a in enumerate(assets):
-            logger.debug(f"[BATCH]   {i+1}. {a.name_kr or a.name} [{a.status.value}]")
+        # Shared queue for 3D processing (assets completed 2D go here)
+        pending_3d_queue: asyncio.Queue = asyncio.Queue()
 
-        # 초기 상태 설정
-        set_status(catalog_id, BatchGenerationStatus(
-            catalog_id=catalog_id,
-            total=total,
-            completed=0,
-            failed=0,
-            current_asset=None,
-            current_status="starting",
-        ))
+        # Add existing 3D-ready assets to queue
+        for asset in assets_need_3d:
+            await pending_3d_queue.put((asset.id, asset.name_kr or asset.name))
 
-        # 에셋 정보를 미리 저장 (세션 분리 문제 방지)
-        asset_info = [(a.id, a.name_kr or a.name, a.name) for a in assets]
-        batch_start_time = time.time()
+        # Initialize queue status
+        queue = get_queue(catalog_id)
+        queue.queue_2d = [
+            QueueItem(
+                asset_id=a.id,
+                asset_name=a.name_kr or a.name,
+                queue_type="2d",
+                status="pending"
+            ) for a in assets_need_2d
+        ]
+        queue.queue_3d = [
+            QueueItem(
+                asset_id=a.id,
+                asset_name=a.name_kr or a.name,
+                queue_type="3d",
+                status="pending"
+            ) for a in assets_need_3d
+        ]
+        queue.is_running_2d = len(assets_need_2d) > 0
+        queue.is_running_3d = True  # Will run even if empty initially
+        update_queue(catalog_id, queue)
 
-        for idx, (asset_id, asset_display_name, asset_name) in enumerate(asset_info):
-            logger.info(f"[BATCH] --- 에셋 {idx+1}/{total}: {asset_display_name} ---")
+        logger.info(f"[PIPELINE] 2D queue: {len(assets_need_2d)}, 3D queue: {len(assets_need_3d)}")
 
-            set_status(catalog_id, BatchGenerationStatus(
-                catalog_id=catalog_id,
-                total=total,
-                completed=completed,
-                failed=failed,
-                current_asset=asset_display_name,
-                current_status="generating",
-            ))
+        # 2D Worker
+        async def process_2d():
+            for idx, asset in enumerate(assets_need_2d):
+                asset_id = asset.id
+                asset_name = asset.name_kr or asset.name
 
-            try:
-                await self.generate_single_asset(asset_id)
-                completed += 1
-                logger.info(f"[BATCH] ✅ 성공: {asset_display_name}")
-            except Exception as e:
-                logger.error(f"[BATCH] ❌ 실패: {asset_name}")
-                logger.error(f"[BATCH] 에러: {e}")
-                logger.debug(f"[BATCH] 스택:\n{traceback.format_exc()}")
-                failed += 1
+                logger.info(f"[2D-WORKER] Processing {idx+1}/{len(assets_need_2d)}: {asset_name}")
 
-            logger.info(f"[BATCH] 진행: {completed + failed}/{total} (성공: {completed}, 실패: {failed})")
+                # Update queue status
+                q = get_queue(catalog_id)
+                for item in q.queue_2d:
+                    if item.asset_id == asset_id:
+                        item.status = "running"
+                        item.started_at = datetime.now().isoformat()
+                        q.current_2d = item
+                        break
+                update_queue(catalog_id, q)
 
-        # 완료 상태
-        set_status(catalog_id, BatchGenerationStatus(
-            catalog_id=catalog_id,
-            total=total,
-            completed=completed,
-            failed=failed,
-            current_asset=None,
-            current_status="completed",
-        ))
+                try:
+                    await self._generate_2d_only(asset_id)
+                    
+                    # Update status to completed
+                    q = get_queue(catalog_id)
+                    for item in q.queue_2d:
+                        if item.asset_id == asset_id:
+                            item.status = "completed"
+                            break
+                    q.current_2d = None
+                    
+                    # Add to 3D queue immediately!
+                    new_3d_item = QueueItem(
+                        asset_id=asset_id,
+                        asset_name=asset_name,
+                        queue_type="3d",
+                        status="pending"
+                    )
+                    q.queue_3d.append(new_3d_item)
+                    update_queue(catalog_id, q)
+                    
+                    # Put in async queue for 3D worker
+                    await pending_3d_queue.put((asset_id, asset_name))
+                    
+                    logger.info(f"[2D-WORKER] OK: {asset_name} -> added to 3D queue")
 
-        batch_elapsed = time.time() - batch_start_time
-        logger.info(f"[BATCH] 배치 생성 완료")
-        logger.info(f"[BATCH] 총 소요시간: {batch_elapsed:.1f}초")
-        logger.info(f"[BATCH] 결과: 성공={completed}, 실패={failed}")
-        logger.info(f"=" * 60)
+                except Exception as e:
+                    q = get_queue(catalog_id)
+                    for item in q.queue_2d:
+                        if item.asset_id == asset_id:
+                            item.status = "failed"
+                            item.error = str(e)
+                            break
+                    q.current_2d = None
+                    update_queue(catalog_id, q)
+                    logger.error(f"[2D-WORKER] FAIL: {asset_name} - {e}")
+
+            # Mark 2D as done
+            q = get_queue(catalog_id)
+            q.is_running_2d = False
+            q.current_2d = None
+            update_queue(catalog_id, q)
+            
+            # Signal 3D worker that no more items coming
+            await pending_3d_queue.put(None)
+            logger.info("[2D-WORKER] Completed all 2D tasks")
+
+        # 3D Worker
+        async def process_3d():
+            processed = 0
+            while True:
+                try:
+                    # Wait for item with timeout
+                    item = await asyncio.wait_for(pending_3d_queue.get(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    # Check if 2D is still running
+                    q = get_queue(catalog_id)
+                    if not q.is_running_2d and pending_3d_queue.empty():
+                        break
+                    continue
+
+                if item is None:
+                    # 2D worker signaled completion
+                    # But there might still be items in queue
+                    if pending_3d_queue.empty():
+                        break
+                    continue
+
+                asset_id, asset_name = item
+                processed += 1
+                logger.info(f"[3D-WORKER] Processing: {asset_name}")
+
+                # Update queue status
+                q = get_queue(catalog_id)
+                for qi in q.queue_3d:
+                    if qi.asset_id == asset_id:
+                        qi.status = "running"
+                        qi.started_at = datetime.now().isoformat()
+                        q.current_3d = qi
+                        break
+                update_queue(catalog_id, q)
+
+                try:
+                    await self._generate_3d_only(asset_id)
+                    
+                    q = get_queue(catalog_id)
+                    for qi in q.queue_3d:
+                        if qi.asset_id == asset_id:
+                            qi.status = "completed"
+                            break
+                    q.current_3d = None
+                    update_queue(catalog_id, q)
+                    
+                    logger.info(f"[3D-WORKER] OK: {asset_name}")
+
+                except Exception as e:
+                    q = get_queue(catalog_id)
+                    for qi in q.queue_3d:
+                        if qi.asset_id == asset_id:
+                            qi.status = "failed"
+                            qi.error = str(e)
+                            break
+                    q.current_3d = None
+                    update_queue(catalog_id, q)
+                    logger.error(f"[3D-WORKER] FAIL: {asset_name} - {e}")
+
+            # Mark 3D as done
+            q = get_queue(catalog_id)
+            q.is_running_3d = False
+            q.current_3d = None
+            update_queue(catalog_id, q)
+            logger.info(f"[3D-WORKER] Completed all 3D tasks (processed: {processed})")
+
+        # Run both workers concurrently!
+        await asyncio.gather(process_2d(), process_3d())
+
+        logger.info("[PIPELINE] All parallel generation complete!")
+        logger.info("=" * 60)
 
     async def generate_2d_batch(self, catalog_id: str):
-        """배치 2D 이미지만 생성"""
-        from backend.api.routes.generation import set_status
+        """Batch 2D image generation only"""
+        from backend.api.routes.generation import get_queue, update_queue
 
-        logger.info(f"=" * 60)
-        logger.info(f"[BATCH-2D] 2D 배치 생성 시작: catalog_id={catalog_id}")
+        logger.info("=" * 60)
+        logger.info(f"[BATCH-2D] Starting 2D batch: catalog_id={catalog_id}")
 
         catalog = self.db.query(Catalog).filter(Catalog.id == catalog_id).first()
         if not catalog:
             raise Exception(f"Catalog not found: {catalog_id}")
 
-        # 2D 이미지가 없는 에셋 조회 (pending, failed, 또는 2D 이미지 없는 모든 에셋)
         assets = self.db.query(Asset).filter(
             Asset.catalog_id == catalog_id,
             (Asset.status.in_([GenerationStatus.PENDING, GenerationStatus.FAILED])) |
             (Asset.preview_image_path.is_(None))
         ).all()
 
-        total = len(assets)
-        completed = 0
-        failed = 0
+        if not assets:
+            logger.warning("[BATCH-2D] No assets to generate")
+            return
 
-        logger.info(f"[BATCH-2D] 생성할 에셋: {total}개")
+        queue = get_queue(catalog_id)
+        queue.queue_2d = [
+            QueueItem(
+                asset_id=a.id,
+                asset_name=a.name_kr or a.name,
+                queue_type="2d",
+                status="pending"
+            ) for a in assets
+        ]
+        queue.is_running_2d = True
+        queue.current_2d = None
+        update_queue(catalog_id, queue)
 
-        set_status(catalog_id, BatchGenerationStatus(
-            catalog_id=catalog_id,
-            total=total,
-            completed=0,
-            failed=0,
-            current_asset=None,
-            current_status="starting",
-        ))
+        for idx, asset in enumerate(assets):
+            asset_id = asset.id
+            asset_name = asset.name_kr or asset.name
 
-        asset_info = [(a.id, a.name_kr or a.name) for a in assets]
-        batch_start_time = time.time()
+            logger.info(f"[BATCH-2D] {idx+1}/{len(assets)}: {asset_name}")
 
-        for idx, (asset_id, asset_display_name) in enumerate(asset_info):
-            logger.info(f"[BATCH-2D] --- 에셋 {idx+1}/{total}: {asset_display_name} ---")
-
-            set_status(catalog_id, BatchGenerationStatus(
-                catalog_id=catalog_id,
-                total=total,
-                completed=completed,
-                failed=failed,
-                current_asset=f"{asset_display_name} (2D)",
-                current_status="generating",
-            ))
+            q = get_queue(catalog_id)
+            for item in q.queue_2d:
+                if item.asset_id == asset_id:
+                    item.status = "running"
+                    item.started_at = datetime.now().isoformat()
+                    q.current_2d = item
+                    break
+            update_queue(catalog_id, q)
 
             try:
                 await self._generate_2d_only(asset_id)
-                completed += 1
-                logger.info(f"[BATCH-2D] ✅ 성공: {asset_display_name}")
+                q = get_queue(catalog_id)
+                for item in q.queue_2d:
+                    if item.asset_id == asset_id:
+                        item.status = "completed"
+                        break
+                q.current_2d = None
+                update_queue(catalog_id, q)
+                logger.info(f"[BATCH-2D] OK: {asset_name}")
             except Exception as e:
-                logger.error(f"[BATCH-2D] ❌ 실패: {asset_display_name} - {e}")
-                failed += 1
+                q = get_queue(catalog_id)
+                for item in q.queue_2d:
+                    if item.asset_id == asset_id:
+                        item.status = "failed"
+                        item.error = str(e)
+                        break
+                q.current_2d = None
+                update_queue(catalog_id, q)
+                logger.error(f"[BATCH-2D] FAIL: {asset_name} - {e}")
 
-        set_status(catalog_id, BatchGenerationStatus(
-            catalog_id=catalog_id,
-            total=total,
-            completed=completed,
-            failed=failed,
-            current_asset=None,
-            current_status="completed",
-        ))
+        queue = get_queue(catalog_id)
+        queue.is_running_2d = False
+        queue.current_2d = None
+        update_queue(catalog_id, queue)
+        logger.info("[BATCH-2D] Complete")
+        logger.info("=" * 60)
 
-        batch_elapsed = time.time() - batch_start_time
-        logger.info(f"[BATCH-2D] 완료: {batch_elapsed:.1f}초, 성공={completed}, 실패={failed}")
-        logger.info(f"=" * 60)
+    async def generate_3d_batch(self, catalog_id: str):
+        """Batch 3D model generation only"""
+        from backend.api.routes.generation import get_queue, update_queue
+
+        logger.info("=" * 60)
+        logger.info(f"[BATCH-3D] Starting 3D batch: catalog_id={catalog_id}")
+
+        catalog = self.db.query(Catalog).filter(Catalog.id == catalog_id).first()
+        if not catalog:
+            raise Exception(f"Catalog not found: {catalog_id}")
+
+        assets = self.db.query(Asset).filter(
+            Asset.catalog_id == catalog_id,
+            Asset.status.in_([GenerationStatus.GENERATING_3D, GenerationStatus.FAILED]),
+            Asset.preview_image_path.isnot(None)
+        ).all()
+
+        if not assets:
+            logger.warning("[BATCH-3D] No assets to generate (need 2D images first)")
+            return
+
+        queue = get_queue(catalog_id)
+        queue.queue_3d = [
+            QueueItem(
+                asset_id=a.id,
+                asset_name=a.name_kr or a.name,
+                queue_type="3d",
+                status="pending"
+            ) for a in assets
+        ]
+        queue.is_running_3d = True
+        queue.current_3d = None
+        update_queue(catalog_id, queue)
+
+        for idx, asset in enumerate(assets):
+            asset_id = asset.id
+            asset_name = asset.name_kr or asset.name
+
+            logger.info(f"[BATCH-3D] {idx+1}/{len(assets)}: {asset_name}")
+
+            q = get_queue(catalog_id)
+            for item in q.queue_3d:
+                if item.asset_id == asset_id:
+                    item.status = "running"
+                    item.started_at = datetime.now().isoformat()
+                    q.current_3d = item
+                    break
+            update_queue(catalog_id, q)
+
+            try:
+                await self._generate_3d_only(asset_id)
+                q = get_queue(catalog_id)
+                for item in q.queue_3d:
+                    if item.asset_id == asset_id:
+                        item.status = "completed"
+                        break
+                q.current_3d = None
+                update_queue(catalog_id, q)
+                logger.info(f"[BATCH-3D] OK: {asset_name}")
+            except Exception as e:
+                q = get_queue(catalog_id)
+                for item in q.queue_3d:
+                    if item.asset_id == asset_id:
+                        item.status = "failed"
+                        item.error = str(e)
+                        break
+                q.current_3d = None
+                update_queue(catalog_id, q)
+                logger.error(f"[BATCH-3D] FAIL: {asset_name} - {e}")
+
+        queue = get_queue(catalog_id)
+        queue.is_running_3d = False
+        queue.current_3d = None
+        update_queue(catalog_id, queue)
+        logger.info("[BATCH-3D] Complete")
+        logger.info("=" * 60)
 
     async def _generate_2d_only(self, asset_id: str):
-        """단일 에셋 2D 이미지만 생성"""
+        """Generate 2D image for single asset"""
         asset = self.db.query(Asset).filter(Asset.id == asset_id).first()
         if not asset:
             raise Exception(f"Asset not found: {asset_id}")
@@ -341,11 +450,10 @@ class PipelineService:
             await self.comfyui.generate_image(asset.prompt_2d, preview_path)
 
             asset.preview_image_path = str(preview_path)
-            asset.status = GenerationStatus.GENERATING_3D  # 2D 완료, 3D 대기 상태
+            asset.status = GenerationStatus.GENERATING_3D
             asset.error_message = None
             self.db.commit()
 
-            logger.info(f"[2D] 생성 완료: {asset.name}")
             return asset
 
         except Exception as e:
@@ -354,99 +462,18 @@ class PipelineService:
             self.db.commit()
             raise
 
-    async def generate_3d_batch(self, catalog_id: str):
-        """배치 3D 모델만 생성 (2D 이미지가 있는 에셋만)"""
-        from backend.api.routes.generation import set_status
-
-        logger.info(f"=" * 60)
-        logger.info(f"[BATCH-3D] 3D 배치 생성 시작: catalog_id={catalog_id}")
-
-        catalog = self.db.query(Catalog).filter(Catalog.id == catalog_id).first()
-        if not catalog:
-            raise Exception(f"Catalog not found: {catalog_id}")
-
-        # 2D 이미지가 있고 3D가 아직 없는 에셋 (generating_3d 또는 failed 상태)
-        assets = self.db.query(Asset).filter(
-            Asset.catalog_id == catalog_id,
-            Asset.status.in_([GenerationStatus.GENERATING_3D, GenerationStatus.FAILED]),
-            Asset.preview_image_path.isnot(None)
-        ).all()
-
-        total = len(assets)
-        completed = 0
-        failed = 0
-
-        logger.info(f"[BATCH-3D] 생성할 에셋: {total}개")
-
-        if total == 0:
-            logger.warning(f"[BATCH-3D] 3D 생성할 에셋이 없습니다. 먼저 2D를 생성하세요.")
-            set_status(catalog_id, BatchGenerationStatus(
-                catalog_id=catalog_id,
-                total=0,
-                completed=0,
-                failed=0,
-                current_asset=None,
-                current_status="completed",
-            ))
-            return
-
-        set_status(catalog_id, BatchGenerationStatus(
-            catalog_id=catalog_id,
-            total=total,
-            completed=0,
-            failed=0,
-            current_asset=None,
-            current_status="starting",
-        ))
-
-        asset_info = [(a.id, a.name_kr or a.name) for a in assets]
-        batch_start_time = time.time()
-
-        for idx, (asset_id, asset_display_name) in enumerate(asset_info):
-            logger.info(f"[BATCH-3D] --- 에셋 {idx+1}/{total}: {asset_display_name} ---")
-
-            set_status(catalog_id, BatchGenerationStatus(
-                catalog_id=catalog_id,
-                total=total,
-                completed=completed,
-                failed=failed,
-                current_asset=f"{asset_display_name} (3D)",
-                current_status="generating",
-            ))
-
-            try:
-                await self._generate_3d_only(asset_id)
-                completed += 1
-                logger.info(f"[BATCH-3D] ✅ 성공: {asset_display_name}")
-            except Exception as e:
-                logger.error(f"[BATCH-3D] ❌ 실패: {asset_display_name} - {e}")
-                failed += 1
-
-        set_status(catalog_id, BatchGenerationStatus(
-            catalog_id=catalog_id,
-            total=total,
-            completed=completed,
-            failed=failed,
-            current_asset=None,
-            current_status="completed",
-        ))
-
-        batch_elapsed = time.time() - batch_start_time
-        logger.info(f"[BATCH-3D] 완료: {batch_elapsed:.1f}초, 성공={completed}, 실패={failed}")
-        logger.info(f"=" * 60)
-
     async def _generate_3d_only(self, asset_id: str):
-        """단일 에셋 3D 모델만 생성"""
+        """Generate 3D model for single asset"""
         asset = self.db.query(Asset).filter(Asset.id == asset_id).first()
         if not asset:
             raise Exception(f"Asset not found: {asset_id}")
 
         if not asset.preview_image_path:
-            raise Exception(f"2D 이미지가 없습니다: {asset.name}")
+            raise Exception(f"No 2D image: {asset.name}")
 
         preview_path = Path(asset.preview_image_path)
         if not preview_path.exists():
-            raise Exception(f"2D 이미지 파일이 없습니다: {preview_path}")
+            raise Exception(f"2D image file missing: {preview_path}")
 
         catalog_id = asset.catalog_id
         asset_dir = CATALOGS_DIR / catalog_id / "assets" / asset_id
@@ -468,7 +495,6 @@ class PipelineService:
             asset.error_message = None
             self.db.commit()
 
-            logger.info(f"[3D] 생성 완료: {asset.name}")
             return asset
 
         except Exception as e:

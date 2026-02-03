@@ -1,11 +1,12 @@
-// 메인 앱 로직
+// Main App Logic
 
 let currentCatalogId = null;
 let currentAssets = [];
 let viewer3d = null;
 let selectedAssetId = null;
+let eventSource = null;
 
-// DOM 요소
+// DOM Elements
 const themeForm = document.getElementById('themeForm');
 const themeInput = document.getElementById('themeInput');
 const generateBtn = document.getElementById('generateBtn');
@@ -15,12 +16,11 @@ const loadCatalogBtn = document.getElementById('loadCatalogBtn');
 const addAssetsBtn = document.getElementById('addAssetsBtn');
 const assetSection = document.getElementById('assetSection');
 const assetList = document.getElementById('assetList');
+const generateAllBtn = document.getElementById('generateAllBtn');
 const generate2DBtn = document.getElementById('generate2DBtn');
 const generate3DBtn = document.getElementById('generate3DBtn');
 const exportBtn = document.getElementById('exportBtn');
-const progressSection = document.getElementById('progressSection');
-const progressFill = document.getElementById('progressFill');
-const progressText = document.getElementById('progressText');
+const queuePanel = document.getElementById('queuePanel');
 const viewerPanel = document.getElementById('viewerPanel');
 const viewerHeader = document.getElementById('viewerHeader');
 const viewerContent = document.getElementById('viewerContent');
@@ -28,27 +28,34 @@ const toggleViewerBtn = document.getElementById('toggleViewer');
 const editModal = document.getElementById('editModal');
 const editForm = document.getElementById('editForm');
 
-// 초기화
+// Queue DOM
+const queue2DSection = document.getElementById('queue2DSection');
+const queue2DStatus = document.getElementById('queue2DStatus');
+const queue2DCurrent = document.getElementById('queue2DCurrent');
+const queue2DProgress = document.getElementById('queue2DProgress');
+const queue2DPending = document.getElementById('queue2DPending');
+const queue3DSection = document.getElementById('queue3DSection');
+const queue3DStatus = document.getElementById('queue3DStatus');
+const queue3DCurrent = document.getElementById('queue3DCurrent');
+const queue3DProgress = document.getElementById('queue3DProgress');
+const queue3DPending = document.getElementById('queue3DPending');
+
+// Initialize
 document.addEventListener('DOMContentLoaded', async () => {
-    // 3D 뷰어 초기화
     viewer3d = new Viewer3D('viewer3d');
-
-    // 카탈로그 목록 로드
     await loadCatalogs();
-
-    // 이벤트 리스너
     setupEventListeners();
 });
 
 function setupEventListeners() {
-    // 테마 생성
+    // Theme generation
     themeForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const theme = themeInput.value.trim();
         if (!theme) return;
 
         generateBtn.disabled = true;
-        generateBtn.innerHTML = '<span class="loading"></span> 생성 중...';
+        generateBtn.innerHTML = '<span class="loading"></span> Generating...';
 
         try {
             const result = await api.generateTheme(theme);
@@ -57,14 +64,14 @@ function setupEventListeners() {
             await loadCatalogs();
             themeInput.value = '';
         } catch (error) {
-            alert('에셋 리스트 생성 실패: ' + error.message);
+            alert('Asset list generation failed: ' + error.message);
         } finally {
             generateBtn.disabled = false;
-            generateBtn.textContent = '에셋 생성';
+            generateBtn.textContent = 'Generate Assets';
         }
     });
 
-    // 카탈로그 불러오기
+    // Load catalog
     loadCatalogBtn.addEventListener('click', async () => {
         const catalogId = catalogSelect.value;
         if (catalogId) {
@@ -72,49 +79,55 @@ function setupEventListeners() {
         }
     });
 
-    // 10개 에셋 추가
+    // Add 10 assets
     addAssetsBtn.addEventListener('click', async () => {
         const catalogId = catalogSelect.value || currentCatalogId;
         if (!catalogId) {
-            alert('먼저 카탈로그를 선택해주세요.');
+            alert('Please select a catalog first.');
             return;
         }
 
         addAssetsBtn.disabled = true;
-        addAssetsBtn.innerHTML = '<span class="loading"></span> 추가 중...';
+        addAssetsBtn.innerHTML = '<span class="loading"></span> Adding...';
 
         try {
             const result = await api.addAssets(catalogId, 10);
-            alert(`${result.added_count}개 에셋이 추가되었습니다.`);
+            alert(`${result.added_count} assets added.`);
             await loadCatalog(catalogId);
             await loadCatalogs();
         } catch (error) {
-            alert('에셋 추가 실패: ' + error.message);
+            alert('Asset addition failed: ' + error.message);
         } finally {
             addAssetsBtn.disabled = false;
-            addAssetsBtn.textContent = '10개 추가';
+            addAssetsBtn.textContent = '+10 Assets';
         }
     });
 
-    // 2D 생성
+    // Generate All (2D + 3D parallel)
+    generateAllBtn.addEventListener('click', async () => {
+        if (!currentCatalogId) return;
+        await startGeneration('all');
+    });
+
+    // 2D Only
     generate2DBtn.addEventListener('click', async () => {
         if (!currentCatalogId) return;
-        await startBatchGeneration('2d', api.generate2DAssets, generate2DBtn);
+        await startGeneration('2d');
     });
 
-    // 3D 생성
+    // 3D Only
     generate3DBtn.addEventListener('click', async () => {
         if (!currentCatalogId) return;
-        await startBatchGeneration('3d', api.generate3DAssets, generate3DBtn);
+        await startGeneration('3d');
     });
 
-    // 내보내기
+    // Export
     exportBtn.addEventListener('click', () => {
         if (!currentCatalogId) return;
         window.location.href = api.getExportUrl(currentCatalogId);
     });
 
-    // 편집 폼
+    // Edit form
     editForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const assetId = document.getElementById('editAssetId').value;
@@ -131,7 +144,7 @@ function setupEventListeners() {
             editModal.style.display = 'none';
             await loadCatalog(currentCatalogId);
         } catch (error) {
-            alert('에셋 수정 실패: ' + error.message);
+            alert('Asset update failed: ' + error.message);
         }
     });
 
@@ -139,7 +152,7 @@ function setupEventListeners() {
         editModal.style.display = 'none';
     });
 
-    // 다운로드 버튼
+    // Download buttons
     document.getElementById('downloadGlb').addEventListener('click', () => {
         if (selectedAssetId) {
             window.location.href = api.getModelUrl(selectedAssetId, 'glb');
@@ -152,7 +165,7 @@ function setupEventListeners() {
         }
     });
 
-    // 3D 뷰어 패널 토글
+    // 3D viewer toggle
     toggleViewerBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         toggleViewerPanel();
@@ -165,9 +178,8 @@ function setupEventListeners() {
 
 function toggleViewerPanel() {
     const isCollapsed = viewerPanel.classList.toggle('collapsed');
-    toggleViewerBtn.textContent = isCollapsed ? '▲' : '▼';
+    toggleViewerBtn.innerHTML = isCollapsed ? '&#9650;' : '&#9660;';
 
-    // 패널이 펼쳐질 때 3D 뷰어 리사이즈
     if (!isCollapsed && viewer3d && viewer3d.initialized) {
         setTimeout(() => viewer3d.onResize(), 100);
     }
@@ -176,7 +188,7 @@ function toggleViewerPanel() {
 async function loadCatalogs() {
     try {
         const result = await api.getCatalogs();
-        catalogSelect.innerHTML = '<option value="">카탈로그 선택...</option>';
+        catalogSelect.innerHTML = '<option value="">Select catalog...</option>';
 
         for (const catalog of result.catalogs) {
             const option = document.createElement('option');
@@ -187,7 +199,7 @@ async function loadCatalogs() {
 
         catalogSection.style.display = result.catalogs.length > 0 ? 'flex' : 'none';
     } catch (error) {
-        console.error('카탈로그 로드 실패:', error);
+        console.error('Catalog load failed:', error);
     }
 }
 
@@ -200,41 +212,41 @@ async function loadCatalog(catalogId) {
         renderAssetList();
         assetSection.style.display = 'block';
     } catch (error) {
-        alert('카탈로그 로드 실패: ' + error.message);
+        alert('Catalog load failed: ' + error.message);
     }
 }
 
 function renderAssetList() {
     assetList.innerHTML = '';
 
+    const statusText = {
+        pending: 'Pending',
+        generating_2d: '2D Generating',
+        generating_3d: '2D Done (3D Pending)',
+        completed: 'Completed',
+        failed: 'Failed',
+    };
+
+    const categoryText = {
+        prop: 'Prop',
+        furniture: 'Furniture',
+        wall: 'Wall',
+        ceiling: 'Ceiling',
+        floor: 'Floor',
+        decoration: 'Decoration',
+        lighting: 'Lighting',
+        other: 'Other',
+    };
+
     for (const asset of currentAssets) {
         const item = document.createElement('div');
         item.className = 'asset-item';
 
-        const statusText = {
-            pending: '대기',
-            generating_2d: '2D 생성 중',
-            generating_3d: '2D 완료 (3D 대기)',
-            completed: '완료',
-            failed: '실패',
-        };
-
-        const categoryText = {
-            prop: '소품',
-            furniture: '가구',
-            wall: '벽',
-            ceiling: '천장',
-            floor: '바닥',
-            decoration: '장식',
-            lighting: '조명',
-            other: '기타',
-        };
-
         item.innerHTML = `
             <div class="asset-preview">
                 ${asset.preview_url
-                    ? `<img src="${asset.preview_url}" alt="${asset.name}">`
-                    : '<span class="placeholder">미리보기<br>없음</span>'}
+                ? `<img src="${asset.preview_url}" alt="${asset.name}">`
+                : '<span class="placeholder">No<br>Preview</span>'}
             </div>
             <div class="asset-info">
                 <h3>${asset.name_kr || asset.name}</h3>
@@ -243,17 +255,246 @@ function renderAssetList() {
                 ${asset.error_message ? `<div style="color:var(--error);font-size:0.8em;">${asset.error_message}</div>` : ''}
             </div>
             <div class="asset-actions">
-                <button class="btn-edit" onclick="editAsset('${asset.id}')">편집</button>
+                <button class="btn-edit" onclick="editAsset('${asset.id}')">Edit</button>
                 <button class="btn-2d" onclick="generate2DAsset('${asset.id}')" ${asset.status === 'generating_2d' ? 'disabled' : ''}>2D</button>
                 <button class="btn-3d" onclick="generate3DAsset('${asset.id}')">3D</button>
-                ${asset.status === 'completed' ? `<button class="btn-view" onclick="viewAsset('${asset.id}')">3D 보기</button>` : ''}
-                <button class="btn-delete" onclick="deleteAsset('${asset.id}')">삭제</button>
+                ${asset.status === 'completed' ? `<button class="btn-view" onclick="viewAsset('${asset.id}')">View 3D</button>` : ''}
+                <button class="btn-delete" onclick="deleteAsset('${asset.id}')">Delete</button>
             </div>
         `;
 
         assetList.appendChild(item);
     }
 }
+
+// === Generation with Queue UI ===
+
+async function startGeneration(type) {
+    // Disable all buttons
+    generateAllBtn.disabled = true;
+    generate2DBtn.disabled = true;
+    generate3DBtn.disabled = true;
+
+    // Show queue panel
+    queuePanel.style.display = 'block';
+    resetQueueUI();
+
+    // Close existing SSE
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+
+    try {
+        // Start SSE stream first
+        eventSource = api.streamQueueStatus(currentCatalogId, handleQueueUpdate);
+
+        // Wait for SSE to connect
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        // Start generation
+        if (type === 'all') {
+            await api.generateAllAssets(currentCatalogId);
+        } else if (type === '2d') {
+            await api.generate2DAssets(currentCatalogId);
+        } else if (type === '3d') {
+            await api.generate3DAssets(currentCatalogId);
+        }
+
+    } catch (error) {
+        console.error('Generation start error:', error);
+        alert('Generation failed: ' + error.message);
+        resetButtons();
+        queuePanel.style.display = 'none';
+        if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+        }
+    }
+}
+
+function handleQueueUpdate(data) {
+    console.log('Queue update:', data);
+
+    if (data.done) {
+        // Generation complete
+        queue2DStatus.textContent = 'Complete';
+        queue2DStatus.className = 'queue-status complete';
+        queue3DStatus.textContent = 'Complete';
+        queue3DStatus.className = 'queue-status complete';
+
+        // Refresh catalog
+        loadCatalog(currentCatalogId);
+
+        setTimeout(() => {
+            resetButtons();
+            // Keep queue panel visible for a moment to show results
+            setTimeout(() => {
+                queuePanel.style.display = 'none';
+            }, 3000);
+        }, 1000);
+
+        return;
+    }
+
+    if (data.waiting) {
+        queue2DStatus.textContent = 'Waiting...';
+        queue3DStatus.textContent = 'Waiting...';
+        return;
+    }
+
+    // Update 2D Queue UI
+    update2DQueueUI(data);
+
+    // Update 3D Queue UI
+    update3DQueueUI(data);
+
+    // Periodic catalog refresh
+    if ((data.completed_2d + data.completed_3d) % 2 === 0) {
+        loadCatalog(currentCatalogId);
+    }
+}
+
+function update2DQueueUI(data) {
+    const total = data.total_2d || 0;
+    const completed = data.completed_2d || 0;
+    const failed = data.failed_2d || 0;
+    const isRunning = data.is_running_2d;
+    const current = data.current_2d;
+    const pending = data.pending_2d || [];
+    const pendingCount = data.pending_count_2d || 0;
+
+    // Status
+    if (isRunning) {
+        queue2DStatus.textContent = `Running (${completed}/${total})`;
+        queue2DStatus.className = 'queue-status running';
+    } else if (total > 0 && completed + failed >= total) {
+        queue2DStatus.textContent = `Done (${completed} OK / ${failed} Fail)`;
+        queue2DStatus.className = 'queue-status complete';
+    } else if (total === 0) {
+        queue2DStatus.textContent = 'Idle';
+        queue2DStatus.className = 'queue-status';
+    }
+
+    // Progress bar
+    const percent = total > 0 ? Math.round((completed + failed) / total * 100) : 0;
+    queue2DProgress.style.width = `${percent}%`;
+
+    // Current task
+    if (current) {
+        const elapsed = current.started_at ? getElapsedTime(current.started_at) : '';
+        queue2DCurrent.innerHTML = `
+            <div class="current-task">
+                <span class="current-icon">&#x1F3A8;</span>
+                <span class="current-name">${current.asset_name}</span>
+                ${elapsed ? `<span class="current-time">${elapsed}</span>` : ''}
+            </div>
+        `;
+    } else {
+        queue2DCurrent.innerHTML = '';
+    }
+
+    // Pending list
+    if (pending.length > 0) {
+        let pendingHtml = '<div class="pending-header">Pending:</div><ul class="pending-list">';
+        for (const name of pending) {
+            pendingHtml += `<li>${name}</li>`;
+        }
+        if (pendingCount > pending.length) {
+            pendingHtml += `<li class="more">+${pendingCount - pending.length} more...</li>`;
+        }
+        pendingHtml += '</ul>';
+        queue2DPending.innerHTML = pendingHtml;
+    } else {
+        queue2DPending.innerHTML = '';
+    }
+}
+
+function update3DQueueUI(data) {
+    const total = data.total_3d || 0;
+    const completed = data.completed_3d || 0;
+    const failed = data.failed_3d || 0;
+    const isRunning = data.is_running_3d;
+    const current = data.current_3d;
+    const pending = data.pending_3d || [];
+    const pendingCount = data.pending_count_3d || 0;
+
+    // Status
+    if (isRunning) {
+        queue3DStatus.textContent = `Running (${completed}/${total})`;
+        queue3DStatus.className = 'queue-status running';
+    } else if (total > 0 && completed + failed >= total) {
+        queue3DStatus.textContent = `Done (${completed} OK / ${failed} Fail)`;
+        queue3DStatus.className = 'queue-status complete';
+    } else if (total === 0) {
+        queue3DStatus.textContent = 'Idle';
+        queue3DStatus.className = 'queue-status';
+    }
+
+    // Progress bar
+    const percent = total > 0 ? Math.round((completed + failed) / total * 100) : 0;
+    queue3DProgress.style.width = `${percent}%`;
+
+    // Current task
+    if (current) {
+        const elapsed = current.started_at ? getElapsedTime(current.started_at) : '';
+        queue3DCurrent.innerHTML = `
+            <div class="current-task">
+                <span class="current-icon">&#x1F4E6;</span>
+                <span class="current-name">${current.asset_name}</span>
+                ${elapsed ? `<span class="current-time">${elapsed}</span>` : ''}
+            </div>
+        `;
+    } else {
+        queue3DCurrent.innerHTML = '';
+    }
+
+    // Pending list
+    if (pending.length > 0) {
+        let pendingHtml = '<div class="pending-header">Pending:</div><ul class="pending-list">';
+        for (const name of pending) {
+            pendingHtml += `<li>${name}</li>`;
+        }
+        if (pendingCount > pending.length) {
+            pendingHtml += `<li class="more">+${pendingCount - pending.length} more...</li>`;
+        }
+        pendingHtml += '</ul>';
+        queue3DPending.innerHTML = pendingHtml;
+    } else {
+        queue3DPending.innerHTML = '';
+    }
+}
+
+function getElapsedTime(isoString) {
+    const start = new Date(isoString);
+    const elapsed = Math.round((Date.now() - start.getTime()) / 1000);
+    if (elapsed < 60) return `${elapsed}s`;
+    const mins = Math.floor(elapsed / 60);
+    const secs = elapsed % 60;
+    return `${mins}m ${secs}s`;
+}
+
+function resetQueueUI() {
+    queue2DStatus.textContent = 'Waiting...';
+    queue2DStatus.className = 'queue-status';
+    queue2DCurrent.innerHTML = '';
+    queue2DProgress.style.width = '0%';
+    queue2DPending.innerHTML = '';
+
+    queue3DStatus.textContent = 'Waiting...';
+    queue3DStatus.className = 'queue-status';
+    queue3DCurrent.innerHTML = '';
+    queue3DProgress.style.width = '0%';
+    queue3DPending.innerHTML = '';
+}
+
+function resetButtons() {
+    generateAllBtn.disabled = false;
+    generate2DBtn.disabled = false;
+    generate3DBtn.disabled = false;
+}
+
+// === Individual Asset Actions ===
 
 async function editAsset(assetId) {
     const asset = currentAssets.find(a => a.id === assetId);
@@ -269,20 +510,6 @@ async function editAsset(assetId) {
     editModal.style.display = 'flex';
 }
 
-async function generateAsset(assetId) {
-    try {
-        const btn = event.target;
-        btn.disabled = true;
-        btn.textContent = '생성 중...';
-
-        await api.generateAsset(assetId);
-        await loadCatalog(currentCatalogId);
-    } catch (error) {
-        alert('에셋 생성 실패: ' + error.message);
-        await loadCatalog(currentCatalogId);
-    }
-}
-
 async function generate2DAsset(assetId) {
     try {
         const btn = event.target;
@@ -292,7 +519,7 @@ async function generate2DAsset(assetId) {
         await api.generateAsset2D(assetId);
         await loadCatalog(currentCatalogId);
     } catch (error) {
-        alert('2D 생성 실패: ' + error.message);
+        alert('2D generation failed: ' + error.message);
         await loadCatalog(currentCatalogId);
     }
 }
@@ -306,7 +533,7 @@ async function generate3DAsset(assetId) {
         await api.generateAsset3D(assetId);
         await loadCatalog(currentCatalogId);
     } catch (error) {
-        alert('3D 생성 실패: ' + error.message);
+        alert('3D generation failed: ' + error.message);
         await loadCatalog(currentCatalogId);
     }
 }
@@ -317,101 +544,29 @@ async function viewAsset(assetId) {
 
     selectedAssetId = assetId;
 
-    // 뷰어 패널 펼치기
+    // Expand viewer panel
     if (viewerPanel.classList.contains('collapsed')) {
         viewerPanel.classList.remove('collapsed');
-        toggleViewerBtn.textContent = '▼';
+        toggleViewerBtn.innerHTML = '&#9660;';
     }
 
-    // DOM 업데이트 후 3D 뷰어 로드 (지연 초기화를 위해 프레임 대기)
+    // Wait for DOM update
     await new Promise(resolve => requestAnimationFrame(resolve));
 
     try {
         await viewer3d.loadModel(asset.model_glb_url);
     } catch (error) {
-        alert('3D 모델 로드 실패: ' + error.message);
+        alert('3D model load failed: ' + error.message);
     }
 }
 
 async function deleteAsset(assetId) {
-    if (!confirm('이 에셋을 삭제하시겠습니까?')) return;
+    if (!confirm('Delete this asset?')) return;
 
     try {
         await api.deleteAsset(assetId);
         await loadCatalog(currentCatalogId);
     } catch (error) {
-        alert('에셋 삭제 실패: ' + error.message);
-    }
-}
-
-async function startBatchGeneration(type, apiFunc, button) {
-    const typeLabel = type === '2d' ? '2D' : '3D';
-    const originalText = button.textContent;
-
-    button.disabled = true;
-    generate2DBtn.disabled = true;
-    generate3DBtn.disabled = true;
-
-    progressSection.style.display = 'block';
-    progressFill.style.width = '0%';
-    progressText.textContent = `${typeLabel} 배치 생성 시작 중...`;
-
-    let eventSource = null;
-
-    try {
-        // SSE 연결
-        eventSource = api.streamGenerationStatus(currentCatalogId, (data) => {
-            console.log('SSE data:', data);
-
-            if (data.done) {
-                progressText.textContent = `${typeLabel} 생성 완료!`;
-                progressFill.style.width = '100%';
-                loadCatalog(currentCatalogId);
-                setTimeout(() => {
-                    progressSection.style.display = 'none';
-                    generate2DBtn.disabled = false;
-                    generate3DBtn.disabled = false;
-                    generate2DBtn.textContent = '2D 모두 생성';
-                    generate3DBtn.textContent = '3D 모두 생성';
-                }, 2000);
-            } else if (data.waiting) {
-                progressText.textContent = '서버 응답 대기 중...';
-            } else {
-                const percent = data.total > 0 ? Math.round((data.completed + data.failed) / data.total * 100) : 0;
-                progressFill.style.width = `${percent}%`;
-
-                let statusText = '';
-                if (data.current_status === 'starting') {
-                    statusText = `${typeLabel} 준비 중... (${data.total}개 에셋)`;
-                } else if (data.current_status === 'generating') {
-                    statusText = `${data.current_asset || '생성 중'} (${data.completed + data.failed + 1}/${data.total})`;
-                    if (data.failed > 0) statusText += ` - 실패: ${data.failed}`;
-                } else if (data.current_status === 'completed') {
-                    statusText = `${typeLabel} 완료! 성공: ${data.completed}, 실패: ${data.failed}`;
-                } else {
-                    statusText = `${data.current_asset || ''} - ${data.completed}/${data.total}`;
-                }
-                progressText.textContent = statusText;
-
-                if ((data.completed + data.failed) % 1 === 0) {
-                    loadCatalog(currentCatalogId);
-                }
-            }
-        });
-
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        const result = await apiFunc(currentCatalogId);
-        console.log(`${typeLabel} batch generation started:`, result);
-
-    } catch (error) {
-        console.error(`${typeLabel} batch generation error:`, error);
-        alert(`${typeLabel} 배치 생성 시작 실패: ` + error.message);
-        generate2DBtn.disabled = false;
-        generate3DBtn.disabled = false;
-        generate2DBtn.textContent = '2D 모두 생성';
-        generate3DBtn.textContent = '3D 모두 생성';
-        progressSection.style.display = 'none';
-        if (eventSource) eventSource.close();
+        alert('Asset delete failed: ' + error.message);
     }
 }

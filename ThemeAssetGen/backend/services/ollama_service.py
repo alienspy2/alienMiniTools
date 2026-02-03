@@ -71,7 +71,7 @@ class OllamaService:
         instructions = (
             "Enhance this prompt for 3D asset image generation. "
             "The object should be isolated on white background, single object only, "
-            "good lighting for 3D reconstruction. Output ONLY the enhanced prompt."
+            "no lighting for 3D reconstruction. Output ONLY the enhanced prompt."
         )
 
         payload = {

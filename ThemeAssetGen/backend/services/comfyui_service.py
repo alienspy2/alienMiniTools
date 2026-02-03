@@ -16,23 +16,22 @@ class ComfyUIService:
         self.base_url = COMFYUI_URL
         self.workflow_path = COMFYUI_WORKFLOW_PATH
         self.timeout = aiohttp.ClientTimeout(total=COMFYUI_TIMEOUT)
-        self.poll_interval = 2  # 초
+        self.poll_interval = 2  # seconds
 
     def load_workflow(self) -> dict:
-        """워크플로우 JSON 로드"""
+        """Load workflow JSON (zit_assetgen_api.json)"""
         with open(self.workflow_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    def set_positive_prompt(self, workflow: dict, prompt: str) -> bool:
-        """워크플로우에 프롬프트 설정"""
-        for node in workflow.values():
-            if node.get("class_type") != "CLIPTextEncode":
-                continue
-            meta = node.get("_meta") or {}
-            title = str(meta.get("title", ""))
-            if "Positive" in title or "positive" in title.lower():
-                node.setdefault("inputs", {})["text"] = prompt
-                return True
+    def set_prompt(self, workflow: dict, prompt: str) -> bool:
+        """Set prompt in node 58
+        
+        Node 58 is PrimitiveStringMultiline that holds the user prompt.
+        Style prompt is already embedded in node 61 (StringConcatenate).
+        """
+        if "58" in workflow:
+            workflow["58"].setdefault("inputs", {})["value"] = prompt
+            return True
         return False
 
     def set_random_seed(self, workflow: dict) -> int:
@@ -69,30 +68,30 @@ class ComfyUIService:
             return False
 
     async def generate_image(self, prompt: str, output_path: Path) -> str:
-        """프롬프트로 2D 이미지 생성"""
-        logger.info(f"[COMFYUI] 이미지 생성 시작")
-        logger.info(f"[COMFYUI] 서버: {self.base_url}")
+        """Generate 2D image using zit_assetgen_api.json
+        
+        Uses node 58 for prompt input. Style prompt is already embedded in the API.
+        """
+        logger.info(f"[COMFYUI] Image generation started")
+        logger.info(f"[COMFYUI] Server: {self.base_url}")
+        logger.debug(f"[COMFYUI] Prompt: {prompt}")
+        logger.debug(f"[COMFYUI] Output: {output_path}")
 
-        # 프롬프트에 배경 제거 키워드 추가
-        enhanced_prompt = self.enhance_prompt_for_isolation(prompt)
-        logger.debug(f"[COMFYUI] 원본 프롬프트: {prompt}")
-        logger.debug(f"[COMFYUI] 강화 프롬프트: {enhanced_prompt}")
-        logger.debug(f"[COMFYUI] 출력: {output_path}")
-
-        # 워크플로우 로드 및 프롬프트 설정
+        # Load workflow (style prompt is already embedded)
         try:
             workflow = self.load_workflow()
-            logger.debug(f"[COMFYUI] 워크플로우 로드: {self.workflow_path}")
+            logger.debug(f"[COMFYUI] Workflow loaded: {self.workflow_path}")
         except FileNotFoundError:
-            logger.error(f"[COMFYUI] 워크플로우 파일 없음: {self.workflow_path}")
+            logger.error(f"[COMFYUI] Workflow file not found: {self.workflow_path}")
             raise Exception(f"Workflow file not found: {self.workflow_path}")
 
-        if not self.set_positive_prompt(workflow, enhanced_prompt):
-            logger.warning("[COMFYUI] Positive prompt 노드를 찾지 못함")
+        # Set prompt in node 58 (no additional style prompt needed)
+        if not self.set_prompt(workflow, prompt):
+            logger.warning("[COMFYUI] Node 58 not found in workflow")
 
-        # 랜덤 시드 설정 (캐싱 방지)
+        # Set random seed (prevent caching)
         seed = self.set_random_seed(workflow)
-        logger.debug(f"[COMFYUI] 시드: {seed}")
+        logger.debug(f"[COMFYUI] Seed: {seed}")
 
         try:
             async with aiohttp.ClientSession(timeout=self.timeout) as session:

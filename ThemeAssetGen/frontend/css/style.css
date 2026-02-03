@@ -11,6 +11,8 @@
     --error: #e94560;
     --viewer-height: 350px;
     --viewer-header-height: 50px;
+    --queue-2d-color: #3498db;
+    --queue-3d-color: #9b59b6;
 }
 
 * {
@@ -33,7 +35,7 @@ body {
     flex-direction: column;
 }
 
-/* 메인 콘텐츠 (스크롤 영역) */
+/* Main content (scrollable) */
 .main-content {
     flex: 1;
     overflow-y: auto;
@@ -84,17 +86,25 @@ section h2 {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .section-header h2 {
     margin-bottom: 0;
 }
 
-.actions button {
-    margin-left: 10px;
+.actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
-/* 입력 폼 */
+.actions button {
+    margin-left: 0;
+}
+
+/* Input forms */
 .theme-input form {
     display: flex;
     gap: 10px;
@@ -131,19 +141,177 @@ button {
     padding: 12px 24px;
     font-size: 1em;
     cursor: pointer;
-    transition: background 0.3s;
+    transition: background 0.3s, transform 0.1s;
 }
 
 button:hover {
     background: var(--accent-hover);
 }
 
+button:active {
+    transform: scale(0.98);
+}
+
 button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    transform: none;
 }
 
-/* 에셋 리스트 */
+/* === Queue Panel (New) === */
+.queue-panel {
+    border: 2px solid var(--accent);
+    background: linear-gradient(135deg, var(--card-bg), #1a1a2e);
+}
+
+.queue-panel h2 {
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.queue-panel h2::before {
+    content: '⏳';
+}
+
+.queue-section {
+    background: var(--bg-color);
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 15px;
+}
+
+.queue-section:last-child {
+    margin-bottom: 0;
+}
+
+.queue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.queue-label {
+    font-weight: 600;
+    font-size: 1.1em;
+    padding: 4px 12px;
+    border-radius: 6px;
+}
+
+.queue-label.queue-2d {
+    background: var(--queue-2d-color);
+}
+
+.queue-label.queue-3d {
+    background: var(--queue-3d-color);
+}
+
+.queue-status {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: var(--border);
+}
+
+.queue-status.running {
+    background: var(--warning);
+    color: #1a1a2e;
+    animation: pulse 1.5s infinite;
+}
+
+.queue-status.complete {
+    background: var(--success);
+    color: #1a1a2e;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.queue-current {
+    min-height: 40px;
+    margin-bottom: 10px;
+}
+
+.current-task {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    background: linear-gradient(90deg, rgba(233, 69, 96, 0.2), transparent);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+}
+
+.current-icon {
+    font-size: 1.3em;
+}
+
+.current-name {
+    flex: 1;
+    font-weight: 500;
+}
+
+.current-time {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    background: var(--border);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.queue-progress {
+    background: var(--border);
+    border-radius: 8px;
+    height: 8px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.queue-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--queue-2d-color), var(--success));
+    transition: width 0.5s ease-out;
+    border-radius: 8px;
+}
+
+#queue3DSection .queue-progress-bar {
+    background: linear-gradient(90deg, var(--queue-3d-color), var(--success));
+}
+
+.queue-pending {
+    font-size: 0.9em;
+}
+
+.pending-header {
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.pending-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.pending-list li {
+    background: var(--border);
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+
+.pending-list li.more {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Asset list */
 #assetList {
     display: grid;
     gap: 15px;
@@ -179,6 +347,7 @@ button:disabled {
 .asset-preview .placeholder {
     color: var(--text-muted);
     font-size: 0.8em;
+    text-align: center;
 }
 
 .asset-info h3 {
@@ -207,6 +376,7 @@ button:disabled {
 .asset-actions {
     display: flex;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
 .asset-actions button {
@@ -223,11 +393,11 @@ button:disabled {
 }
 
 .btn-2d {
-    background: #3498db;
+    background: var(--queue-2d-color);
 }
 
 .btn-3d {
-    background: #9b59b6;
+    background: var(--queue-3d-color);
 }
 
 .btn-view {
@@ -238,57 +408,16 @@ button:disabled {
     background: var(--error);
 }
 
-/* 진행률 */
-.progress-section {
-    border: 2px solid var(--accent);
+.btn-all {
+    background: linear-gradient(135deg, var(--queue-2d-color), var(--queue-3d-color));
+    font-weight: 600;
 }
 
-.progress-bar {
-    background: var(--bg-color);
-    border-radius: 10px;
-    height: 24px;
-    overflow: hidden;
-    margin-bottom: 10px;
-    position: relative;
+.btn-all:hover {
+    background: linear-gradient(135deg, #5dade2, #bb8fce);
 }
 
-.progress-fill {
-    background: linear-gradient(90deg, var(--accent), var(--success));
-    height: 100%;
-    width: 0%;
-    transition: width 0.5s ease-out;
-    position: relative;
-}
-
-.progress-fill::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.3),
-        transparent
-    );
-    animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
-}
-
-.progress-text {
-    text-align: center;
-    color: var(--text);
-    font-size: 1.1em;
-    font-weight: 500;
-}
-
-/* 하단 고정 3D 뷰어 패널 */
+/* Bottom fixed 3D viewer panel */
 .viewer-panel {
     position: relative;
     background: var(--card-bg);
@@ -369,7 +498,7 @@ button:disabled {
     border-radius: 8px;
 }
 
-/* 모달 */
+/* Modal */
 .modal {
     position: fixed;
     top: 0;
@@ -424,11 +553,12 @@ button:disabled {
     background: var(--border);
 }
 
-/* 카탈로그 섹션 */
+/* Catalog section */
 .catalog-section {
     display: flex;
     gap: 10px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .catalog-section h2 {
@@ -446,14 +576,14 @@ button:disabled {
 }
 
 #generate2DBtn {
-    background: #3498db;
+    background: var(--queue-2d-color);
 }
 
 #generate3DBtn {
-    background: #9b59b6;
+    background: var(--queue-3d-color);
 }
 
-/* 로딩 */
+/* Loading */
 .loading {
     display: inline-block;
     width: 20px;
@@ -468,7 +598,7 @@ button:disabled {
     to { transform: rotate(360deg); }
 }
 
-/* 반응형 */
+/* Responsive */
 @media (max-width: 768px) {
     .asset-item {
         grid-template-columns: 1fr;
@@ -490,5 +620,15 @@ button:disabled {
 
     :root {
         --viewer-height: 250px;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .actions {
+        width: 100%;
+        justify-content: flex-start;
     }
 }

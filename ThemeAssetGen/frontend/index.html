@@ -3,72 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ThemeAssetGen - 3D 에셋 생성기</title>
+    <title>ThemeAssetGen - 3D Asset Generator</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
 <body>
-    <!-- 상단 스크롤 영역 -->
+    <!-- Main scrollable area -->
     <div class="main-content" id="mainContent">
         <div class="container">
             <header>
                 <h1>ThemeAssetGen</h1>
-                <span class="subtitle">테마 기반 3D 에셋 자동 생성</span>
+                <span class="subtitle">Theme-based 3D Asset Auto-Generation</span>
             </header>
 
-            <!-- 테마 입력 -->
+            <!-- Theme input -->
             <section class="theme-input">
-                <h2>테마 입력</h2>
+                <h2>Theme Input</h2>
                 <form id="themeForm">
-                    <input type="text" id="themeInput" placeholder="테마를 입력하세요 (예: 중세 판타지 성)" required>
-                    <button type="submit" id="generateBtn">에셋 생성</button>
+                    <input type="text" id="themeInput" placeholder="Enter theme (e.g., Medieval Fantasy Castle)" required>
+                    <button type="submit" id="generateBtn">Generate Assets</button>
                 </form>
             </section>
 
-            <!-- 카탈로그 선택 -->
+            <!-- Catalog selection -->
             <section class="catalog-section" id="catalogSection" style="display:none;">
-                <h2>카탈로그</h2>
+                <h2>Catalog</h2>
                 <select id="catalogSelect">
-                    <option value="">카탈로그 선택...</option>
+                    <option value="">Select catalog...</option>
                 </select>
-                <button id="loadCatalogBtn">불러오기</button>
-                <button id="addAssetsBtn">10개 추가</button>
+                <button id="loadCatalogBtn">Load</button>
+                <button id="addAssetsBtn">+10 Assets</button>
             </section>
 
-            <!-- 에셋 리스트 -->
+            <!-- Generation Queue Panel - Always visible when running -->
+            <section class="queue-panel" id="queuePanel" style="display:none;">
+                <h2>Generation Queue</h2>
+                
+                <!-- 2D Queue -->
+                <div class="queue-section" id="queue2DSection">
+                    <div class="queue-header">
+                        <span class="queue-label queue-2d">2D Queue</span>
+                        <span class="queue-status" id="queue2DStatus">Idle</span>
+                    </div>
+                    <div class="queue-current" id="queue2DCurrent"></div>
+                    <div class="queue-progress">
+                        <div class="queue-progress-bar" id="queue2DProgress"></div>
+                    </div>
+                    <div class="queue-pending" id="queue2DPending"></div>
+                </div>
+
+                <!-- 3D Queue -->
+                <div class="queue-section" id="queue3DSection">
+                    <div class="queue-header">
+                        <span class="queue-label queue-3d">3D Queue</span>
+                        <span class="queue-status" id="queue3DStatus">Idle</span>
+                    </div>
+                    <div class="queue-current" id="queue3DCurrent"></div>
+                    <div class="queue-progress">
+                        <div class="queue-progress-bar" id="queue3DProgress"></div>
+                    </div>
+                    <div class="queue-pending" id="queue3DPending"></div>
+                </div>
+            </section>
+
+            <!-- Asset list -->
             <section class="asset-list" id="assetSection" style="display:none;">
                 <div class="section-header">
-                    <h2>에셋 리스트</h2>
+                    <h2>Asset List</h2>
                     <div class="actions">
-                        <button id="generate2DBtn">2D 모두 생성</button>
-                        <button id="generate3DBtn">3D 모두 생성</button>
-                        <button id="exportBtn">내보내기 (ZIP)</button>
+                        <button id="generateAllBtn" class="btn-all">Generate All (2D+3D)</button>
+                        <button id="generate2DBtn">2D All</button>
+                        <button id="generate3DBtn">3D All</button>
+                        <button id="exportBtn">Export (ZIP)</button>
                     </div>
                 </div>
                 <div id="assetList"></div>
             </section>
-
-            <!-- 생성 진행률 -->
-            <section class="progress-section" id="progressSection" style="display:none;">
-                <h2>생성 진행률</h2>
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div class="progress-text" id="progressText">대기 중...</div>
-            </section>
         </div>
     </div>
 
-    <!-- 하단 고정 3D 뷰어 패널 -->
+    <!-- Bottom fixed 3D viewer panel -->
     <div class="viewer-panel collapsed" id="viewerPanel">
         <div class="viewer-header" id="viewerHeader">
-            <span class="viewer-title">3D 미리보기</span>
+            <span class="viewer-title">3D Preview</span>
             <div class="viewer-header-controls">
                 <button id="downloadGlb" class="btn-small">GLB</button>
                 <button id="downloadObj" class="btn-small">OBJ</button>
-                <button id="toggleViewer" class="btn-toggle">▲</button>
+                <button id="toggleViewer" class="btn-toggle">&#9650;</button>
             </div>
         </div>
         <div class="viewer-content" id="viewerContent">
@@ -76,34 +99,34 @@
         </div>
     </div>
 
-    <!-- 에셋 편집 모달 -->
+    <!-- Asset edit modal -->
     <div class="modal" id="editModal" style="display:none;">
         <div class="modal-content">
-            <h3>에셋 편집</h3>
+            <h3>Edit Asset</h3>
             <form id="editForm">
                 <input type="hidden" id="editAssetId">
-                <label>영문 이름</label>
+                <label>English Name</label>
                 <input type="text" id="editName">
-                <label>한글 이름</label>
+                <label>Korean Name</label>
                 <input type="text" id="editNameKr">
-                <label>카테고리</label>
+                <label>Category</label>
                 <select id="editCategory">
-                    <option value="prop">소품</option>
-                    <option value="furniture">가구</option>
-                    <option value="wall">벽</option>
-                    <option value="ceiling">천장</option>
-                    <option value="floor">바닥</option>
-                    <option value="decoration">장식</option>
-                    <option value="lighting">조명</option>
-                    <option value="other">기타</option>
+                    <option value="prop">Prop</option>
+                    <option value="furniture">Furniture</option>
+                    <option value="wall">Wall</option>
+                    <option value="ceiling">Ceiling</option>
+                    <option value="floor">Floor</option>
+                    <option value="decoration">Decoration</option>
+                    <option value="lighting">Lighting</option>
+                    <option value="other">Other</option>
                 </select>
-                <label>설명</label>
+                <label>Description</label>
                 <textarea id="editDescription"></textarea>
-                <label>2D 생성 프롬프트</label>
+                <label>2D Generation Prompt</label>
                 <textarea id="editPrompt2d"></textarea>
                 <div class="modal-actions">
-                    <button type="submit">저장</button>
-                    <button type="button" id="cancelEdit">취소</button>
+                    <button type="submit">Save</button>
+                    <button type="button" id="cancelEdit">Cancel</button>
                 </div>
             </form>
         </div>
