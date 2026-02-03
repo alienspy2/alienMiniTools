@@ -23,16 +23,18 @@ class PipelineService:
         self.comfyui = ComfyUIService()
         self.hunyuan3d = Hunyuan3DService()
 
-    async def generate_theme_assets(self, theme_name: str) -> ThemeGenerateResponse:
-        """Theme -> Asset list generation pipeline"""
-        logger.info(f"Starting theme asset generation: {theme_name}")
+    async def generate_theme_assets(self, theme_name: str, progress_callback=None) -> ThemeGenerateResponse:
+        """Theme -> Asset list generation pipeline (by category)"""
+        from backend.utils.prompt_templates import ASSET_CATEGORIES
+        
+        logger.info(f"Starting theme asset generation by category: {theme_name}")
 
-        asset_list = await self.ollama.generate_asset_list(theme_name)
-
+        # Create Theme
         theme = Theme(name=theme_name, description=f"3D assets for '{theme_name}' theme")
         self.db.add(theme)
         self.db.flush()
 
+        # Create Catalog
         catalog = Catalog(
             name=f"{theme_name} Catalog",
             theme_id=theme.id,
@@ -41,37 +43,86 @@ class PipelineService:
         self.db.add(catalog)
         self.db.flush()
 
-        response_assets = []
-        for item in asset_list:
-            category_str = item.get("category", "other").lower()
+        all_assets = []
+        existing_names = []
+        category_order = [
+            "wall_texture", "stair", "floor_texture", "door",
+            "prop_small", "prop_medium", "prop_large"
+        ]
+        
+        total_categories = len(category_order)
+        
+        for idx, asset_type in enumerate(category_order):
+            category_info = ASSET_CATEGORIES[asset_type]
+            
+            if progress_callback:
+                progress_callback({
+                    "stage": "generating",
+                    "current_category": asset_type,
+                    "category_name": category_info["name"],
+                    "category_index": idx + 1,
+                    "total_categories": total_categories,
+                    "message": f"Generating {category_info['name']} ({idx+1}/{total_categories})..."
+                })
+            
+            logger.info(f"[THEME] Generating {asset_type} ({idx+1}/{total_categories})")
+            
             try:
-                category = AssetCategory(category_str)
-            except ValueError:
-                category = AssetCategory.OTHER
+                assets_data = await self.ollama.generate_category_assets(
+                    theme=theme_name,
+                    asset_type=asset_type,
+                    existing_names=existing_names
+                )
+                
+                # Add assets to DB
+                for item in assets_data:
+                    category_str = item.get("category", "other").lower()
+                    try:
+                        category = AssetCategory(category_str)
+                    except ValueError:
+                        category = AssetCategory.OTHER
 
-            asset = Asset(
-                catalog_id=catalog.id,
-                name=item.get("name", "unnamed"),
-                name_kr=item.get("name_kr", ""),
-                category=category,
-                description=item.get("description", ""),
-                description_kr=item.get("description_kr", ""),
-                prompt_2d=item.get("prompt_2d", ""),
-                status=GenerationStatus.PENDING,
-            )
-            self.db.add(asset)
+                    asset = Asset(
+                        catalog_id=catalog.id,
+                        name=item.get("name", "unnamed"),
+                        name_kr=item.get("name_kr", ""),
+                        category=category,
+                        description=item.get("description", ""),
+                        description_kr=item.get("description_kr", ""),
+                        prompt_2d=item.get("prompt_2d", ""),
+                        status=GenerationStatus.PENDING,
+                        asset_type=asset_type,
+                    )
+                    self.db.add(asset)
+                    existing_names.append(item.get("name", ""))
+                    all_assets.append(asset)
+                
+                self.db.commit()
+                logger.info(f"[THEME] Created {len(assets_data)} {asset_type} assets")
+                
+            except Exception as e:
+                logger.error(f"[THEME] Failed to generate {asset_type}: {e}")
+                # Continue with other categories
+        
+        if progress_callback:
+            progress_callback({
+                "stage": "completed",
+                "message": f"Created {len(all_assets)} assets total",
+                "total_assets": len(all_assets)
+            })
 
-            response_assets.append(AssetListItem(
-                name=asset.name,
-                name_kr=asset.name_kr,
-                category=category.value,
-                description=asset.description,
-                description_kr=asset.description_kr,
-                prompt_2d=asset.prompt_2d,
-            ))
+        response_assets = [
+            AssetListItem(
+                name=a.name,
+                name_kr=a.name_kr,
+                category=a.category.value,
+                description=a.description,
+                description_kr=a.description_kr,
+                prompt_2d=a.prompt_2d,
+            ) for a in all_assets
+        ]
 
-        self.db.commit()
-        logger.info(f"Created {len(response_assets)} assets")
+        logger.info(f"Theme generation complete: {len(all_assets)} total assets")
 
         return ThemeGenerateResponse(
             theme_id=theme.id,

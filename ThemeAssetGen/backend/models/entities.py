@@ -64,6 +64,7 @@ class Asset(Base):
     name = Column(String(255), nullable=False)
     name_kr = Column(String(255))
     category = Column(Enum(AssetCategory), default=AssetCategory.OTHER)
+    asset_type = Column(String(50))  # wall_texture, stair, prop_small, etc.
     description = Column(Text)
     description_kr = Column(Text)
     prompt_2d = Column(Text)

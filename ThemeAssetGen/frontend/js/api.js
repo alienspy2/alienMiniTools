@@ -3,7 +3,61 @@
 const API_BASE = '/api';
 
 const api = {
-    // Theme related
+    // Theme related (streaming with progress)
+    streamGenerateTheme(theme, onProgress) {
+        return new Promise((resolve, reject) => {
+            fetch(`${API_BASE}/theme/generate-stream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme }),
+            }).then(response => {
+                if (!response.ok) {
+                    reject(new Error('Theme generation failed'));
+                    return;
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                function read() {
+                    reader.read().then(({ done, value }) => {
+                        if (done) {
+                            resolve();
+                            return;
+                        }
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop(); // Keep incomplete line in buffer
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+                                    onProgress(data);
+
+                                    if (data.stage === 'done') {
+                                        resolve(data);
+                                    } else if (data.stage === 'error') {
+                                        reject(new Error(data.message));
+                                    }
+                                } catch (e) {
+                                    console.error('SSE parse error:', e);
+                                }
+                            }
+                        }
+
+                        read();
+                    }).catch(reject);
+                }
+
+                read();
+            }).catch(reject);
+        });
+    },
+
+    // Theme related (non-streaming fallback)
     async generateTheme(theme) {
         const response = await fetch(`${API_BASE}/theme/generate`, {
             method: 'POST',
@@ -108,11 +162,23 @@ const api = {
         return response.json();
     },
 
-    async addAssets(catalogId, count = 10) {
-        const response = await fetch(`${API_BASE}/catalog/${catalogId}/add-assets?count=${count}`, {
+    async addAssets(catalogId, assetType = null, count = null) {
+        let url = `${API_BASE}/catalog/${catalogId}/add-assets`;
+        const params = [];
+        if (assetType) params.push(`asset_type=${assetType}`);
+        if (count) params.push(`count=${count}`);
+        if (params.length > 0) url += `?${params.join('&')}`;
+
+        const response = await fetch(url, {
             method: 'POST',
         });
         if (!response.ok) throw new Error('Asset addition failed');
+        return response.json();
+    },
+
+    async getAssetCategories() {
+        const response = await fetch(`${API_BASE}/catalog/asset-categories`);
+        if (!response.ok) throw new Error('Category fetch failed');
         return response.json();
     },
 

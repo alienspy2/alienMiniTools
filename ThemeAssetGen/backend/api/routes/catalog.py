@@ -39,6 +39,13 @@ async def list_catalogs(db: Session = Depends(get_db)):
     return CatalogListResponse(catalogs=items)
 
 
+@router.get("/asset-categories")
+async def get_asset_categories():
+    """Get all available asset category types with their counts"""
+    from backend.utils.prompt_templates import ASSET_CATEGORIES
+    return {"categories": ASSET_CATEGORIES}
+
+
 @router.get("/{catalog_id}", response_model=CatalogResponse)
 async def get_catalog(catalog_id: str, db: Session = Depends(get_db)):
     """Get catalog details"""
@@ -234,9 +241,16 @@ Category: {asset.category.value if asset.category else 'other'}
 
 
 @router.post("/{catalog_id}/add-assets")
-async def add_assets_to_catalog(catalog_id: str, count: int = 10, db: Session = Depends(get_db)):
-    """Add assets to catalog (generate with Ollama)"""
+async def add_assets_to_catalog(
+    catalog_id: str, 
+    asset_type: str = None,
+    count: int = None,
+    db: Session = Depends(get_db)
+):
+    """Add assets to catalog by type (generate with Ollama)"""
     import logging
+    from backend.utils.prompt_templates import ASSET_CATEGORIES
+    
     logger = logging.getLogger(__name__)
 
     catalog = db.query(Catalog).filter(Catalog.id == catalog_id).first()
@@ -246,15 +260,22 @@ async def add_assets_to_catalog(catalog_id: str, count: int = 10, db: Session = 
     theme_name = catalog.theme.name if catalog.theme else catalog.name
     existing_names = [asset.name for asset in catalog.assets]
 
-    logger.info(f"[ADD-ASSETS] Adding {count} assets to catalog {catalog_id}")
-    logger.info(f"[ADD-ASSETS] Theme: {theme_name}, existing: {len(existing_names)}")
+    # If asset_type specified, use category-specific generation
+    if asset_type and asset_type in ASSET_CATEGORIES:
+        category_info = ASSET_CATEGORIES[asset_type]
+        actual_count = category_info["count"]
+        logger.info(f"[ADD-ASSETS] Adding {actual_count} {asset_type} assets to catalog {catalog_id}")
+    else:
+        actual_count = count or 10
+        logger.info(f"[ADD-ASSETS] Adding {actual_count} general assets to catalog {catalog_id}")
 
     ollama = OllamaService()
     try:
         new_assets_data = await ollama.generate_additional_assets(
             theme=theme_name,
             existing_names=existing_names,
-            count=count
+            count=actual_count,
+            asset_type=asset_type
         )
     except Exception as e:
         logger.error(f"[ADD-ASSETS] Ollama generation failed: {e}")
@@ -271,6 +292,7 @@ async def add_assets_to_catalog(catalog_id: str, count: int = 10, db: Session = 
                 name=asset_data.get("name", "unnamed_asset"),
                 name_kr=asset_data.get("name_kr", ""),
                 category=category,
+                asset_type=asset_type or asset_data.get("asset_type"),
                 description=asset_data.get("description", ""),
                 prompt_2d=asset_data.get("prompt_2d", ""),
                 status=GenerationStatus.PENDING,
@@ -288,4 +310,5 @@ async def add_assets_to_catalog(catalog_id: str, count: int = 10, db: Session = 
         "message": f"Added {len(added_assets)} assets",
         "catalog_id": catalog_id,
         "added_count": len(added_assets),
+        "asset_type": asset_type,
     }

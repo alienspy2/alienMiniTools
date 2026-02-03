@@ -1,111 +1,195 @@
-ASSET_LIST_PROMPT = """당신은 전문 3D 환경 아티스트입니다.
-'{theme}' 테마의 3D 가상 공간을 구성하는 데 필요한 에셋(소품, 가구, 구조물 등) 목록을 생성해주세요.
+# Asset category definitions with counts
+ASSET_CATEGORIES = {
+    # Background assets
+    "wall_texture": {
+        "name": "Wall Texture",
+        "name_kr": "Wall Texture",
+        "count": 10,
+        "category": "wall",
+        "description": "tileable wall texture panels for game environments"
+    },
+    "stair": {
+        "name": "Stair",
+        "name_kr": "Stair",
+        "count": 3,
+        "category": "floor",
+        "description": "stairs of different heights (low, medium, high)"
+    },
+    "floor_texture": {
+        "name": "Floor Texture",
+        "name_kr": "Floor Texture",
+        "count": 10,
+        "category": "floor",
+        "description": "tileable floor texture panels for game environments"
+    },
+    "door": {
+        "name": "Door",
+        "name_kr": "Door",
+        "count": 5,
+        "category": "wall",
+        "description": "various door styles for game environments"
+    },
+    # Props
+    "prop_small": {
+        "name": "Small Prop",
+        "name_kr": "Small Prop",
+        "count": 10,
+        "category": "prop",
+        "description": "small decorative objects (books, cups, bottles, etc.)"
+    },
+    "prop_medium": {
+        "name": "Medium Prop",
+        "name_kr": "Medium Prop",
+        "count": 10,
+        "category": "prop",
+        "description": "medium-sized objects (chairs, baskets, boxes, etc.)"
+    },
+    "prop_large": {
+        "name": "Large Prop",
+        "name_kr": "Large Prop",
+        "count": 10,
+        "category": "furniture",
+        "description": "large furniture and objects (tables, wardrobes, statues, etc.)"
+    },
+}
 
-## 요구사항
-1. 최소 10개, 최대 20개의 에셋을 제안해주세요.
-2. 다양한 카테고리의 에셋을 포함해주세요.
-3. 각 에셋에 대해 2D 이미지 생성용 프롬프트를 작성해주세요.
-4. 프롬프트는 영어로, 3D 에셋 생성에 최적화되어야 합니다.
 
-## 카테고리
-- prop: 소품 (책, 병, 접시 등)
-- furniture: 가구 (의자, 테이블, 침대 등)
-- wall: 벽 관련 (벽면, 문, 창문 프레임 등)
-- ceiling: 천장 (조명 부착물, 장식 등)
-- floor: 바닥 (타일, 카펫, 러그 등)
-- decoration: 장식 (그림, 화분, 조각상 등)
-- lighting: 조명 (램프, 촛대, 샹들리에 등)
+ASSET_LIST_PROMPT = """You are a professional 3D environment artist.
+Generate an asset list for building a 3D virtual space with '{theme}' theme.
 
-## 출력 형식 (JSON)
+## Requirements
+1. Generate exactly 10-20 assets.
+2. Include various categories.
+3. Write 2D image generation prompts for each asset.
+4. Prompts must be in English, optimized for 3D asset generation.
+
+## Categories
+- prop: Props (books, bottles, plates, etc.)
+- furniture: Furniture (chairs, tables, beds, etc.)
+- wall: Wall-related (walls, doors, window frames, etc.)
+- ceiling: Ceiling (light fixtures, decorations, etc.)
+- floor: Floor (tiles, carpets, rugs, etc.)
+- decoration: Decorations (paintings, plants, statues, etc.)
+- lighting: Lighting (lamps, chandeliers, etc.)
+
+## Output Format (JSON)
 ```json
 {{
   "assets": [
     {{
-      "name": "영문 이름 (snake_case)",
-      "name_kr": "한글 이름",
-      "category": "카테고리",
-      "description": "에셋에 대한 간단한 영문 설명 (1-2문장)",
-      "description_kr": "에셋에 대한 간단한 한글 설명 (1-2문장)",
-      "prompt_2d": "2D 이미지 생성용 영문 프롬프트 (상세하게, 배경 없이, 단일 오브젝트, 스튜디오 조명)"
+      "name": "english_name (snake_case)",
+      "name_kr": "Korean name",
+      "category": "category",
+      "description": "Brief English description (1-2 sentences)",
+      "description_kr": "Brief Korean description (1-2 sentences)",
+      "prompt_2d": "English prompt for 2D image generation (detailed, no background, single object, studio lighting)"
     }}
   ]
 }}
 ```
 
-## 프롬프트 작성 규칙 (중요!)
-- 반드시 "isolated on pure white background" 또는 "on solid white background" 포함
-- "single object, centered" 포함
-- "full object visible, not cropped, entire object in frame" 포함
-- "no background, no shadow, no floor" 포함
-- "product photography style, studio lighting" 포함
+## Prompt Rules (IMPORTANT!)
+- MUST include "isolated on pure white background" or "on solid white background"
+- Include "single object, centered"
+- Include "full object visible, not cropped, entire object in frame"
+- Include "no background, no shadow, no floor"
+- Include "product photography style, studio lighting"
 
-## 예시 (중세 성 테마)
-```json
-{{
-  "assets": [
-    {{
-      "name": "royal_throne",
-      "name_kr": "왕좌",
-      "category": "furniture",
-      "description": "An ornate medieval throne with gold decorations and red velvet cushion, fit for royalty.",
-      "description_kr": "금색 장식과 빨간 벨벳 쿠션이 있는 화려한 중세 왕좌입니다. 왕실에 어울리는 가구입니다.",
-      "prompt_2d": "medieval royal throne, ornate wooden chair with red velvet cushion, gold leaf decorations, carved armrests with lion heads, single object centered, full object visible, not cropped, entire object in frame, isolated on pure white background, no shadow, no floor, product photography, studio lighting, 3D asset reference, high detail"
-    }}
-  ]
-}}
-```
-
-지금 '{theme}' 테마의 에셋 목록을 JSON 형식으로 생성해주세요.
-반드시 유효한 JSON만 출력하세요. 다른 설명은 포함하지 마세요."""
+Generate the asset list for '{theme}' theme in JSON format now.
+Output ONLY valid JSON. Do not include other explanations."""
 
 
-ADDITIONAL_ASSETS_PROMPT = """당신은 전문 3D 환경 아티스트입니다.
-'{theme}' 테마의 3D 가상 공간에 추가할 에셋 목록을 생성해주세요.
+CATEGORY_ASSET_PROMPT = """You are a professional 3D environment artist.
+Generate {count} assets of type "{asset_type}" for a '{theme}' themed 3D virtual space.
 
-## 기존 에셋 목록 (중복 피할 것)
+## Asset Type Description
+{asset_type_description}
+
+## Existing Assets (AVOID DUPLICATES)
 {existing_assets}
 
-## 요구사항
-1. 정확히 {count}개의 새로운 에셋을 제안해주세요.
-2. 기존 에셋과 중복되지 않는 새로운 에셋을 제안하세요.
-3. 다양한 카테고리의 에셋을 포함해주세요.
-4. 각 에셋에 대해 2D 이미지 생성용 프롬프트를 작성해주세요.
-5. 프롬프트는 영어로, 3D 에셋 생성에 최적화되어야 합니다.
+## Requirements
+1. Generate EXACTLY {count} assets of the specified type.
+2. Each must be unique and fit the theme.
+3. Write detailed 2D image generation prompts.
+4. Prompts must be in English, optimized for 3D asset generation.
 
-## 카테고리
-- prop: 소품 (책, 병, 접시 등)
-- furniture: 가구 (의자, 테이블, 침대 등)
-- wall: 벽 관련 (벽면, 문, 창문 프레임 등)
-- ceiling: 천장 (조명 부착물, 장식 등)
-- floor: 바닥 (타일, 카펫, 러그 등)
-- decoration: 장식 (그림, 화분, 조각상 등)
-- lighting: 조명 (램프, 촛대, 샹들리에 등)
-
-## 출력 형식 (JSON)
+## Output Format (JSON)
 ```json
 {{
   "assets": [
     {{
-      "name": "영문 이름 (snake_case)",
-      "name_kr": "한글 이름",
-      "category": "카테고리",
-      "description": "에셋에 대한 간단한 영문 설명 (1-2문장)",
-      "description_kr": "에셋에 대한 간단한 한글 설명 (1-2문장)",
-      "prompt_2d": "2D 이미지 생성용 영문 프롬프트 (상세하게, 배경 없이, 단일 오브젝트, 스튜디오 조명)"
+      "name": "english_name (snake_case)",
+      "name_kr": "Korean name",
+      "category": "{category}",
+      "asset_type": "{asset_type}",
+      "description": "Brief English description (1-2 sentences)",
+      "description_kr": "Brief Korean description (1-2 sentences)",
+      "prompt_2d": "English prompt for 2D image generation"
     }}
   ]
 }}
 ```
 
-## 프롬프트 작성 규칙 (중요!)
-- 반드시 "isolated on pure white background" 또는 "on solid white background" 포함
-- "single object, centered" 포함
-- "full object visible, not cropped, entire object in frame" 포함
-- "no background, no shadow, no floor" 포함
-- "product photography style, studio lighting" 포함
+## Prompt Rules (IMPORTANT!)
+- MUST include "isolated on pure white background" or "on solid white background"
+- Include "single object, centered"
+- Include "full object visible, not cropped, entire object in frame"
+- Include "no background, no shadow, no floor"
+- Include "product photography style, studio lighting"
+- Be specific about the style matching '{theme}' theme
 
-지금 '{theme}' 테마에 어울리는 새로운 에셋 {count}개를 JSON 형식으로 생성해주세요.
-반드시 유효한 JSON만 출력하세요. 다른 설명은 포함하지 마세요."""
+Generate EXACTLY {count} "{asset_type}" assets for '{theme}' theme in JSON format now.
+Output ONLY valid JSON. Do not include other explanations."""
+
+
+ADDITIONAL_ASSETS_PROMPT = """You are a professional 3D environment artist.
+Generate additional assets for a '{theme}' themed 3D virtual space.
+
+## Existing Assets (AVOID DUPLICATES)
+{existing_assets}
+
+## Requirements
+1. Generate EXACTLY {count} new assets.
+2. Avoid duplicating existing assets.
+3. Include various categories.
+4. Write detailed 2D image generation prompts.
+5. Prompts must be in English, optimized for 3D asset generation.
+
+## Categories
+- prop: Props (books, bottles, plates, etc.)
+- furniture: Furniture (chairs, tables, beds, etc.)
+- wall: Wall-related (walls, doors, window frames, etc.)
+- ceiling: Ceiling (light fixtures, decorations, etc.)
+- floor: Floor (tiles, carpets, rugs, etc.)
+- decoration: Decorations (paintings, plants, statues, etc.)
+- lighting: Lighting (lamps, chandeliers, etc.)
+
+## Output Format (JSON)
+```json
+{{
+  "assets": [
+    {{
+      "name": "english_name (snake_case)",
+      "name_kr": "Korean name",
+      "category": "category",
+      "description": "Brief English description (1-2 sentences)",
+      "description_kr": "Brief Korean description (1-2 sentences)",
+      "prompt_2d": "English prompt for 2D image generation"
+    }}
+  ]
+}}
+```
+
+## Prompt Rules (IMPORTANT!)
+- MUST include "isolated on pure white background" or "on solid white background"
+- Include "single object, centered"
+- Include "full object visible, not cropped, entire object in frame"
+- Include "no background, no shadow, no floor"
+- Include "product photography style, studio lighting"
+
+Generate EXACTLY {count} new assets for '{theme}' theme in JSON format now.
+Output ONLY valid JSON. Do not include other explanations."""
 
 
 REFINE_2D_PROMPT = """Enhance the following prompt for 3D asset image generation.

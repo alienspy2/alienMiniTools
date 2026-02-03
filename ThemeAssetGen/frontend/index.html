@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,6 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 </head>
+
 <body>
     <!-- Main scrollable area -->
     <div class="main-content" id="mainContent">
@@ -22,9 +24,21 @@
             <section class="theme-input">
                 <h2>Theme Input</h2>
                 <form id="themeForm">
-                    <input type="text" id="themeInput" placeholder="Enter theme (e.g., Medieval Fantasy Castle)" required>
+                    <input type="text" id="themeInput" placeholder="Enter theme (e.g., Medieval Fantasy Castle)"
+                        required>
                     <button type="submit" id="generateBtn">Generate Assets</button>
                 </form>
+                <!-- Theme generation progress -->
+                <div id="themeProgress" class="theme-progress" style="display:none;">
+                    <div class="progress-header">
+                        <span class="progress-icon">🎨</span>
+                        <span id="themeProgressText">Generating...</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="themeProgressBar"></div>
+                    </div>
+                    <div class="progress-detail" id="themeProgressDetail"></div>
+                </div>
             </section>
 
             <!-- Catalog selection -->
@@ -34,13 +48,21 @@
                     <option value="">Select catalog...</option>
                 </select>
                 <button id="loadCatalogBtn">Load</button>
-                <button id="addAssetsBtn">+10 Assets</button>
+                <button id="deleteCatalogBtn" class="btn-delete">Delete</button>
+            </section>
+
+            <!-- Category-specific add buttons -->
+            <section class="add-assets-section" id="addAssetsSection" style="display:none;">
+                <h2>Add Assets by Category</h2>
+                <div class="category-buttons" id="categoryButtons">
+                    <!-- Buttons will be dynamically generated -->
+                </div>
             </section>
 
             <!-- Generation Queue Panel - Always visible when running -->
             <section class="queue-panel" id="queuePanel" style="display:none;">
                 <h2>Generation Queue</h2>
-                
+
                 <!-- 2D Queue -->
                 <div class="queue-section" id="queue2DSection">
                     <div class="queue-header">
@@ -136,4 +158,5 @@
     <script src="/static/js/3d-viewer.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
+
 </html>

@@ -13,7 +13,8 @@ const generateBtn = document.getElementById('generateBtn');
 const catalogSection = document.getElementById('catalogSection');
 const catalogSelect = document.getElementById('catalogSelect');
 const loadCatalogBtn = document.getElementById('loadCatalogBtn');
-const addAssetsBtn = document.getElementById('addAssetsBtn');
+const addAssetsSection = document.getElementById('addAssetsSection');
+const categoryButtonsContainer = document.getElementById('categoryButtons');
 const assetSection = document.getElementById('assetSection');
 const assetList = document.getElementById('assetList');
 const generateAllBtn = document.getElementById('generateAllBtn');
@@ -44,11 +45,12 @@ const queue3DPending = document.getElementById('queue3DPending');
 document.addEventListener('DOMContentLoaded', async () => {
     viewer3d = new Viewer3D('viewer3d');
     await loadCatalogs();
+    await loadAssetCategories();
     setupEventListeners();
 });
 
 function setupEventListeners() {
-    // Theme generation
+    // Theme generation with progress
     themeForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const theme = themeInput.value.trim();
@@ -57,14 +59,69 @@ function setupEventListeners() {
         generateBtn.disabled = true;
         generateBtn.innerHTML = '<span class="loading"></span> Generating...';
 
+        // Show progress panel
+        const progressPanel = document.getElementById('themeProgress');
+        const progressText = document.getElementById('themeProgressText');
+        const progressBar = document.getElementById('themeProgressBar');
+        const progressDetail = document.getElementById('themeProgressDetail');
+
+        progressPanel.style.display = 'block';
+        progressBar.style.width = '0%';
+        progressText.textContent = 'Starting...';
+        progressDetail.textContent = '';
+
+        // Track elapsed time - update progressText instead of progressDetail
+        let startTime = Date.now();
+        let currentCategory = 'Wall Texture';
+        let categoryIndex = 1;
+        let totalCategories = 7;
+        const elapsedTimer = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            progressText.textContent = `Generating ${currentCategory} (${categoryIndex}/${totalCategories})... ${elapsed}s`;
+        }, 1000);
+
         try {
-            const result = await api.generateTheme(theme);
-            currentCatalogId = result.catalog_id;
+            let lastCategoryIndex = 0;
+            await api.streamGenerateTheme(theme, (data) => {
+                console.log('Theme progress:', data);
+
+                if (data.stage === 'generating') {
+                    // Only reset timer when category actually changes
+                    if (data.category_index !== lastCategoryIndex) {
+                        startTime = Date.now();
+                        lastCategoryIndex = data.category_index;
+                    }
+                    currentCategory = data.category_name;
+                    categoryIndex = data.category_index;
+                    totalCategories = data.total_categories;
+                    const pct = Math.round((data.category_index / data.total_categories) * 100);
+                    progressBar.style.width = `${pct}%`;
+                    progressDetail.textContent = `✅ Categories done: ${data.category_index - 1}/${data.total_categories}`;
+                } else if (data.stage === 'completed') {
+                    progressBar.style.width = '100%';
+                    progressText.textContent = data.message;
+                    progressDetail.textContent = '✅ All categories generated!';
+                } else if (data.stage === 'done') {
+                    currentCatalogId = data.catalog_id;
+                    progressText.textContent = `Done! Created ${data.asset_count} assets`;
+                }
+            });
+
+            clearInterval(elapsedTimer);
+
             await loadCatalog(currentCatalogId);
             await loadCatalogs();
             themeInput.value = '';
+
+            // Hide progress after delay
+            setTimeout(() => {
+                progressPanel.style.display = 'none';
+            }, 2000);
+
         } catch (error) {
+            clearInterval(elapsedTimer);
             alert('Asset list generation failed: ' + error.message);
+            progressPanel.style.display = 'none';
         } finally {
             generateBtn.disabled = false;
             generateBtn.textContent = 'Generate Assets';
@@ -79,29 +136,36 @@ function setupEventListeners() {
         }
     });
 
-    // Add 10 assets
-    addAssetsBtn.addEventListener('click', async () => {
-        const catalogId = catalogSelect.value || currentCatalogId;
+    // Delete catalog
+    document.getElementById('deleteCatalogBtn').addEventListener('click', async () => {
+        const catalogId = catalogSelect.value;
         if (!catalogId) {
             alert('Please select a catalog first.');
             return;
         }
 
-        addAssetsBtn.disabled = true;
-        addAssetsBtn.innerHTML = '<span class="loading"></span> Adding...';
+        const selectedOption = catalogSelect.options[catalogSelect.selectedIndex];
+        if (!confirm(`Delete "${selectedOption.textContent}"?`)) {
+            return;
+        }
 
         try {
-            const result = await api.addAssets(catalogId, 10);
-            alert(`${result.added_count} assets added.`);
-            await loadCatalog(catalogId);
+            await api.deleteCatalog(catalogId);
             await loadCatalogs();
+
+            // Reset view
+            currentCatalogId = null;
+            currentAssets = [];
+            assetSection.style.display = 'none';
+            addAssetsSection.style.display = 'none';
+
+            alert('Catalog deleted.');
         } catch (error) {
-            alert('Asset addition failed: ' + error.message);
-        } finally {
-            addAssetsBtn.disabled = false;
-            addAssetsBtn.textContent = '+10 Assets';
+            alert('Delete failed: ' + error.message);
         }
     });
+
+    // Category add buttons are set up dynamically in loadAssetCategories()
 
     // Generate All (2D + 3D parallel)
     generateAllBtn.addEventListener('click', async () => {
@@ -211,8 +275,91 @@ async function loadCatalog(catalogId) {
 
         renderAssetList();
         assetSection.style.display = 'block';
+        addAssetsSection.style.display = 'block';
     } catch (error) {
         alert('Catalog load failed: ' + error.message);
+    }
+}
+
+// Asset category definitions
+let assetCategories = {};
+
+async function loadAssetCategories() {
+    try {
+        const result = await api.getAssetCategories();
+        assetCategories = result.categories;
+        renderCategoryButtons();
+    } catch (error) {
+        console.error('Category load failed:', error);
+        // Fallback categories
+        assetCategories = {
+            wall_texture: { name: 'Wall Texture', count: 10, category: 'wall' },
+            stair: { name: 'Stair', count: 3, category: 'floor' },
+            floor_texture: { name: 'Floor Texture', count: 10, category: 'floor' },
+            door: { name: 'Door', count: 5, category: 'wall' },
+            prop_small: { name: 'Small Prop', count: 10, category: 'prop' },
+            prop_medium: { name: 'Medium Prop', count: 10, category: 'prop' },
+            prop_large: { name: 'Large Prop', count: 10, category: 'furniture' },
+        };
+        renderCategoryButtons();
+    }
+}
+
+function renderCategoryButtons() {
+    categoryButtonsContainer.innerHTML = '';
+
+    // Group: Background
+    const bgGroup = document.createElement('div');
+    bgGroup.className = 'button-group';
+    bgGroup.innerHTML = '<span class="group-label">Background:</span>';
+
+    // Group: Props
+    const propGroup = document.createElement('div');
+    propGroup.className = 'button-group';
+    propGroup.innerHTML = '<span class="group-label">Props:</span>';
+
+    const bgTypes = ['wall_texture', 'stair', 'floor_texture', 'door'];
+    const propTypes = ['prop_small', 'prop_medium', 'prop_large'];
+
+    for (const [assetType, info] of Object.entries(assetCategories)) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-category';
+        btn.dataset.assetType = assetType;
+        btn.innerHTML = `+${info.count} ${info.name}`;
+        btn.addEventListener('click', () => addAssetsByCategory(assetType, btn));
+
+        if (bgTypes.includes(assetType)) {
+            bgGroup.appendChild(btn);
+        } else if (propTypes.includes(assetType)) {
+            propGroup.appendChild(btn);
+        }
+    }
+
+    categoryButtonsContainer.appendChild(bgGroup);
+    categoryButtonsContainer.appendChild(propGroup);
+}
+
+async function addAssetsByCategory(assetType, btn) {
+    const catalogId = catalogSelect.value || currentCatalogId;
+    if (!catalogId) {
+        alert('Please select a catalog first.');
+        return;
+    }
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading"></span> Adding...';
+
+    try {
+        const result = await api.addAssets(catalogId, assetType);
+        alert(`${result.added_count} ${assetType} assets added.`);
+        await loadCatalog(catalogId);
+        await loadCatalogs();
+    } catch (error) {
+        alert('Asset addition failed: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
     }
 }
 
