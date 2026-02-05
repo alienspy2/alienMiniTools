@@ -24,15 +24,32 @@
 │           │ Gradio Client API                                  │
 │           ▼                                                    │
 │  ┌──────────────────────────────────────────────────────┐      │
-│  │              app.py (FastAPI + MCP)                   │      │
+│  │              tts_client.py (공통 클라이언트)            │      │
+│  │                                                         │      │
 │  │  ┌─────────────────┐    ┌──────────────────────┐    │      │
 │  │  │ 웹 챗 UI        │    │ MCP Server           │    │      │
-│  │  │ (FastAPI)       │    │ (JSON-RPC Endpoint)  │    │      │
-│  │  │ 포트: 23006     │    │ 포트: 23006 (/rpc)  │    │      │
+│  │  │ (web_ui.py)     │    │ (server.py)          │    │      │
+│  │  │ 포트: 23007     │    │ 포트: 23006 (/mcp)   │    │      │
 │  │  └─────────────────┘    └──────────────────────┘    │      │
 │  └──────────────────────────────────────────────────────┘      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
+
+## 3. 핵심 파일 구성
+
+-   `Qwen3-TTS-apiwrap/`
+    -   `pyproject.toml` : 의존성 관리 (`fastapi`, `fastmcp`, `gradio_client` 등)
+    -   `tts_client.py` : Gradio Client 래퍼 (긴 텍스트 청킹, 오디오 정규화)
+    -   `server.py` : **FastMCP 기반 MCP 서버**
+        -   라이브러리: `fastmcp`
+        -   프로토콜: `streamable-http` (n8n 호환)
+        -   포트: 23006
+    -   `web_ui.py` : **웹 챗 UI 서버**
+        -   라이브러리: `FastAPI`
+        -   포트: 23007
+    -   `templates/index.html` : 채팅 UI HTML
+    -   `static/style.css`, `app.js` : 스타일 및 로직
+    -   `run.bat` (삭제됨/대체됨)
 ```
 
 ---
@@ -90,8 +107,7 @@
   "params": {
     "text": "안녕하세요, 반갑습니다!",
     "language": "Korean",
-    "speaker": "Sohee",
-    "instruct": null
+    "speaker": "Sohee"
   },
   "id": 1
 }
@@ -138,9 +154,9 @@ c:\git\alienMiniTools\QwenTTS\
 | 구성 요소 | 기술 |
 |-----------|------|
 | TTS 연결 | `gradio_client` |
-| 웹 서버 | FastAPI + Uvicorn |
+| 웹 서버 | FastAPI + FastMCP (웹 UI + MCP 통합) |
 | 프론트엔드 | Vanilla JS + CSS (Glassmorphism 다크 테마) |
-| JSON-RPC | jsonrpcserver |
+| 프로토콜 | MCP (Streamable HTTP) over n8n |
 | 오디오 처리 | scipy (WAV 저장) |
 
 ---
@@ -159,7 +175,7 @@ dependencies = [
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
     "gradio_client>=0.10.0",
-    "jsonrpcserver>=5.0.0",
+    "fastmcp",
     "jinja2",
     "aiofiles",
     "scipy",
@@ -187,8 +203,9 @@ dependencies = [
    ```
 
 4. **접속:**
-   - 웹 UI: `http://localhost:23006`
-   - MCP endpoint: `POST http://localhost:23006/rpc`
+   - **TTS 서버**: `http://localhost:23005`
+   - **MCP 서버** (n8n): `POST http://localhost:23006/mcp` (streamable-http)
+   - **웹 챗 UI**: `http://localhost:23007`
 
 ---
 
@@ -200,12 +217,4 @@ dependencies = [
 4. **에러 핸들링**: TTS 서버 다운 시 적절한 에러 메시지
 5. **디버그 모드**: `--verbose` 옵션으로 실행 시 상세 로그 출력 (요청/응답 내용, 타이밍, 에러 스택 등)
 
----
-
-## ✅ 체크리스트
-
-- [x] Phase 1: tts_client.py 구현
-- [x] Phase 2: FastAPI 앱 + 웹 UI 구현
-- [x] Phase 3: MCP JSON-RPC endpoint 구현
-- [ ] 테스트 및 디버깅
-- [ ] 문서화
+--
