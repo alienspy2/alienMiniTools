@@ -1,31 +1,34 @@
-# Asset category definitions with counts
+# Import generation counts from config
+from backend.config import ASSET_GENERATION_COUNTS
+
+# Asset category definitions with counts from config
 ASSET_CATEGORIES = {
     # Background assets
     "wall_texture": {
         "name": "Wall Texture",
         "name_kr": "Wall Texture",
-        "count": 10,
+        "count": ASSET_GENERATION_COUNTS.get("wall_texture", 10),
         "category": "wall",
         "description": "tileable wall texture panels for game environments"
     },
     "stair": {
         "name": "Stair",
         "name_kr": "Stair",
-        "count": 3,
+        "count": ASSET_GENERATION_COUNTS.get("stair", 3),
         "category": "floor",
         "description": "stairs of different heights (low, medium, high)"
     },
     "floor_texture": {
         "name": "Floor Texture",
         "name_kr": "Floor Texture",
-        "count": 10,
+        "count": ASSET_GENERATION_COUNTS.get("floor_texture", 10),
         "category": "floor",
         "description": "tileable floor texture panels for game environments"
     },
     "door": {
         "name": "Door",
         "name_kr": "Door",
-        "count": 5,
+        "count": ASSET_GENERATION_COUNTS.get("door", 5),
         "category": "wall",
         "description": "various door styles for game environments"
     },
@@ -33,21 +36,21 @@ ASSET_CATEGORIES = {
     "prop_small": {
         "name": "Small Prop",
         "name_kr": "Small Prop",
-        "count": 10,
+        "count": ASSET_GENERATION_COUNTS.get("prop_small", 10),
         "category": "prop",
         "description": "small decorative objects (books, cups, bottles, etc.)"
     },
     "prop_medium": {
         "name": "Medium Prop",
         "name_kr": "Medium Prop",
-        "count": 10,
+        "count": ASSET_GENERATION_COUNTS.get("prop_medium", 10),
         "category": "prop",
         "description": "medium-sized objects (chairs, baskets, boxes, etc.)"
     },
     "prop_large": {
         "name": "Large Prop",
         "name_kr": "Large Prop",
-        "count": 10,
+        "count": ASSET_GENERATION_COUNTS.get("prop_large", 10),
         "category": "furniture",
         "description": "large furniture and objects (tables, wardrobes, statues, etc.)"
     },

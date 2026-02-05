@@ -7,6 +7,7 @@ echo.
 
 set HUNYUAN_DIR=%~dp0hunyuan2
 set CONDA_ENV=hunyuan2
+set TOUCH_USE_CUDA_DSA=1
 
 :: Check installation
 if not exist "%HUNYUAN_DIR%" goto :not_installed

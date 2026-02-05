@@ -71,6 +71,7 @@ if errorlevel 1 goto :error_pytorch
 :: 5. Install dependencies
 echo.
 echo [5/8] Installing dependencies...
+set TORCH_USE_CUDA_DSA=1
 pip install -r requirements.txt
 pip install -e .
 if errorlevel 1 goto :error_deps
@@ -90,6 +91,7 @@ set VSLANG=1033
 echo Setting up MSVC environment...
 call "%VCVARS%"
 set DISTUTILS_USE_SDK=1
+set TORCH_USE_CUDA_DSA=1
 
 :: Find CUDA installation (v12.4+ required for latest MSVC)
 set CUDA_HOME=

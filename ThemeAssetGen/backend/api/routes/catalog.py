@@ -186,6 +186,8 @@ async def generate_all_assets(catalog_id: str, db: Session = Depends(get_db)):
 @router.get("/{catalog_id}/export")
 async def export_catalog(catalog_id: str, db: Session = Depends(get_db)):
     """Export catalog as ZIP"""
+    from fastapi.responses import Response
+    
     catalog = db.query(Catalog).filter(Catalog.id == catalog_id).first()
     if not catalog:
         raise HTTPException(status_code=404, detail="Catalog not found")
@@ -227,15 +229,17 @@ Category: {asset.category.value if asset.category else 'other'}
 """
             zf.writestr(f"{asset.name}/description.txt", description_content.encode('utf-8'))
 
-    zip_buffer.seek(0)
-
+    zip_data = zip_buffer.getvalue()
     filename_encoded = quote(f"{catalog.name}.zip", safe='')
 
-    return StreamingResponse(
-        zip_buffer,
+    # Use Response instead of StreamingResponse for faster transfer
+    # StreamingResponse uses small 64KB chunks which causes slow downloads
+    return Response(
+        content=zip_data,
         media_type="application/zip",
         headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}",
+            "Content-Length": str(len(zip_data)),
         }
     )
 
