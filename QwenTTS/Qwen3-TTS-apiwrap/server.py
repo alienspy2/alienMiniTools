@@ -15,7 +15,9 @@ import time
 from typing import Optional, Literal
 from pathlib import Path
 
-from fastmcp import FastMCP, Context
+from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.sse import TransportSecuritySettings
+
 
 from tts_client import TTSClient
 
@@ -40,8 +42,12 @@ verbose_mode: bool = False
 PUBLIC_HOST: Optional[str] = None
 WEBHOOK_URL: Optional[str] = None
 
-# Initialize FastMCP
-mcp = FastMCP("Qwen3-TTS")
+# Initialize FastMCP with security settings disabled to allow remote connections
+mcp = FastMCP(
+    "Qwen3-TTS",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False)
+)
+
 
 # =============================================================================
 # MCP Tools
@@ -194,7 +200,9 @@ def main():
          logger.info(f"Public Host override: {PUBLIC_HOST}")
 
     # ... (나머지 동일)
-    logger.info(f"MCP Endpoint: http://{args.host}:{args.port}/mcp")
+    logger.info(f"MCP Endpoint (SSE): http://{args.host}:{args.port}/sse")
+    logger.info(f"MCP Messages: http://{args.host}:{args.port}/messages")
+
 
     # Pre-initialize TTS Client
     try:
@@ -204,12 +212,11 @@ def main():
         logger.warning(f"Could not connect to TTS server at startup: {e}")
         logger.warning("Will retry on first request.")
 
-    mcp.run(
-        transport="streamable-http",
-        host=args.host,
-        port=args.port,
-        path="/mcp",
-    )
+    import uvicorn
+    uvicorn.run(mcp.sse_app(), host=args.host, port=args.port)
+
+
+
 
 if __name__ == "__main__":
     main()

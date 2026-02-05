@@ -6,11 +6,11 @@ dependencies = [
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
     "gradio_client>=0.10.0",
-    "fastmcp",
     "jinja2",
     "aiofiles",
     "scipy",
     "numpy",
+    "mcp>=1.26.0",
 ]
 
 [project.scripts]

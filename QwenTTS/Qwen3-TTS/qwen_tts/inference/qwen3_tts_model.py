@@ -78,6 +78,8 @@ class Qwen3TTSModel:
                 self.device = next(model.parameters()).device
             except StopIteration:
                 self.device = torch.device("cpu")
+        print(f"[Qwen3TTSModel] Model initialized on device: {self.device}")
+
 
     @classmethod
     def from_pretrained(
