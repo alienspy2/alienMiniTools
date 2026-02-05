@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Qwen3-TTS Web Chat - Text to Speech with AI">
+    <title>Qwen3-TTS Web Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-title">
+                <span class="icon">🔊</span>
+                <h1>Qwen3-TTS Chat</h1>
+            </div>
+            <div id="statusIndicator" class="header-status">
+                <span class="status-dot"></span>
+                Connecting...
+            </div>
+        </header>
+
+        <!-- Settings Panel -->
+        <div class="settings-panel">
+            <div class="setting-group">
+                <label for="languageSelect">Language</label>
+                <select id="languageSelect">
+                    <option value="Korean" selected>Korean (한국어)</option>
+                    <option value="Chinese">Chinese (中文)</option>
+                    <option value="English">English</option>
+                    <option value="Japanese">Japanese (日本語)</option>
+                    <option value="Auto">Auto</option>
+                </select>
+            </div>
+            <div class="setting-group">
+                <label for="speakerSelect">Speaker</label>
+                <select id="speakerSelect">
+                    <option value="Sohee" selected>Sohee (소희) - Korean</option>
+                    <option value="Vivian">Vivian - Chinese</option>
+                    <option value="Serena">Serena - Chinese</option>
+                    <option value="Ryan">Ryan - English</option>
+                    <option value="Aiden">Aiden - English</option>
+                    <option value="Ono_Anna">Ono Anna - Japanese</option>
+                    <option value="Dylan">Dylan - Beijing</option>
+                    <option value="Eric">Eric - Sichuan</option>
+                    <option value="Uncle_Fu">Uncle Fu - Chinese</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container">
+            <!-- Messages -->
+            <div id="messages" class="messages">
+                <div class="message assistant">
+                    <div class="message-content">
+                        안녕하세요! 텍스트를 입력하면 음성으로 변환해 드릴게요. 🎵
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-area">
+                <div class="input-wrapper">
+                    <textarea
+                        id="textInput"
+                        placeholder="Type text to convert to speech..."
+                        rows="1"
+                    ></textarea>
+                </div>
+                <button id="sendBtn" class="send-btn" title="Generate Speech">
+                    ▶
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

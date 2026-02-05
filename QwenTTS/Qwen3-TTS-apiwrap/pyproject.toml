@@ -1,0 +1,17 @@
+[project]
+name = "qwen3-tts-apiwrap"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "gradio_client>=0.10.0",
+    "jsonrpcserver>=5.0.0",
+    "jinja2",
+    "aiofiles",
+    "scipy",
+    "numpy",
+]
+
+[project.scripts]
+qwen3-tts-api = "app:main"

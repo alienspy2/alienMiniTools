@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(git clone:*)",
+      "Bash(uv pip install:*)",
+      "Bash(uv venv:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv run:*)",
+      "Bash(winget install:*)",
+      "Bash(choco install:*)",
+      "Bash(uv pip uninstall:*)"
+    ]
+  }
+}
