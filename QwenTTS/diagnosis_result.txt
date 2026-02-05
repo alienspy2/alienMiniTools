@@ -1,0 +1,22 @@
+﻿Diagnosis Report
+----------------
+Time: 2026-02-05
+Python Version: 3.14.2 (Bleeding Edge)
+GPU: NVIDIA GeForce RTX 5070 Ti (Compute Capability 12.0)
+
+Action Taken:
+1. Removed incompatible torch packages.
+2. Attempted install of Nightly PyTorch for Python 3.14.
+   - cu121: Not available.
+   - cu124: Not available.
+   - cu126: Installed (version 2.11.0.dev20260205+cu126).
+
+Result:
+- Installation: Successful.
+- CUDA Detection: Successful (torch.cuda.is_available() is True).
+- Kernel Execution: FAILED.
+  The installed PyTorch version (cu126) likely does not yet support Compute Capability 12.0 (RTX 50 series) fully, or Python 3.14 interactions are unstable.
+
+Recommendation:
+- If possible, use Python 3.12 for better compatibility.
+- Ensure NVIDIA Drivers are updated to support CUDA 12.6/13.0.
