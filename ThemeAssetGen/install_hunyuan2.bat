@@ -62,19 +62,20 @@ echo.
 echo [3/8] Activating conda environment...
 call "%CONDA_ROOT%\condabin\conda.bat" activate %CONDA_ENV%
 
-:: 4. Install PyTorch [CUDA 12.4]
+:: 4. Install dependencies
 echo.
-echo [4/8] Installing PyTorch 2.6.0 [CUDA 12.4]...
-pip install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-if errorlevel 1 goto :error_pytorch
-
-:: 5. Install dependencies
-echo.
-echo [5/8] Installing dependencies...
+echo [4/8] Installing dependencies...
 set TORCH_USE_CUDA_DSA=1
 pip install -r requirements.txt
 pip install -e .
 if errorlevel 1 goto :error_deps
+
+:: 5. Install PyTorch [CUDA 12.8]
+echo.
+echo [5/8] Installing PyTorch Nightly [CUDA 12.8]...
+pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu128 --force-reinstall
+if errorlevel 1 goto :error_pytorch
+pip install --pre torchvision --index-url https://download.pytorch.org/whl/nightly/cu128 --force-reinstall --no-deps
 
 :: 6. Install texture modules (requires CUDA 12.0 + MSVC for PyTorch compatibility)
 echo.
@@ -92,10 +93,12 @@ echo Setting up MSVC environment...
 call "%VCVARS%"
 set DISTUTILS_USE_SDK=1
 set TORCH_USE_CUDA_DSA=1
+set PYTHONIOENCODING=utf-8
+set PYTHONLEGACYWINDOWSSTDIO=0
 
-:: Find CUDA installation (v12.4+ required for latest MSVC)
+:: Find CUDA installation (v12.8+ required for latest MSVC)
 set CUDA_HOME=
-for %%V in (v12.4 v12.6 v12.9) do (
+for %%V in (v12.8 v12.9 v12.6 v12.4) do (
     if exist "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\%%V\bin\nvcc.exe" set CUDA_HOME=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\%%V
 )
 if "%CUDA_HOME%"=="" goto :error_cuda
@@ -103,6 +106,8 @@ set PATH=%CUDA_HOME%\bin;%PATH%
 :: Allow newer MSVC versions (CUDA 12.0 doesn't recognize VS 2022 17.10+)
 set NVCC_PREPEND_FLAGS=-allow-unsupported-compiler
 set TORCH_CUDA_ARCH_LIST=8.6
+set "CUDA_HOME=%CUDA_HOME%"
+set "CUDA_PATH=%CUDA_HOME%"
 echo Using CUDA: %CUDA_HOME%
 
 :: Uninstall old versions first
@@ -112,13 +117,19 @@ pip uninstall differentiable_renderer -y 2>nul
 cd hy3dgen\texgen\custom_rasterizer
 echo Installing custom_rasterizer...
 pip install . --no-build-isolation > custom_rasterizer_buildlog.txt 2>&1
-if errorlevel 1 goto :error_texture
+if errorlevel 1 (
+    type custom_rasterizer_buildlog.txt
+    goto :error_texture
+)
 cd ..\..\..
 
 cd hy3dgen\texgen\differentiable_renderer
 echo Installing differentiable_renderer...
 pip install . --no-build-isolation > differentiable_renderer_buildlog.txt 2>&1
-if errorlevel 1 goto :error_texture
+if errorlevel 1 (
+    type differentiable_renderer_buildlog.txt
+    goto :error_texture
+)
 cd ..\..\..
 
 :: 7. Additional dependencies
@@ -129,7 +140,7 @@ pip install gradio spaces
 :: 8. Install compatible transformers/diffusers versions
 echo.
 echo [8/8] Fixing transformers/diffusers compatibility...
-pip install "transformers>=4.46.0"
+pip install "transformers>=4.48.0" diffusers accelerate --no-deps
 
 echo.
 echo ========================================
@@ -183,7 +194,7 @@ echo.
 echo [ERROR] CUDA Toolkit not found.
 echo CUDA 12.x is required for building texture modules.
 echo.
-echo Please install one of: CUDA 12.4 / 12.6 / 12.9 from:
+echo Please install one of: CUDA 12.8 / 12.9 / 12.6 / 12.4 from:
 echo   https://developer.nvidia.com/cuda-toolkit-archive
 echo.
 echo Install path should be:

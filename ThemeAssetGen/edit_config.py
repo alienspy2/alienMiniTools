@@ -12,7 +12,7 @@ import sys
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-CONFIG_FILE = os.path.join(os.path.dirname(__file__), "backend", "config.py")
+from backend.config_manager import config_manager
 
 
 class ConfigEditor:
@@ -58,28 +58,36 @@ class ConfigEditor:
         self.style.configure("TLabelframe.Label", background=self.bg_color, foreground=self.accent_color, font=("Segoe UI", 11, "bold"))
         
     def load_config(self):
-        """Load current configuration from config.py"""
+        """Load current configuration from config_manager"""
         try:
-            from backend import config
+            config_manager.load_config()
             
             # Service URLs
-            self.config_vars["OLLAMA_URL"] = tk.StringVar(value=config.OLLAMA_URL)
-            self.config_vars["OLLAMA_MODEL"] = tk.StringVar(value=config.OLLAMA_MODEL)
-            self.config_vars["COMFYUI_URL"] = tk.StringVar(value=config.COMFYUI_URL)
-            self.config_vars["HUNYUAN3D_URL"] = tk.StringVar(value=config.HUNYUAN3D_URL)
+            self.config_vars["OLLAMA_URL"] = tk.StringVar(value=config_manager.get("OLLAMA_URL"))
+            self.config_vars["OLLAMA_MODEL"] = tk.StringVar(value=config_manager.get("OLLAMA_MODEL"))
+            self.config_vars["COMFYUI_URL"] = tk.StringVar(value=config_manager.get("COMFYUI_URL"))
+            self.config_vars["HUNYUAN3D_URL"] = tk.StringVar(value=config_manager.get("HUNYUAN3D_URL"))
+            
+            # Model Settings
+            self.config_vars["COMFYUI_UNET_MODEL"] = tk.StringVar(value=config_manager.get("COMFYUI_UNET_MODEL"))
             
             # Timeouts
-            self.config_vars["OLLAMA_TIMEOUT"] = tk.IntVar(value=config.OLLAMA_TIMEOUT)
-            self.config_vars["COMFYUI_TIMEOUT"] = tk.IntVar(value=config.COMFYUI_TIMEOUT)
-            self.config_vars["HUNYUAN3D_TIMEOUT"] = tk.IntVar(value=config.HUNYUAN3D_TIMEOUT)
+            self.config_vars["OLLAMA_TIMEOUT"] = tk.IntVar(value=config_manager.get("OLLAMA_TIMEOUT"))
+            self.config_vars["COMFYUI_TIMEOUT"] = tk.IntVar(value=config_manager.get("COMFYUI_TIMEOUT"))
+            self.config_vars["HUNYUAN3D_TIMEOUT"] = tk.IntVar(value=config_manager.get("HUNYUAN3D_TIMEOUT"))
             
             # Server
-            self.config_vars["SERVER_HOST"] = tk.StringVar(value=config.SERVER_HOST)
-            self.config_vars["SERVER_PORT"] = tk.IntVar(value=config.SERVER_PORT)
+            self.config_vars["SERVER_HOST"] = tk.StringVar(value=config_manager.get("SERVER_HOST"))
+            self.config_vars["SERVER_PORT"] = tk.IntVar(value=config_manager.get("SERVER_PORT"))
             
             # Asset generation counts
-            for key, value in config.ASSET_GENERATION_COUNTS.items():
-                self.config_vars[f"ASSET_{key}"] = tk.IntVar(value=value)
+            asset_counts = config_manager.get("ASSET_GENERATION_COUNTS")
+            for key, value in asset_counts.items():
+                if f"ASSET_{key}" not in self.config_vars:
+                    # Dynamically create var if it doesn't exist yet (for new categories)
+                    self.config_vars[f"ASSET_{key}"] = tk.IntVar(value=value)
+                else:
+                    self.config_vars[f"ASSET_{key}"].set(value)
                 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load config: {e}")
@@ -125,6 +133,14 @@ class ConfigEditor:
             ("Ollama Model", "OLLAMA_MODEL", "string"),
             ("ComfyUI URL", "COMFYUI_URL", "string"),
             ("Hunyuan3D URL", "HUNYUAN3D_URL", "string"),
+        ])
+
+        # Model Settings Section
+        self.create_section("Model Settings", [
+            ("ComfyUI UNET Model", "COMFYUI_UNET_MODEL", "dropdown", [
+                "z_image_turbo_nvfp4.safetensors",
+                "z_image_turbo_bf16.safetensors"
+            ]),
         ])
         
         # Timeouts Section
@@ -237,119 +253,53 @@ class ConfigEditor:
                     width=15
                 )
                 spinbox.pack(side="left")
+            elif var_type == "dropdown":
+                values = item[3] if len(item) > 3 else []
+                combobox = ttk.Combobox(
+                    row,
+                    textvariable=self.config_vars[var_name],
+                    values=values,
+                    state="readonly",
+                    font=("Consolas", 10),
+                    width=38
+                )
+                combobox.pack(side="left", fill="x", expand=True)
                 
     def save_config(self):
-        """Save configuration to config.py"""
+        """Save configuration to config.json via ConfigManager"""
         try:
-            # Read original file
-            with open(CONFIG_FILE, 'r', encoding='utf-8-sig') as f:
-                content = f.read()
+            # Update values in config_manager
+            config_manager.set("OLLAMA_URL", self.config_vars["OLLAMA_URL"].get())
+            config_manager.set("OLLAMA_MODEL", self.config_vars["OLLAMA_MODEL"].get())
+            config_manager.set("COMFYUI_URL", self.config_vars["COMFYUI_URL"].get())
+            config_manager.set("HUNYUAN3D_URL", self.config_vars["HUNYUAN3D_URL"].get())
+            config_manager.set("COMFYUI_UNET_MODEL", self.config_vars["COMFYUI_UNET_MODEL"].get())
             
-            # Build new ASSET_GENERATION_COUNTS
-            asset_counts = {}
+            config_manager.set("OLLAMA_TIMEOUT", self.config_vars["OLLAMA_TIMEOUT"].get())
+            config_manager.set("COMFYUI_TIMEOUT", self.config_vars["COMFYUI_TIMEOUT"].get())
+            config_manager.set("HUNYUAN3D_TIMEOUT", self.config_vars["HUNYUAN3D_TIMEOUT"].get())
+            
+            config_manager.set("SERVER_HOST", self.config_vars["SERVER_HOST"].get())
+            config_manager.set("SERVER_PORT", self.config_vars["SERVER_PORT"].get())
+            
+            # Asset counts
+            asset_counts = config_manager.get("ASSET_GENERATION_COUNTS").copy()
+            # Only update keys that we have vars for (in this UI)
+            # Todo: make this UI dynamic based on config, but for now fixed
             for key in ["wall_texture", "stair", "floor_texture", "door", "prop_small", "prop_medium", "prop_large"]:
-                asset_counts[key] = self.config_vars[f"ASSET_{key}"].get()
+                if f"ASSET_{key}" in self.config_vars:
+                    asset_counts[key] = self.config_vars[f"ASSET_{key}"].get()
             
-            # Generate new config content
-            new_content = self.generate_config_content(asset_counts)
-            
-            # Write to file
-            with open(CONFIG_FILE, 'w', encoding='utf-8-sig') as f:
-                f.write(new_content)
+            config_manager.set("ASSET_GENERATION_COUNTS", asset_counts)
                 
-            messagebox.showinfo("Success", "Configuration saved successfully!\n\nRestart the server to apply changes.")
+            messagebox.showinfo("Success", "Configuration saved successfully!")
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save config: {e}")
-            
-    def generate_config_content(self, asset_counts):
-        """Generate the complete config.py content"""
-        content = '''import os
-from pathlib import Path
 
-# Project paths
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-CATALOGS_DIR = DATA_DIR / "catalogs"
-DATABASE_PATH = DATA_DIR / "database.db"
-
-# Create directories
-DATA_DIR.mkdir(exist_ok=True)
-CATALOGS_DIR.mkdir(exist_ok=True)
-
-# Service URLs
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "{ollama_url}")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "{ollama_model}")
-
-COMFYUI_URL = os.environ.get("COMFYUI_URL", "{comfyui_url}")
-COMFYUI_WORKFLOW_PATH = os.environ.get("COMFYUI_WORKFLOW_PATH", str(BASE_DIR / "backend" / "comfyuiapi" / "zit_assetgen_api.json"))
-
-HUNYUAN3D_URL = os.environ.get("HUNYUAN3D_URL", "{hunyuan3d_url}")
-
-# Timeout settings (seconds)
-OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "{ollama_timeout}"))
-COMFYUI_TIMEOUT = int(os.environ.get("COMFYUI_TIMEOUT", "{comfyui_timeout}"))
-HUNYUAN3D_TIMEOUT = int(os.environ.get("HUNYUAN3D_TIMEOUT", "{hunyuan3d_timeout}"))
-
-# Server settings
-SERVER_HOST = os.environ.get("SERVER_HOST", "{server_host}")
-SERVER_PORT = int(os.environ.get("SERVER_PORT", "{server_port}"))
-
-# ===================================================
-# Asset Generation Count Settings (per type)
-# ===================================================
-# Modify these values to change how many assets
-# are generated for each type when creating a theme
-ASSET_GENERATION_COUNTS = {{
-    "wall_texture": {wall_texture},    # Wall textures (tileable panels)
-    "stair": {stair},            # Stairs (low, medium, high)
-    "floor_texture": {floor_texture},   # Floor textures (tileable panels)
-    "door": {door},             # Door styles
-    "prop_small": {prop_small},      # Small props (books, cups, bottles, etc.)
-    "prop_medium": {prop_medium},     # Medium props (chairs, baskets, boxes, etc.)
-    "prop_large": {prop_large},      # Large props (tables, wardrobes, statues, etc.)
-}}
-'''
-        return content.format(
-            ollama_url=self.config_vars["OLLAMA_URL"].get(),
-            ollama_model=self.config_vars["OLLAMA_MODEL"].get(),
-            comfyui_url=self.config_vars["COMFYUI_URL"].get(),
-            hunyuan3d_url=self.config_vars["HUNYUAN3D_URL"].get(),
-            ollama_timeout=self.config_vars["OLLAMA_TIMEOUT"].get(),
-            comfyui_timeout=self.config_vars["COMFYUI_TIMEOUT"].get(),
-            hunyuan3d_timeout=self.config_vars["HUNYUAN3D_TIMEOUT"].get(),
-            server_host=self.config_vars["SERVER_HOST"].get(),
-            server_port=self.config_vars["SERVER_PORT"].get(),
-            wall_texture=asset_counts["wall_texture"],
-            stair=asset_counts["stair"],
-            floor_texture=asset_counts["floor_texture"],
-            door=asset_counts["door"],
-            prop_small=asset_counts["prop_small"],
-            prop_medium=asset_counts["prop_medium"],
-            prop_large=asset_counts["prop_large"],
-        )
-        
     def reload_config(self):
         """Reload configuration from file"""
-        # Clear module cache
-        import importlib
-        from backend import config
-        importlib.reload(config)
-        
-        # Reload values
-        self.config_vars["OLLAMA_URL"].set(config.OLLAMA_URL)
-        self.config_vars["OLLAMA_MODEL"].set(config.OLLAMA_MODEL)
-        self.config_vars["COMFYUI_URL"].set(config.COMFYUI_URL)
-        self.config_vars["HUNYUAN3D_URL"].set(config.HUNYUAN3D_URL)
-        self.config_vars["OLLAMA_TIMEOUT"].set(config.OLLAMA_TIMEOUT)
-        self.config_vars["COMFYUI_TIMEOUT"].set(config.COMFYUI_TIMEOUT)
-        self.config_vars["HUNYUAN3D_TIMEOUT"].set(config.HUNYUAN3D_TIMEOUT)
-        self.config_vars["SERVER_HOST"].set(config.SERVER_HOST)
-        self.config_vars["SERVER_PORT"].set(config.SERVER_PORT)
-        
-        for key, value in config.ASSET_GENERATION_COUNTS.items():
-            self.config_vars[f"ASSET_{key}"].set(value)
-            
+        self.load_config()
         messagebox.showinfo("Success", "Configuration reloaded!")
 
 

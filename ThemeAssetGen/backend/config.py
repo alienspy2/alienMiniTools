@@ -1,7 +1,8 @@
 ﻿import os
 from pathlib import Path
+from backend.config_manager import config_manager
 
-# Project paths
+# Project paths (Constants)
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
 CATALOGS_DIR = DATA_DIR / "catalogs"
@@ -12,34 +13,25 @@ DATA_DIR.mkdir(exist_ok=True)
 CATALOGS_DIR.mkdir(exist_ok=True)
 
 # Service URLs
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", config_manager.get("OLLAMA_URL"))
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", config_manager.get("OLLAMA_MODEL"))
 
-COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://127.0.0.1:23000")
-COMFYUI_WORKFLOW_PATH = os.environ.get("COMFYUI_WORKFLOW_PATH", str(BASE_DIR / "backend" / "comfyuiapi" / "zit_assetgen_api.json"))
+COMFYUI_URL = os.environ.get("COMFYUI_URL", config_manager.get("COMFYUI_URL"))
+COMFYUI_WORKFLOW_PATH = os.environ.get("COMFYUI_WORKFLOW_PATH", config_manager.get("COMFYUI_WORKFLOW_PATH"))
+COMFYUI_UNET_MODEL = os.environ.get("COMFYUI_UNET_MODEL", config_manager.get("COMFYUI_UNET_MODEL"))
 
-HUNYUAN3D_URL = os.environ.get("HUNYUAN3D_URL", "http://192.168.0.2:23003")
+HUNYUAN3D_URL = os.environ.get("HUNYUAN3D_URL", config_manager.get("HUNYUAN3D_URL"))
 
 # Timeout settings (seconds)
-OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "300"))
-COMFYUI_TIMEOUT = int(os.environ.get("COMFYUI_TIMEOUT", "600"))
-HUNYUAN3D_TIMEOUT = int(os.environ.get("HUNYUAN3D_TIMEOUT", "600"))
+OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", config_manager.get("OLLAMA_TIMEOUT")))
+COMFYUI_TIMEOUT = int(os.environ.get("COMFYUI_TIMEOUT", config_manager.get("COMFYUI_TIMEOUT")))
+HUNYUAN3D_TIMEOUT = int(os.environ.get("HUNYUAN3D_TIMEOUT", config_manager.get("HUNYUAN3D_TIMEOUT")))
 
 # Server settings
-SERVER_HOST = os.environ.get("SERVER_HOST", "0.0.0.0")
-SERVER_PORT = int(os.environ.get("SERVER_PORT", "8000"))
+SERVER_HOST = os.environ.get("SERVER_HOST", config_manager.get("SERVER_HOST"))
+SERVER_PORT = int(os.environ.get("SERVER_PORT", config_manager.get("SERVER_PORT")))
 
 # ===================================================
 # Asset Generation Count Settings (per type)
 # ===================================================
-# Modify these values to change how many assets
-# are generated for each type when creating a theme
-ASSET_GENERATION_COUNTS = {
-    "wall_texture": 10,    # Wall textures (tileable panels)
-    "stair": 3,            # Stairs (low, medium, high)
-    "floor_texture": 10,   # Floor textures (tileable panels)
-    "door": 5,             # Door styles
-    "prop_small": 10,      # Small props (books, cups, bottles, etc.)
-    "prop_medium": 10,     # Medium props (chairs, baskets, boxes, etc.)
-    "prop_large": 10,      # Large props (tables, wardrobes, statues, etc.)
-}
+ASSET_GENERATION_COUNTS = config_manager.get("ASSET_GENERATION_COUNTS")

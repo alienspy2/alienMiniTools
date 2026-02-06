@@ -17,17 +17,38 @@ logger = logging.getLogger(__name__)
 
 
 class PipelineService:
+    is_stopped = False
+
     def __init__(self, db: Session):
         self.db = db
         self.ollama = OllamaService()
         self.comfyui = ComfyUIService()
         self.hunyuan3d = Hunyuan3DService()
 
-    async def generate_theme_assets(self, theme_name: str, progress_callback=None) -> ThemeGenerateResponse:
-        """Theme -> Asset list generation pipeline (by category)"""
+    @classmethod
+    def stop_all_tasks(cls):
+        """Signal all loops to stop"""
+        logger.info("[PIPELINE] Stop requested")
+        cls.is_stopped = True
+
+    async def generate_theme_assets(
+        self, 
+        theme_name: str, 
+        categories_config: list[dict] = None,
+        progress_callback=None
+    ) -> ThemeGenerateResponse:
+        """Theme -> Asset list generation pipeline (dynamic categories)"""
         from backend.utils.prompt_templates import ASSET_CATEGORIES
         
-        logger.info(f"Starting theme asset generation by category: {theme_name}")
+        logger.info(f"Starting theme asset generation: {theme_name}")
+
+        # Default fallback if no config provided (Legacy mode)
+        if not categories_config:
+            logger.info("No category config provided, using defaults")
+            categories_config = [
+                {"name": key, "count": val["count"]}
+                for key, val in ASSET_CATEGORIES.items()
+            ]
 
         # Create Theme
         theme = Theme(name=theme_name, description=f"3D assets for '{theme_name}' theme")
@@ -45,33 +66,79 @@ class PipelineService:
 
         all_assets = []
         existing_names = []
-        category_order = [
-            "wall_texture", "stair", "floor_texture", "door",
-            "prop_small", "prop_medium", "prop_large"
-        ]
         
-        total_categories = len(category_order)
+        total_categories = len(categories_config)
         
-        for idx, asset_type in enumerate(category_order):
-            category_info = ASSET_CATEGORIES[asset_type]
+        for idx, cat_config in enumerate(categories_config):
+            # cat_config example: {"name": "wall_texture", "count": 5} or {"name": "custom_neon", "count": 3, "description": "..."}
+            
+            asset_type = cat_config.get("name")
+            count = cat_config.get("count", 5)
+            # Use provided description or fallback to known types
+            description = cat_config.get("description", "")
+            
+            # Display name
+            display_name = asset_type
+            if asset_type in ASSET_CATEGORIES:
+                display_name = ASSET_CATEGORIES[asset_type]["name"]
             
             if progress_callback:
                 progress_callback({
                     "stage": "generating",
                     "current_category": asset_type,
-                    "category_name": category_info["name"],
+                    "category_name": display_name,
                     "category_index": idx + 1,
                     "total_categories": total_categories,
-                    "message": f"Generating {category_info['name']} ({idx+1}/{total_categories})..."
+                    "message": f"Generating {display_name} ({idx+1}/{total_categories})..."
                 })
             
-            logger.info(f"[THEME] Generating {asset_type} ({idx+1}/{total_categories})")
+            logger.info(f"[THEME] Generating {asset_type} ({idx+1}/{total_categories}) count={count}")
             
             try:
-                assets_data = await self.ollama.generate_category_assets(
+                # If known category, use specialized method
+                if asset_type in ASSET_CATEGORIES:
+                     # Update count temporarily for this generation if needed, 
+                     # but generate_category_assets reads from config constant.
+                     # We should refactor generate_category_assets to accept count override.
+                     # To avoid huge changes, let's use generate_additional_assets for known types too?
+                     # No, generate_category_assets has specific prompts.
+                     # Let's rely on validation in OllamaService or passing count override?
+                     # OllamaService.generate_category_assets doesn't take count arg currently.
+                     # Wait, I'll update OllamaService to take optional count in a separate step if needed.
+                     # For now, let's assume we update OllamaService first or use internal logic.
+                     # Actually, looking at OllamaService.generate_category_assets:
+                     # count = category_info["count"] (Hardcoded)
+                     # We MUST update OllamaService to accept count override.
+                     pass
+                else:
+                    # Dynamic new category
+                    pass
+                
+                # To support both, we should create a unified 'generate_assets_by_category' in Ollama
+                # that accepts (theme, category_name, description, count, existing_assets).
+                # But to save time and stick to plan, let's modify the loop to call a new method 
+                # or updated generate_category_assets.
+                
+                # Let's perform a direct hack: modify OllamaService.generate_category_assets in this turn? 
+                # No, I should have done it in the previous turn. 
+                # Let's use generate_additional_assets with custom prompt injection? 
+                # No, that's messy.
+                
+                # Best approach now:
+                # We will update generate_category_assets in OllamaService to accept 'count' and 'description' override.
+                # But I can't edit two files in one step cleanly if I depend on the signature change.
+                # I'll update PipelineService to assume OllamaService has been updated, 
+                # and then I will update OllamaService immediately in the next step (or same step if tool allows, but usually one file per tool call).
+                # Wait, I can use multi_replace for multiple files? No, target_file is singular.
+                
+                # I will implement the logic here calling `ollama.generate_custom_category` which I will add to OllamaService.
+                
+                assets_data = await self.ollama.generate_custom_category(
                     theme=theme_name,
-                    asset_type=asset_type,
-                    existing_names=existing_names
+                    category_name=asset_type,
+                    description=description,
+                    count=count,
+                    existing_assets=existing_names
                 )
                 
                 # Add assets to DB
@@ -140,6 +207,8 @@ class PipelineService:
 
         logger.info("=" * 60)
         logger.info(f"[PIPELINE] Starting parallel 2D+3D generation: {catalog_id}")
+        
+        PipelineService.is_stopped = False
 
         catalog = self.db.query(Catalog).filter(Catalog.id == catalog_id).first()
         if not catalog:
@@ -199,6 +268,10 @@ class PipelineService:
                 asset_name = asset.name_kr or asset.name
 
                 logger.info(f"[2D-WORKER] Processing {idx+1}/{len(assets_need_2d)}: {asset_name}")
+                
+                if PipelineService.is_stopped:
+                    logger.info("[2D-WORKER] Stopped by user")
+                    break
 
                 # Update queue status
                 q = get_queue(catalog_id)
@@ -279,6 +352,11 @@ class PipelineService:
                     continue
 
                 asset_id, asset_name = item
+                
+                if PipelineService.is_stopped:
+                    logger.info("[3D-WORKER] Stopped by user")
+                    break
+                    
                 processed += 1
                 logger.info(f"[3D-WORKER] Processing: {asset_name}")
 
@@ -335,6 +413,7 @@ class PipelineService:
 
         logger.info("=" * 60)
         logger.info(f"[BATCH-2D] Starting 2D batch: catalog_id={catalog_id}")
+        PipelineService.is_stopped = False
 
         catalog = self.db.query(Catalog).filter(Catalog.id == catalog_id).first()
         if not catalog:
@@ -368,6 +447,10 @@ class PipelineService:
             asset_name = asset.name_kr or asset.name
 
             logger.info(f"[BATCH-2D] {idx+1}/{len(assets)}: {asset_name}")
+            
+            if PipelineService.is_stopped:
+                logger.info("[BATCH-2D] Stopped by user")
+                break
 
             q = get_queue(catalog_id)
             for item in q.queue_2d:
@@ -412,6 +495,7 @@ class PipelineService:
 
         logger.info("=" * 60)
         logger.info(f"[BATCH-3D] Starting 3D batch: catalog_id={catalog_id}")
+        PipelineService.is_stopped = False
 
         catalog = self.db.query(Catalog).filter(Catalog.id == catalog_id).first()
         if not catalog:
@@ -445,6 +529,10 @@ class PipelineService:
             asset_name = asset.name_kr or asset.name
 
             logger.info(f"[BATCH-3D] {idx+1}/{len(assets)}: {asset_name}")
+
+            if PipelineService.is_stopped:
+                logger.info("[BATCH-3D] Stopped by user")
+                break
 
             q = get_queue(catalog_id)
             for item in q.queue_3d:

@@ -7,6 +7,7 @@ from datetime import datetime
 
 class ThemeGenerateRequest(BaseModel):
     theme: str = Field(..., description="Theme (e.g., 'Medieval Fantasy Castle', 'Modern Office')")
+    categories: Optional[List[dict]] = Field(None, description="Optional confirmed categories config")
 
 
 class AssetEditRequest(BaseModel):

@@ -16,7 +16,26 @@
     <div class="main-content" id="mainContent">
         <div class="container">
             <header>
-                <h1>ThemeAssetGen</h1>
+                <div class="header-top">
+                    <h1>ThemeAssetGen</h1>
+                    <div class="header-right">
+                        <div class="server-status-container">
+                            <div class="status-item" id="statusOllama" title="Ollama">
+                                <span class="status-dot">●</span> Ollama
+                            </div>
+                            <div class="status-item" id="statusComfy" title="ComfyUI">
+                                <span class="status-dot">●</span> ComfyUI
+                            </div>
+                            <div class="status-item" id="statusHunyuan" title="Hunyuan3D">
+                                <span class="status-dot">●</span> Hunyuan
+                            </div>
+                        </div>
+                        <div class="header-controls">
+                            <button id="openConfigBtn" class="btn-config">⚙ Config</button>
+                            <button id="restartServerBtn" class="btn-restart">↻ Restart Server</button>
+                        </div>
+                    </div>
+                </div>
                 <span class="subtitle">Theme-based 3D Asset Auto-Generation</span>
             </header>
 
@@ -24,10 +43,39 @@
             <section class="theme-input">
                 <h2>Theme Input</h2>
                 <form id="themeForm">
-                    <input type="text" id="themeInput" placeholder="Enter theme (e.g., Medieval Fantasy Castle)"
-                        required>
-                    <button type="submit" id="generateBtn">Generate Assets</button>
+                    <div class="input-group">
+                        <input type="text" id="themeInput" placeholder="Enter theme (e.g., Medieval Fantasy Castle)"
+                            required>
+                        <button type="submit" id="suggestBtn">Suggest Categories</button>
+                    </div>
                 </form>
+
+                <!-- Category Suggestion Review Area -->
+                <div id="categorySuggestionArea" class="suggestion-area" style="display:none;">
+                    <h3>Suggested Asset Categories</h3>
+                    <p class="hint-text">Review and modify the categories before generating assets.</p>
+
+                    <div class="category-table-wrapper">
+                        <table id="categoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Description</th>
+                                    <th width="80">Count</th>
+                                    <th width="60">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="categoryTableBody">
+                                <!-- Suggested categories will be inserted here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="suggestion-actions">
+                        <button type="button" id="addCategoryBtn" class="btn-secondary">+ Add Custom Category</button>
+                        <button type="button" id="startGenerationBtn" class="btn-primary">Start Generation</button>
+                    </div>
+                </div>
                 <!-- Theme generation progress -->
                 <div id="themeProgress" class="theme-progress" style="display:none;">
                     <div class="progress-header">
@@ -87,6 +135,10 @@
                         <div class="queue-progress-bar" id="queue3DProgress"></div>
                     </div>
                     <div class="queue-pending" id="queue3DPending"></div>
+                </div>
+                <!-- Stop Button -->
+                <div class="queue-controls" style="display:flex; justify-content:flex-end; margin-top:10px;">
+                    <button id="stopGenerationBtn" class="btn-stop" style="background:#e74c3c;">⏹ Stop All</button>
                 </div>
             </section>
 

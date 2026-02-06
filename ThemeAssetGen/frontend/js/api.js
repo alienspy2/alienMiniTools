@@ -68,6 +68,27 @@ const api = {
         return response.json();
     },
 
+    // New Dynamic Generation Flow
+    async suggestCategories(theme) {
+        const response = await fetch(`${API_BASE}/generation/suggest`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ theme }),
+        });
+        if (!response.ok) throw new Error('Category suggestion failed');
+        return response.json();
+    },
+
+    async startGeneration(theme, categories) {
+        const response = await fetch(`${API_BASE}/generation/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ theme, categories }),
+        });
+        if (!response.ok) throw new Error('Failed to start generation');
+        return response.json();
+    },
+
     // Asset related
     async getAsset(assetId) {
         const response = await fetch(`${API_BASE}/asset/${assetId}`);
@@ -179,6 +200,30 @@ const api = {
     async getAssetCategories() {
         const response = await fetch(`${API_BASE}/catalog/asset-categories`);
         if (!response.ok) throw new Error('Category fetch failed');
+        return response.json();
+    },
+
+    async openConfig() {
+        const response = await fetch(`${API_BASE}/system/open-config`, { method: 'POST' });
+        if (!response.ok) throw new Error('Failed to open config');
+        return response.json();
+    },
+
+    async restartServer() {
+        const response = await fetch(`${API_BASE}/system/restart`, { method: 'POST' });
+        if (!response.ok) throw new Error('Failed to restart server');
+        return response.json();
+    },
+
+    async getServerStatus() {
+        const response = await fetch(`${API_BASE}/system/server-status`);
+        if (!response.ok) throw new Error('Failed to get server status');
+        return response.json();
+    },
+
+    async stopGeneration() {
+        const response = await fetch(`${API_BASE}/generation/stop`, { method: 'POST' });
+        if (!response.ok) throw new Error('Failed to stop generation');
         return response.json();
     },
 

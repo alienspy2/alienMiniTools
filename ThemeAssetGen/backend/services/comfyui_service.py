@@ -6,7 +6,7 @@ import logging
 import aiohttp
 from pathlib import Path
 
-from backend.config import COMFYUI_URL, COMFYUI_WORKFLOW_PATH, COMFYUI_TIMEOUT
+from backend.config import COMFYUI_URL, COMFYUI_WORKFLOW_PATH, COMFYUI_TIMEOUT, COMFYUI_UNET_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +84,11 @@ class ComfyUIService:
         except FileNotFoundError:
             logger.error(f"[COMFYUI] Workflow file not found: {self.workflow_path}")
             raise Exception(f"Workflow file not found: {self.workflow_path}")
+
+        # Set UNET model from config
+        if "74" in workflow:
+            workflow["74"]["inputs"]["unet_name"] = COMFYUI_UNET_MODEL
+            logger.debug(f"[COMFYUI] UNET Model set to: {COMFYUI_UNET_MODEL}")
 
         # Set prompt in node 58 (no additional style prompt needed)
         if not self.set_prompt(workflow, prompt):

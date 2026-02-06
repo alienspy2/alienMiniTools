@@ -205,3 +205,77 @@ The image will be used to create a 3D model, so:
 Original prompt: {original_prompt}
 
 Output ONLY the enhanced prompt, no explanations."""
+
+
+CATEGORY_SUGGESTION_PROMPT = """You are a professional 3D environment artist.
+Analyze the theme '{theme}' and suggest relevant asset categories to build a complete 3D environment.
+
+## Goal
+Deconstruct the theme into distinct asset categories (e.g., walls, props, furniture, lighting, debris, etc.) suitable for a modular game level or 3D scene.
+
+## Output Format (JSON)
+```json
+{{
+  "categories": [
+    {{
+      "name": "snake_case_category_name",
+      "display_name": "Human Readable Name (English)",
+      "description": "Short description of what kind of assets belong here",
+      "count": 5  // Recommended number of assets to generate (between 3 and 10)
+    }}
+  ]
+}}
+```
+
+## Requirements
+1. Suggest 5-8 distinct categories.
+2. Categories should cover structural elements (walls, floors) and decorative elements (props, lighting).
+3. 'count' should be a reasonable number (e.g., more props, fewer walls).
+4. Do not list individual assets, just categories.
+
+Generate the category suggestion for '{theme}' in valid JSON format now.
+Output ONLY valid JSON.
+"""
+
+CUSTOM_CATEGORY_PROMPT = """You are a professional 3D environment artist.
+Generate {count} assets for the category "{category_name}" for a '{theme}' themed 3D virtual space.
+
+## Category Description
+{description}
+
+## Existing Assets (AVOID DUPLICATES)
+{existing_assets}
+
+## Requirements
+1. Generate EXACTLY {count} assets.
+2. Each must be unique and fit the theme and category.
+3. Write detailed 2D image generation prompts.
+4. Prompts must be in English, optimized for 3D asset generation.
+
+## Output Format (JSON)
+```json
+{{
+  "assets": [
+    {{
+      "name": "english_name (snake_case)",
+      "name_kr": "Korean name",
+      "category": "{category_name}",
+      "description": "Brief English description (1-2 sentences)",
+      "description_kr": "Brief Korean description (1-2 sentences)",
+      "prompt_2d": "English prompt for 2D image generation"
+    }}
+  ]
+}}
+```
+
+## Prompt Rules (IMPORTANT!)
+- MUST include "isolated on pure white background" or "on solid white background"
+- Include "single object, centered"
+- Include "full object visible, not cropped, entire object in frame"
+- Include "no background, no shadow, no floor"
+- Include "product photography style, studio lighting"
+- Be specific about the style matching '{theme}' theme
+
+Generate EXACTLY {count} assets for category "{category_name}" in JSON format now.
+Output ONLY valid JSON.
+"""

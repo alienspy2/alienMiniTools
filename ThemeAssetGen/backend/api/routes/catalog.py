@@ -198,23 +198,27 @@ async def export_catalog(catalog_id: str, db: Session = Depends(get_db)):
             if asset.status != GenerationStatus.COMPLETED:
                 continue
 
+            # Determine hierarchy: Category > AssetName > Files
+            category_folder = asset.category.value if asset.category else "other"
+            asset_folder = f"{category_folder}/{asset.name}"
+
             # 2D preview image
             if asset.preview_image_path:
                 preview_path = Path(asset.preview_image_path)
                 if preview_path.exists():
-                    zf.write(preview_path, f"{asset.name}/preview.png")
+                    zf.write(preview_path, f"{asset_folder}/preview.png")
 
             # 3D GLB model
             if asset.model_glb_path:
                 glb_path = Path(asset.model_glb_path)
                 if glb_path.exists():
-                    zf.write(glb_path, f"{asset.name}/model.glb")
+                    zf.write(glb_path, f"{asset_folder}/model.glb")
 
             # 3D OBJ model
             if asset.model_obj_path:
                 obj_path = Path(asset.model_obj_path)
                 if obj_path.exists():
-                    zf.write(obj_path, f"{asset.name}/model.obj")
+                    zf.write(obj_path, f"{asset_folder}/model.obj")
 
             # description.txt
             description_content = f"""Name: {asset.name}
@@ -227,7 +231,7 @@ Category: {asset.category.value if asset.category else 'other'}
 === Generation Prompt ===
 {asset.prompt_2d or 'No prompt available.'}
 """
-            zf.writestr(f"{asset.name}/description.txt", description_content.encode('utf-8'))
+            zf.writestr(f"{asset_folder}/description.txt", description_content.encode('utf-8'))
 
     zip_data = zip_buffer.getvalue()
     filename_encoded = quote(f"{catalog.name}.zip", safe='')

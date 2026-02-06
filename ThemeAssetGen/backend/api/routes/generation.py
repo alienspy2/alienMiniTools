@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from backend.models import get_db, Catalog, GenerationStatus, BatchGenerationStatus
-from backend.models.schemas import QueueItem, QueueStatus
+from backend.models import get_db, Catalog, GenerationStatus, BatchGenerationStatus, Asset
+from backend.models.schemas import QueueItem, QueueStatus, ThemeGenerateRequest, ThemeGenerateResponse
+from backend.services.pipeline_service import PipelineService
+from backend.services.ollama_service import OllamaService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -132,8 +134,70 @@ async def get_generation_status_endpoint(catalog_id: str):
     return queue.model_dump()
 
 
-@router.post("/clear/{catalog_id}")
-async def clear_generation_queue(catalog_id: str):
-    """Clear queue for catalog"""
-    clear_queue(catalog_id)
-    return {"message": "Queue cleared"}
+@router.post("/suggest")
+async def suggest_categories(request: ThemeGenerateRequest):
+    """
+    Step 1: Suggest categories for a theme.
+    Returns a list of suggested categories with recommended counts.
+    """
+    ollama = OllamaService()
+    categories = await ollama.suggest_categories(request.theme)
+    return {"theme": request.theme, "categories": categories}
+
+
+@router.post("/start")
+async def start_generation(
+    request: ThemeGenerateRequest, 
+    db: Session = Depends(get_db)
+):
+    """
+    Step 2: Start generation with confirmed categories.
+    Accepts theme and optional list of categories.
+    """
+    pipeline = PipelineService(db)
+    
+    # Run in background or wait? 
+    # Current frontend expects immediate return or long polling.
+    # Previous implementation was synchronous for asset list generation phase.
+    # We'll keep it synchronous for the 'Asset List Creation' phase, 
+    # relying on the pipeline to generate DB entries.
+    # The actual 2D/3D generation happens later via /2d-batch or /3d-batch 
+    # or the unified 'generate_all_parallel' triggered separately?
+    # Wait, 'generate_theme_assets' creates DB entries.
+    
+    result = await pipeline.generate_theme_assets(
+        theme_name=request.theme,
+    )
+    return result
+
+
+@router.post("/stop")
+async def stop_generation():
+    """Stop all running generation tasks"""
+    logger.info("Received stop request")
+    
+    # 1. Signal pipeline loops to stop
+    PipelineService.stop_all_tasks()
+    
+    # 2. Reset local queue states immediately (for UI responsiveness)
+    for catalog_id, queue in queue_storage.items():
+        queue.is_running_2d = False
+        queue.is_running_3d = False
+        
+        # Reset running items to pending or failed? 
+        # Let's mark them as paused/pending so they can be retried.
+        if queue.current_2d:
+             # Find item in list and reset status
+             for item in queue.queue_2d:
+                 if item.asset_id == queue.current_2d.asset_id:
+                     item.status = "pending"
+             queue.current_2d = None
+
+        if queue.current_3d:
+             for item in queue.queue_3d:
+                 if item.asset_id == queue.current_3d.asset_id:
+                     item.status = "pending"
+             queue.current_3d = None
+             
+    return {"message": "Generation stopped"}
+

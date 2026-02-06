@@ -1,5 +1,6 @@
 @echo off
 chcp 65001 >nul
+title ThemeAssetGen Server
 echo ========================================
 echo  ThemeAssetGen Server
 echo ========================================
@@ -36,11 +37,17 @@ echo Starting server...
 echo URL: http://localhost:8000
 echo API docs: http://localhost:8000/docs
 echo Logs: %~dp0logs\
-if defined DEBUG_MODE echo [DEBUG MODE ENABLED]
 echo ========================================
 echo.
 
+:run_loop
+echo [BAT] Starting python process...
 python run.py %DEBUG_MODE%
+echo [BAT] Python process exited with code %errorlevel%
+echo [BAT] Server stopped. Restarting in 2 seconds...
+:: Use ping for delay as timeout can be finicky in some shells
+ping 127.0.0.1 -n 3 >nul
+goto :run_loop
 
 pause
 exit /b 0

@@ -61,3 +61,6 @@ gradio_cache/
 *.db
 *.sqlite
 *.sqlite3
+
+# Configuration
+config.json

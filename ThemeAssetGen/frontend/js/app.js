@@ -9,10 +9,14 @@ let eventSource = null;
 // DOM Elements
 const themeForm = document.getElementById('themeForm');
 const themeInput = document.getElementById('themeInput');
-const generateBtn = document.getElementById('generateBtn');
+// const generateBtn = document.getElementById('generateBtn'); // REMOVED: Element replaced by suggestBtn
 const catalogSection = document.getElementById('catalogSection');
 const catalogSelect = document.getElementById('catalogSelect');
 const loadCatalogBtn = document.getElementById('loadCatalogBtn');
+const categorySuggestionArea = document.getElementById('categorySuggestionArea');
+const categoryTableBody = document.getElementById('categoryTableBody');
+const addCategoryBtn = document.getElementById('addCategoryBtn');
+const startGenerationBtn = document.getElementById('startGenerationBtn');
 const addAssetsSection = document.getElementById('addAssetsSection');
 const categoryButtonsContainer = document.getElementById('categoryButtons');
 const assetSection = document.getElementById('assetSection');
@@ -47,17 +51,102 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadCatalogs();
     await loadAssetCategories();
     setupEventListeners();
+    checkServerStatus();
+    setInterval(checkServerStatus, 10000); // Check every 10 seconds
 });
 
+async function checkServerStatus() {
+    try {
+        const status = await api.getServerStatus();
+        updateStatusIndicator('statusOllama', status.ollama);
+        updateStatusIndicator('statusComfy', status.comfyui);
+        updateStatusIndicator('statusHunyuan', status.hunyuan);
+    } catch (e) {
+        console.error("Failed to check server status", e);
+        // Mark all offline if server itself is unreachable
+        updateStatusIndicator('statusOllama', false);
+        updateStatusIndicator('statusComfy', false);
+        updateStatusIndicator('statusHunyuan', false);
+    }
+}
+
+function updateStatusIndicator(elementId, isOnline) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+
+    if (isOnline) {
+        el.classList.add('online');
+        el.classList.remove('offline');
+    } else {
+        el.classList.add('offline');
+        el.classList.remove('online');
+    }
+}
+
 function setupEventListeners() {
-    // Theme generation with progress
+    // Theme Suggestion Phase
     themeForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const theme = themeInput.value.trim();
-        if (!theme) return;
+        console.log("Form submitted. Starting suggestion...");
 
-        generateBtn.disabled = true;
-        generateBtn.innerHTML = '<span class="loading"></span> Generating...';
+        const theme = themeInput.value.trim();
+        if (!theme) {
+            console.log("Theme is empty");
+            return;
+        }
+
+        const suggestBtn = document.getElementById('suggestBtn');
+        if (!suggestBtn) {
+            console.error("Suggest Button not found!");
+            return;
+        }
+
+
+        const originalText = suggestBtn.textContent;
+        suggestBtn.disabled = true;
+        suggestBtn.innerHTML = '<span class="loading"></span> Suggesting...';
+
+        // Hide previous results
+        categorySuggestionArea.style.display = 'none';
+        assetSection.style.display = 'none';
+
+        try {
+            const data = await api.suggestCategories(theme);
+            renderCategorySuggestionTable(data.categories);
+            categorySuggestionArea.style.display = 'block';
+
+            // Scroll to suggestion area
+            categorySuggestionArea.scrollIntoView({ behavior: 'smooth' });
+
+        } catch (error) {
+            alert('Failed to suggest categories: ' + error.message);
+        } finally {
+            suggestBtn.disabled = false;
+            suggestBtn.textContent = originalText;
+        }
+    });
+
+    // Add Custom Category Button
+    addCategoryBtn.addEventListener('click', () => {
+        addCategoryRow({
+            name: 'custom_category',
+            description: 'Description of custom assets',
+            count: 5
+        }, true);
+    });
+
+    // Start Generation Phase
+    startGenerationBtn.addEventListener('click', async () => {
+        const theme = themeInput.value.trim();
+        const categories = getCategoriesFromTable();
+
+        if (categories.length === 0) {
+            alert("Please include at least one category.");
+            return;
+        }
+
+        startGenerationBtn.disabled = true;
+        startGenerationBtn.innerHTML = '<span class="loading"></span> Creating Asset List...';
 
         // Show progress panel
         const progressPanel = document.getElementById('themeProgress');
@@ -66,65 +155,49 @@ function setupEventListeners() {
         const progressDetail = document.getElementById('themeProgressDetail');
 
         progressPanel.style.display = 'block';
-        progressBar.style.width = '0%';
-        progressText.textContent = 'Starting...';
-        progressDetail.textContent = '';
+        progressBar.style.width = '100%';
+        progressBar.classList.add('indeterminate');
+        progressText.textContent = 'Generating asset definitions...';
+        progressDetail.textContent = 'Initializing...';
 
-        // Track elapsed time - update progressText instead of progressDetail
-        let startTime = Date.now();
-        let currentCategory = 'Wall Texture';
-        let categoryIndex = 1;
-        let totalCategories = 7;
-        const elapsedTimer = setInterval(() => {
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
-            progressText.textContent = `Generating ${currentCategory} (${categoryIndex}/${totalCategories})... ${elapsed}s`;
+        // Progress Timer
+        const startTime = Date.now();
+        const timerInterval = setInterval(() => {
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            progressDetail.textContent = `Processing... (${elapsed}s elapsed) - Check server console for details.`;
         }, 1000);
 
         try {
-            let lastCategoryIndex = 0;
-            await api.streamGenerateTheme(theme, (data) => {
-                console.log('Theme progress:', data);
+            const result = await api.startGeneration(theme, categories);
 
-                if (data.stage === 'generating') {
-                    // Only reset timer when category actually changes
-                    if (data.category_index !== lastCategoryIndex) {
-                        startTime = Date.now();
-                        lastCategoryIndex = data.category_index;
-                    }
-                    currentCategory = data.category_name;
-                    categoryIndex = data.category_index;
-                    totalCategories = data.total_categories;
-                    const pct = Math.round((data.category_index / data.total_categories) * 100);
-                    progressBar.style.width = `${pct}%`;
-                    progressDetail.textContent = `✅ Categories done: ${data.category_index - 1}/${data.total_categories}`;
-                } else if (data.stage === 'completed') {
-                    progressBar.style.width = '100%';
-                    progressText.textContent = data.message;
-                    progressDetail.textContent = '✅ All categories generated!';
-                } else if (data.stage === 'done') {
-                    currentCatalogId = data.catalog_id;
-                    progressText.textContent = `Done! Created ${data.asset_count} assets`;
-                }
-            });
+            clearInterval(timerInterval);
 
-            clearInterval(elapsedTimer);
+            // Success
+            currentCatalogId = result.catalog_id;
+            progressText.textContent = `Done! Created ${result.assets.length} assets`;
 
+            // Hide suggestion area
+            categorySuggestionArea.style.display = 'none';
+            themeInput.value = '';
+
+            // Reload
             await loadCatalog(currentCatalogId);
             await loadCatalogs();
-            themeInput.value = '';
 
             // Hide progress after delay
             setTimeout(() => {
                 progressPanel.style.display = 'none';
+                progressBar.classList.remove('indeterminate');
             }, 2000);
 
         } catch (error) {
-            clearInterval(elapsedTimer);
-            alert('Asset list generation failed: ' + error.message);
+            clearInterval(timerInterval);
+            alert('Generation failed: ' + error.message);
             progressPanel.style.display = 'none';
+            progressBar.classList.remove('indeterminate');
         } finally {
-            generateBtn.disabled = false;
-            generateBtn.textContent = 'Generate Assets';
+            startGenerationBtn.disabled = false;
+            startGenerationBtn.textContent = 'Start Generation';
         }
     });
 
@@ -238,6 +311,105 @@ function setupEventListeners() {
     viewerHeader.addEventListener('click', () => {
         toggleViewerPanel();
     });
+
+    // System Buttons
+    const openConfigBtn = document.getElementById('openConfigBtn');
+    if (openConfigBtn) {
+        openConfigBtn.addEventListener('click', async () => {
+            try {
+                await api.openConfig();
+            } catch (e) {
+                alert(e.message);
+            }
+        });
+    }
+
+    const restartServerBtn = document.getElementById('restartServerBtn');
+    if (restartServerBtn) {
+        restartServerBtn.addEventListener('click', async () => {
+            if (!confirm("Restart server? All running tasks will be stopped.")) return;
+            try {
+                await api.restartServer();
+                alert("Server restarting... Please wait a few seconds and refresh.");
+            } catch (e) {
+                alert(e.message);
+            }
+        });
+    }
+
+    const stopGenerationBtn = document.getElementById('stopGenerationBtn');
+    if (stopGenerationBtn) {
+        stopGenerationBtn.addEventListener('click', async () => {
+            if (!confirm("Stop all generation tasks?")) return;
+            try {
+                await api.stopGeneration();
+                // UI will update via SSE eventually, but let's give immediate feedback
+                alert("Stop requested. Tasks will stop after current item finishes.");
+            } catch (e) {
+                alert("Failed to stop: " + e.message);
+            }
+        });
+    }
+}
+
+// Helper Methods for Suggestion UI
+
+function renderCategorySuggestionTable(categories) {
+    categoryTableBody.innerHTML = '';
+    categories.forEach(cat => addCategoryRow(cat));
+}
+
+function addCategoryRow(cat, isCustom = false) {
+    const tr = document.createElement('tr');
+
+    // Name (Hidden real name, Show display input)
+    // If it's custom, allow editing name? For simplicity, we assume name is display_name logic
+
+    // Since invalid variable names can break things, we should use snake_case for internal name
+    // For custom rows, we generate name from display name on save, OR we let user input simple name
+
+    tr.innerHTML = `
+        <td>
+            <input type="text" class="cat-name-input" value="${cat.name}" ${isCustom ? '' : 'readonly'} style="${isCustom ? 'border:1px solid #666' : 'border:none;background:transparent;color:var(--text)'}">
+        </td>
+        <td>
+            <textarea class="cat-desc-input" style="width:100%; height:60px; border:1px solid #444; background:var(--bg-secondary); color:var(--text); resize:vertical;">${cat.description}</textarea>
+        </td>
+        <td>
+            <input type="number" class="cat-count-input" value="${cat.count}" min="1" max="20" style="width:60px;">
+        </td>
+        <td>
+            <button class="btn-delete-row" title="Remove">❌</button>
+        </td>
+    `;
+
+    // Delete event
+    tr.querySelector('.btn-delete-row').addEventListener('click', () => {
+        tr.remove();
+    });
+
+    categoryTableBody.appendChild(tr);
+}
+
+function getCategoriesFromTable() {
+    const categories = [];
+    const rows = categoryTableBody.querySelectorAll('tr');
+
+    rows.forEach(row => {
+        const nameInput = row.querySelector('.cat-name-input');
+        const descInput = row.querySelector('.cat-desc-input');
+        const countInput = row.querySelector('.cat-count-input');
+
+        if (nameInput && countInput) {
+            categories.push({
+                name: nameInput.value.trim(),
+                description: descInput.value.trim(),
+                count: parseInt(countInput.value) || 5
+            });
+        }
+    });
+
+    return categories;
 }
 
 function toggleViewerPanel() {

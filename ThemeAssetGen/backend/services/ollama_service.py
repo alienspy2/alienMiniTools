@@ -7,8 +7,14 @@ from backend.utils.prompt_templates import (
     ASSET_LIST_PROMPT, 
     ADDITIONAL_ASSETS_PROMPT, 
     CATEGORY_ASSET_PROMPT,
-    ASSET_CATEGORIES
+    CATEGORY_ASSET_PROMPT,
+    ASSET_CATEGORIES,
+    CATEGORY_ASSET_PROMPT,
+    ASSET_CATEGORIES,
+    CATEGORY_SUGGESTION_PROMPT,
+    CUSTOM_CATEGORY_PROMPT
 )
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -28,22 +34,56 @@ class OllamaService:
         except Exception:
             return False
 
-    def _parse_json_response(self, raw_response: str) -> list[dict]:
-        """Parse JSON from Ollama response"""
+    def _parse_json_response(self, raw_response: str) -> dict:
+        """Parse JSON from Ollama response with robust fallback"""
+        # 1. Try basic JSON Clean
+        json_str = raw_response.strip()
+        
+        # 2. Extract from markdown block if present
+        if "```json" in json_str:
+            try:
+                json_str = json_str.split("```json")[1].split("```")[0].strip()
+            except IndexError:
+                pass
+        elif "```" in json_str:
+            try:
+                json_str = json_str.split("```")[1].split("```")[0].strip()
+            except IndexError:
+                pass
+
         try:
-            json_str = raw_response
-            if "```json" in json_str:
-                json_str = json_str.split("```json")[1].split("```")[0]
-            elif "```" in json_str:
-                json_str = json_str.split("```")[1].split("```")[0]
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            # 3. Regex Fallback: Try to find the outermost JSON object
+            # Matches '{' followed by anything until '}' greedily, effectively finding the biggest JSON-like block
+            # Note: This is a simple heuristic. Nested braces might confuse it if not using recursive regex, 
+            # but standard json structure usually starts with { and ends with }
+            match = re.search(r'(\{.*\})', json_str, re.DOTALL)
+            if match:
+                try:
+                    return json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    pass
+            
+            logger.error(f"JSON parse failed completely.\nResponse: {raw_response[:500]}...")
+            # Return empty structure as last resort to prevent crash
+            return {}
 
-            parsed = json.loads(json_str.strip())
-            assets = parsed.get("assets", [])
-            return assets
-
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON parse failed: {e}\nResponse: {raw_response[:500]}")
-            raise Exception(f"Failed to parse asset list: {e}")
+    async def suggest_categories(self, theme: str) -> list[dict]:
+        """Suggest categories based on theme"""
+        prompt = CATEGORY_SUGGESTION_PROMPT.format(theme=theme)
+        logger.info(f"Ollama suggest categories: theme={theme}")
+        
+        raw_response = await self._call_ollama(prompt)
+        parsed = self._parse_json_response(raw_response)
+        
+        categories = parsed.get("categories", [])
+        if not categories:
+            logger.warning("No categories found in response, retrying or returning empty.")
+            # Simple retry logic could be added here, but for now we rely on the robust parser
+            
+        logger.info(f"Categories suggested: {len(categories)}")
+        return categories
 
     async def _call_ollama(self, prompt: str) -> str:
         """Call Ollama API and return raw response"""
@@ -72,7 +112,8 @@ class OllamaService:
         logger.info(f"Ollama request: theme={theme}, model={self.model}")
         
         raw_response = await self._call_ollama(prompt)
-        assets = self._parse_json_response(raw_response)
+        parsed = self._parse_json_response(raw_response)
+        assets = parsed.get("assets", [])
         
         logger.info(f"Asset list generated: {len(assets)} items")
         return assets
@@ -115,6 +156,40 @@ class OllamaService:
                 asset["category"] = category
         
         logger.info(f"Category assets generated: {len(assets)} items for {asset_type}")
+        return assets
+
+    async def generate_custom_category(
+        self,
+        theme: str,
+        category_name: str,
+        description: str,
+        count: int,
+        existing_assets: list[str] = None
+    ) -> list[dict]:
+        """Generate assets for a custom dynamic category"""
+        
+        existing_str = ", ".join(existing_assets) if existing_assets else "None"
+        
+        prompt = CUSTOM_CATEGORY_PROMPT.format(
+            theme=theme,
+            category_name=category_name,
+            description=description,
+            count=count,
+            existing_assets=existing_str
+        )
+        
+        logger.info(f"Ollama custom category request: theme={theme}, category={category_name}, count={count}")
+        
+        raw_response = await self._call_ollama(prompt)
+        parsed = self._parse_json_response(raw_response)
+        assets = parsed.get("assets", [])
+        
+        # Ensure metadata relies on input args
+        for asset in assets:
+            asset["category"] = category_name
+            asset["asset_type"] = category_name # Use category name as type for custom ones
+            
+        logger.info(f"Custom category assets generated: {len(assets)} items")
         return assets
 
     async def generate_additional_assets(
