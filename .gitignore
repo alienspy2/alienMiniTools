@@ -30,3 +30,4 @@ ThemeAssetGen/0.31.0
 ThemeAssetGen/log.txt
 ThemeAssetGen/**/__pycache__/
 ThemeAssetGen/*.db
+QwenTTS/Qwen3-TTS-apiwrap/static/generated
