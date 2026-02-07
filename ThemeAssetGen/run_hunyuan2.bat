@@ -1,4 +1,5 @@
 @echo off
+title hunyuan2 server
 chcp 65001 >nul
 echo ========================================
 echo  Hunyuan3D-2.0 [Stable Version]

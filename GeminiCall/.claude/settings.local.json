@@ -11,7 +11,8 @@
       "WebFetch(domain:ollama.readthedocs.io)",
       "Bash(ls:*)",
       "Bash(uv sync:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat\\(geminicall\\): Add MCP tool calling support and enhance Ollama compatibility\n\n- Add MCP server registry with mcp.json persistence \\(auto-save/load\\)\n- Add ReAct agent loop for prompt-based tool calling \\(Gemma 3 support\\)\n- Add /mcp/add, /mcp/remove, /mcp/list endpoints for MCP server management\n- Add /generate_with_mcp endpoint with JSON-RPC 2.0 format\n- Add Ollama /api/show, /api/ps endpoints and model details\n- Handle system_instruction for models that don''t support it \\(Gemma\\)\n- Add verbose debug logging for MCP agent loop\n- Add CLI chat client \\(test_mcp_chat.py\\) and toolcalling test script\n- Add unit tests \\(23\\) and integration tests \\(8\\) for MCP features\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }
