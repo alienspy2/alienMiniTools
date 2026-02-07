@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv init:*)",
+      "Bash(uv add:*)",
+      "Bash(uv run:*)",
+      "Bash(copy:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:docs.ollama.com)",
+      "WebFetch(domain:ollama.readthedocs.io)",
+      "Bash(ls:*)",
+      "Bash(uv sync:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

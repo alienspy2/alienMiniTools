@@ -2,7 +2,13 @@
 from google import genai
 from google.genai import types
 import asyncio
+import logging
 from config_loader import load_config
+
+logger = logging.getLogger("GenAIService")
+
+# system_instruction을 지원하지 않는 모델 접두사
+_NO_SYSTEM_INSTRUCTION_PREFIXES = ("gemma",)
 
 class GenAIService:
     def __init__(self):
@@ -10,11 +16,19 @@ class GenAIService:
         self.client = genai.Client(api_key=self.config['api_key'])
         self.default_model = self.config['models'][0] # Use first model as default if not specified
 
-    def _convert_messages(self, ollama_messages):
+    @staticmethod
+    def _supports_system_instruction(model_name: str) -> bool:
+        """모델이 system_instruction을 지원하는지 확인"""
+        return not model_name.lower().startswith(_NO_SYSTEM_INSTRUCTION_PREFIXES)
+
+    def _convert_messages(self, ollama_messages, model_name: str):
         """
         Convert Ollama style messages to Gemini style contents.
         Ollama: [{'role': 'user', 'content': 'hello'}, ...]
         Gemini: role='user'|'model', parts=[types.Part.from_text(text=...)]
+
+        system_instruction을 지원하지 않는 모델(Gemma 등)은
+        시스템 메시지를 첫 번째 사용자 메시지에 합침.
         """
         gemini_contents = []
         system_instruction = None
@@ -22,26 +36,33 @@ class GenAIService:
         for msg in ollama_messages:
             role = msg.get('role')
             content = msg.get('content', '')
-            
+
             if role == 'system':
-                # System prompt is handled separately in Gemini
-                # If multiple system prompts exist, concatenate or take last?
-                # Usually system prompt is defined at model init or generation config. 
-                # For per-request system prompt, we can pass it in config.
                 system_instruction = content
                 continue
-            
+
             if role == 'assistant':
                 role = 'model'
-            
-            # Gemini 'parts' can be just string for text-only
+
             gemini_contents.append(
                 types.Content(
                     role=role,
                     parts=[types.Part.from_text(text=content)]
                 )
             )
-            
+
+        # system_instruction 미지원 모델: 첫 user 메시지에 합침
+        if system_instruction and not self._supports_system_instruction(model_name):
+            logger.info(f"Model {model_name} does not support system_instruction, prepending to first user message")
+            for content_item in gemini_contents:
+                if content_item.role == 'user':
+                    original_text = content_item.parts[0].text
+                    content_item.parts[0] = types.Part.from_text(
+                        text=f"[System Instructions]\n{system_instruction}\n\n[User Message]\n{original_text}"
+                    )
+                    system_instruction = None
+                    break
+
         return gemini_contents, system_instruction
 
     async def generate_response(self, model_name: str, messages: list, options: dict = None):
@@ -55,8 +76,8 @@ class GenAIService:
         # However, plan said "config.json models" determines availability.
         
         target_model = model_name if model_name else self.default_model
-        
-        contents, sys_inst = self._convert_messages(messages)
+
+        contents, sys_inst = self._convert_messages(messages, target_model)
         
         generate_config = types.GenerateContentConfig()
         if options:

@@ -32,7 +32,7 @@ async def test_convert_messages(mock_config, mock_genai_client):
         {'role': 'assistant', 'content': 'Hello'}
     ]
     
-    contents, sys_inst = service._convert_messages(ollama_msgs)
+    contents, sys_inst = service._convert_messages(ollama_msgs, "gemini-test")
     
     assert sys_inst == 'Be nice'
     assert len(contents) == 2
