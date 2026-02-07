@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class TTSClient:
     """Client for Qwen3-TTS Gradio server."""
 
-    DEFAULT_SERVER = "http://localhost:23005"
+    DEFAULT_SERVER = "http://localhost:23015"
     DEFAULT_SPEAKER = "Sohee"
     DEFAULT_LANGUAGE = "Korean"
     SAMPLE_RATE = 24000

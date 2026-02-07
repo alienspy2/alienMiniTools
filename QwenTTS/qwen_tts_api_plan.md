@@ -4,7 +4,7 @@
 
 | 구성 요소 | 설명 |
 |-----------|------|
-| **Gradio TTS 서버** | `run.bat`으로 실행 중인 Qwen3-TTS (포트 23005) |
+| **Gradio TTS 서버** | `run.bat`으로 실행 중인 Qwen3-TTS (포트 23015) |
 | **웹 챗 앱** | Gradio에 API로 연결하여 TTS 요청 → WAV 재생 |
 | **MCP 서버** | JSON-RPC endpoint로 텍스트 → WAV 반환 |
 
@@ -18,7 +18,7 @@
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────────┐                                          │
-│  │  run.bat         │  ← 이미 실행 중 (포트 23005)              │
+│  │  run.bat         │  ← 이미 실행 중 (포트 23015)              │
 │  │  Gradio TTS Demo │                                          │
 │  └────────┬─────────┘                                          │
 │           │ Gradio Client API                                  │
@@ -29,7 +29,7 @@
 │  │  ┌─────────────────┐    ┌──────────────────────┐    │      │
 │  │  │ 웹 챗 UI        │    │ MCP Server           │    │      │
 │  │  │ (web_ui.py)     │    │ (server.py)          │    │      │
-│  │  │ 포트: 23007     │    │ 포트: 23006 (/mcp)   │    │      │
+│  │  │ 포트: 23007     │    │ 포트: 23016 (/mcp)   │    │      │
 │  │  └─────────────────┘    └──────────────────────┘    │      │
 │  └──────────────────────────────────────────────────────┘      │
 │                                                                 │
@@ -43,7 +43,7 @@
     -   `server.py` : **FastMCP 기반 MCP 서버**
         -   라이브러리: `fastmcp`
         -   프로토콜: `streamable-http` (n8n 호환)
-        -   포트: 23006
+        -   포트: 23016
     -   `web_ui.py` : **웹 챗 UI 서버**
         -   라이브러리: `FastAPI`
         -   포트: 23007
@@ -203,15 +203,15 @@ dependencies = [
    ```
 
 4. **접속:**
-   - **TTS 서버**: `http://localhost:23005`
-   - **MCP 서버** (n8n): `POST http://localhost:23006/mcp` (streamable-http)
+   - **TTS 서버**: `http://localhost:23015`
+   - **MCP 서버** (n8n): `POST http://localhost:23016/mcp` (streamable-http)
    - **웹 챗 UI**: `http://localhost:23007`
 
 ---
 
 ## 📌 고려 사항
 
-1. **Gradio API 연결**: `gradio_client`가 `http://localhost:23005`에 연결
+1. **Gradio API 연결**: `gradio_client`가 `http://localhost:23015`에 연결
 2. **동시 요청**: FastAPI 앱에서 TTS 요청은 순차 처리 (TTS 모델이 GPU 점유)
 3. **오디오 스트리밍**: 생성 완료 후 전체 WAV 반환 (스트리밍 아님)
 4. **에러 핸들링**: TTS 서버 다운 시 적절한 에러 메시지

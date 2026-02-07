@@ -4,7 +4,7 @@ Qwen3-TTS MCP Server (FastMCP)
 
 Provides:
 - MCP Server via fastmcp (supporting streamable-http)
-- Port: 23006
+- Port: 23016
 """
 
 import argparse
@@ -149,7 +149,7 @@ def generate_speech(
     global tts_client, verbose_mode, PUBLIC_HOST, WEBHOOK_URL
 
     if tts_client is None:
-        tts_client = TTSClient("http://localhost:23005", verbose=verbose_mode)
+        tts_client = TTSClient("http://localhost:23015", verbose=verbose_mode)
     
     # Start background thread
     t = threading.Thread(
@@ -173,7 +173,7 @@ def main():
     # ... main 함수 내부 ...
     parser = argparse.ArgumentParser(description="Qwen3-TTS MCP Server")
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=23006)
+    parser.add_argument("--port", type=int, default=23016)
     parser.add_argument("--verbose", action="store_true")
     # Add public host argument
     parser.add_argument("--public-host", default=None, help="Public IP/Hostname for Web UI links")
@@ -206,7 +206,7 @@ def main():
 
     # Pre-initialize TTS Client
     try:
-        tts_client = TTSClient("http://localhost:23005", verbose=verbose_mode)
+        tts_client = TTSClient("http://localhost:23015", verbose=verbose_mode)
         logger.info("TTS Client connected successfully")
     except Exception as e:
         logger.warning(f"Could not connect to TTS server at startup: {e}")

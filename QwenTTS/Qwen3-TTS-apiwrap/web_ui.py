@@ -105,7 +105,7 @@ async def startup():
     """Initialize TTS client on startup."""
     global tts_client, verbose_mode
 
-    tts_server = "http://localhost:23005"
+    tts_server = "http://localhost:23015"
     logger.info(f"Connecting to TTS server: {tts_server}")
     tts_client = TTSClient(tts_server, verbose=verbose_mode)
     logger.info("Web UI Server Ready")
