@@ -16,6 +16,7 @@ def asset_to_response(asset: Asset) -> AssetResponse:
         name=asset.name,
         name_kr=asset.name_kr,
         category=asset.category.value if asset.category else "other",
+        asset_type=asset.asset_type,
         description=asset.description,
         description_kr=asset.description_kr,
         prompt_2d=asset.prompt_2d,

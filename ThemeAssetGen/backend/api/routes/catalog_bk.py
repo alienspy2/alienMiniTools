@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.models import (
     get_db, Catalog, Asset, Theme, AssetCategory,
     CatalogResponse, CatalogListResponse, CatalogListItem,
-    GenerationStatus, GenerateMoreAssetsRequest
+    GenerationStatus
 )
 from backend.api.routes.asset import asset_to_response
 from backend.services.ollama_service import OllamaService
@@ -251,26 +251,15 @@ Category: {asset.category.value if asset.category else 'other'}
 @router.post("/{catalog_id}/add-assets")
 async def add_assets_to_catalog(
     catalog_id: str, 
-    request: GenerateMoreAssetsRequest = None,
-    # Keep query params for backward compatibility if needed, though requests usually don't mix body and query well for same fields
-    # Here we prioritize Body if present.
     asset_type: str = None,
     count: int = None,
     db: Session = Depends(get_db)
 ):
-    """Add assets to catalog (Standard or Custom Category)"""
+    """Add assets to catalog by type (generate with Ollama)"""
     import logging
     from backend.utils.prompt_templates import ASSET_CATEGORIES
     
     logger = logging.getLogger(__name__)
-
-    # Logic to handle mixed inputs (Body vs Query)
-    # If request body is provided, use it. Otherwise construct from query.
-    if request is None:
-         request = GenerateMoreAssetsRequest(
-             asset_type=asset_type,
-             count=count
-         )
 
     catalog = db.query(Catalog).filter(Catalog.id == catalog_id).first()
     if not catalog:
@@ -279,70 +268,39 @@ async def add_assets_to_catalog(
     theme_name = catalog.theme.name if catalog.theme else catalog.name
     existing_names = [asset.name for asset in catalog.assets]
 
-    ollama = OllamaService()
-    new_assets_data = []
-    
-    # CASE 1: Custom Category Generation
-    if request.custom_category_name and request.custom_description:
-        actual_count = request.count or 5
-        logger.info(f"[ADD-ASSETS] Adding {actual_count} CUSTOM assets: {request.custom_category_name}")
-        
-        try:
-            new_assets_data = await ollama.generate_custom_category(
-                theme=theme_name,
-                category_name=request.custom_category_name,
-                description=request.custom_description,
-                count=actual_count,
-                existing_assets=existing_names
-            )
-        except Exception as e:
-            logger.error(f"[ADD-ASSETS] Ollama custom category failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to generate custom assets: {e}")
-            
-    # CASE 2: Standard Category or General Generation
+    # If asset_type specified, use category-specific generation
+    if asset_type and asset_type in ASSET_CATEGORIES:
+        category_info = ASSET_CATEGORIES[asset_type]
+        actual_count = category_info["count"]
+        logger.info(f"[ADD-ASSETS] Adding {actual_count} {asset_type} assets to catalog {catalog_id}")
     else:
-        # If asset_type specified, use category-specific generation
-        if request.asset_type and request.asset_type in ASSET_CATEGORIES:
-            category_info = ASSET_CATEGORIES[request.asset_type]
-            actual_count = request.count or category_info["count"]
-            logger.info(f"[ADD-ASSETS] Adding {actual_count} {request.asset_type} assets to catalog {catalog_id}")
-        else:
-            actual_count = request.count or 10
-            logger.info(f"[ADD-ASSETS] Adding {actual_count} general assets to catalog {catalog_id}")
+        actual_count = count or 10
+        logger.info(f"[ADD-ASSETS] Adding {actual_count} general assets to catalog {catalog_id}")
 
-        try:
-            new_assets_data = await ollama.generate_additional_assets(
-                theme=theme_name,
-                existing_names=existing_names,
-                count=actual_count,
-                asset_type=request.asset_type
-            )
-        except Exception as e:
-            logger.error(f"[ADD-ASSETS] Ollama generation failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to generate assets: {e}")
+    ollama = OllamaService()
+    try:
+        new_assets_data = await ollama.generate_additional_assets(
+            theme=theme_name,
+            existing_names=existing_names,
+            count=actual_count,
+            asset_type=asset_type
+        )
+    except Exception as e:
+        logger.error(f"[ADD-ASSETS] Ollama generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate assets: {e}")
 
     added_assets = []
     for asset_data in new_assets_data:
         try:
             category_str = asset_data.get("category", "other").lower()
-            # If it's a known enum value, use it. Otherwise default to OTHER but keep the original string in asset_type or name_kr if possible?
-            # The Entity 'category' is an ENUM. So we must map to existing enum values.
-            # For custom categories not in Enum, we set category=OTHER, and store the custom category name in 'asset_type'
-            
-            if category_str in [c.value for c in AssetCategory]:
-                category_enum = AssetCategory(category_str)
-            else:
-                category_enum = AssetCategory.OTHER
-                
-            # If request had a custom category name, ensure we mark it in asset_type if not standard
-            final_asset_type = request.custom_category_name if request.custom_category_name else (request.asset_type or asset_data.get("asset_type"))
+            category = AssetCategory(category_str) if category_str in [c.value for c in AssetCategory] else AssetCategory.OTHER
 
             new_asset = Asset(
                 catalog_id=catalog_id,
                 name=asset_data.get("name", "unnamed_asset"),
                 name_kr=asset_data.get("name_kr", ""),
-                category=category_enum, 
-                asset_type=final_asset_type, 
+                category=category,
+                asset_type=asset_type or asset_data.get("asset_type"),
                 description=asset_data.get("description", ""),
                 prompt_2d=asset_data.get("prompt_2d", ""),
                 status=GenerationStatus.PENDING,
@@ -360,5 +318,5 @@ async def add_assets_to_catalog(
         "message": f"Added {len(added_assets)} assets",
         "catalog_id": catalog_id,
         "added_count": len(added_assets),
-        "asset_type": request.asset_type or request.custom_category_name,
+        "asset_type": asset_type,
     }

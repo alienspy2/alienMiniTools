@@ -183,15 +183,17 @@ const api = {
         return response.json();
     },
 
-    async addAssets(catalogId, assetType = null, count = null) {
-        let url = `${API_BASE}/catalog/${catalogId}/add-assets`;
-        const params = [];
-        if (assetType) params.push(`asset_type=${assetType}`);
-        if (count) params.push(`count=${count}`);
-        if (params.length > 0) url += `?${params.join('&')}`;
-
-        const response = await fetch(url, {
+    async addAssets(catalogId, options) {
+        // options: { assetType, count, customCategoryName, customDescription }
+        const response = await fetch(`${API_BASE}/catalog/${catalogId}/add-assets`, {
             method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                asset_type: options.assetType,
+                count: options.count,
+                custom_category_name: options.customCategoryName,
+                custom_description: options.customDescription
+            })
         });
         if (!response.ok) throw new Error('Asset addition failed');
         return response.json();

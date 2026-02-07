@@ -238,56 +238,6 @@ function setupEventListeners() {
         }
     });
 
-    // Custom Category Add Button
-    const addCustomCategoryBtn = document.getElementById('addCustomCategoryBtn');
-    if (addCustomCategoryBtn) {
-        addCustomCategoryBtn.addEventListener('click', async () => {
-            const nameInput = document.getElementById('customCatName');
-            const descInput = document.getElementById('customCatDesc');
-            const countInput = document.getElementById('customCatCount');
-
-            const name = nameInput.value.trim();
-            const desc = descInput.value.trim();
-            const count = parseInt(countInput.value) || 5;
-
-            if (!name || !desc) {
-                alert("Please enter both category name and description.");
-                return;
-            }
-
-            if (!currentCatalogId) {
-                alert("Please select a catalog first.");
-                return;
-            }
-
-            const btn = addCustomCategoryBtn;
-            const originalText = btn.textContent;
-            btn.disabled = true;
-            btn.textContent = "Adding...";
-
-            try {
-                const result = await api.addAssets(currentCatalogId, {
-                    customCategoryName: name,
-                    customDescription: desc,
-                    count: count
-                });
-                alert(`${result.added_count} assets added to '${name}'.`);
-
-                // Clear inputs
-                nameInput.value = '';
-                descInput.value = '';
-
-                await loadCatalog(currentCatalogId);
-                await loadCatalogs();
-            } catch (error) {
-                alert('Failed to add custom assets: ' + error.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = originalText;
-            }
-        });
-    }
-
     // Category add buttons are set up dynamically in loadAssetCategories()
 
     // Generate All (2D + 3D parallel)
@@ -495,7 +445,6 @@ async function loadCatalog(catalogId) {
         currentCatalogId = catalogId;
         currentAssets = catalog.assets;
 
-        renderCategorySummary();
         renderAssetList();
         assetSection.style.display = 'block';
         addAssetsSection.style.display = 'block';
@@ -574,10 +523,7 @@ async function addAssetsByCategory(assetType, btn) {
     btn.innerHTML = '<span class="loading"></span> Adding...';
 
     try {
-        const result = await api.addAssets(catalogId, {
-            assetType: assetType,
-            count: 10
-        });
+        const result = await api.addAssets(catalogId, assetType);
         alert(`${result.added_count} ${assetType} assets added.`);
         await loadCatalog(catalogId);
         await loadCatalogs();
@@ -588,111 +534,6 @@ async function addAssetsByCategory(assetType, btn) {
         btn.innerHTML = originalText;
     }
 }
-
-function renderCategorySummary() {
-    const tbody = document.getElementById('categorySummaryBody');
-    if (!tbody) return;
-
-    tbody.innerHTML = '';
-
-    // Group assets by asset_type (or category if asset_type is missing/generic)
-    const groups = {};
-
-    currentAssets.forEach(asset => {
-        // Use asset_type as primary key, fallback to category
-        const key = asset.asset_type || asset.category || 'other';
-        if (!groups[key]) {
-            groups[key] = { count: 0, category: asset.category };
-        }
-        groups[key].count++;
-        // Capture first description for custom categories
-        if (!groups[key].description && asset.description) {
-            groups[key].description = asset.description;
-        }
-    });
-
-    // Determine sort order: Standard categories first if possible
-    const sortedKeys = Object.keys(groups).sort();
-
-    sortedKeys.forEach(key => {
-        const info = groups[key];
-
-        // Resolve Display Name and Description
-        const catDef = assetCategories[key];
-        const displayName = catDef ? catDef.name : key;
-        let displayDesc = '';
-        const categoryEnum = info.category || 'other';
-
-        if (catDef) {
-            displayDesc = catDef.description;
-        } else if (info.description) {
-            // Truncate
-            const desc = info.description.length > 50 ? info.description.substring(0, 50) + '...' : info.description;
-            displayDesc = `<span style="font-style:italic; opacity:0.7;">e.g. ${desc}</span>`;
-        } else {
-            displayDesc = '-';
-        }
-
-        const tr = document.createElement('tr');
-        tr.style.borderBottom = '1px solid #333';
-
-        tr.innerHTML = `
-            <td style="padding:8px;">
-                <div style="font-weight:bold;">${displayName}</div>
-                <div style="font-size:0.8em; color:#888;">${categoryEnum}</div>
-            </td>
-            <td style="padding:8px; font-size:0.9em; color:#bbb;">
-                ${displayDesc}
-            </td>
-            <td style="padding:8px;">${info.count}</td>
-            <td style="padding:8px;">
-                <button class="btn-micro-add" style="padding:2px 8px; font-size:0.8em; cursor:pointer;">+5 More</button>
-            </td>
-        `;
-
-        // "Add More" Button Logic
-        const addBtn = tr.querySelector('.btn-micro-add');
-        addBtn.addEventListener('click', async () => {
-            if (!confirm(`Generate 5 more assets for '${key}'?`)) return;
-
-            addBtn.disabled = true;
-            addBtn.textContent = '...';
-
-            try {
-                // If standard category
-                if (assetCategories[key]) {
-                    await api.addAssets(currentCatalogId, {
-                        assetType: key,
-                        count: 5
-                    });
-                } else {
-                    // Custom Category
-                    const descToUse = info.description || key;
-                    await api.addAssets(currentCatalogId, {
-                        customCategoryName: key,
-                        customDescription: descToUse,
-                        count: 5
-                    });
-                }
-
-                await loadCatalog(currentCatalogId);
-            } catch (e) {
-                alert("Failed: " + e.message);
-            } finally {
-                addBtn.disabled = false;
-                addBtn.textContent = '+5 More';
-            }
-        });
-
-        tbody.appendChild(tr);
-    });
-
-    if (sortedKeys.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="padding:10px; color:#888;">No assets found. Add some below.</td></tr>';
-    }
-}
-
-
 
 function renderAssetList() {
     assetList.innerHTML = '';

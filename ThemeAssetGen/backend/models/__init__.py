@@ -15,4 +15,5 @@ from .schemas import (
     BatchGenerationStatus,
     QueueItem,
     QueueStatus,
+    GenerateMoreAssetsRequest,
 )

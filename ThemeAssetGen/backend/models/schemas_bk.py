@@ -28,13 +28,6 @@ class AssetAddRequest(BaseModel):
     prompt_2d: str
 
 
-class GenerateMoreAssetsRequest(BaseModel):
-    asset_type: Optional[str] = None
-    count: Optional[int] = 10
-    custom_category_name: Optional[str] = None
-    custom_description: Optional[str] = None
-
-
 class BatchGenerateRequest(BaseModel):
     asset_ids: Optional[List[str]] = None  # None = generate all
 
@@ -55,7 +48,6 @@ class AssetResponse(BaseModel):
     name: str
     name_kr: Optional[str]
     category: str
-    asset_type: Optional[str] = None
     description: Optional[str]
     description_kr: Optional[str]
     prompt_2d: Optional[str]

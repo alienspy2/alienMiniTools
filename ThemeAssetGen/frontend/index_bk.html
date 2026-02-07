@@ -99,42 +99,9 @@
                 <button id="deleteCatalogBtn" class="btn-delete">Delete</button>
             </section>
 
-            <!-- Category Management & Add -->
+            <!-- Category-specific add buttons -->
             <section class="add-assets-section" id="addAssetsSection" style="display:none;">
-                <h2>Category Management</h2>
-
-                <!-- Category Summary Table -->
-                <div class="category-summary-wrapper" style="margin-bottom: 20px;">
-                    <table class="category-table" style="width:100%; border-collapse:collapse; margin-bottom:10px;">
-                        <thead>
-                            <tr style="background:var(--bg-secondary); text-align:left;">
-                                <th style="padding:8px;">Category / Type</th>
-                                <th style="padding:8px; width:40%;">Description</th>
-                                <th style="padding:8px;">Count</th>
-                                <th style="padding:8px; width:120px;">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody id="categorySummaryBody">
-                            <!-- Filled by JS -->
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Custom Category Add Form -->
-                <div class="custom-category-form"
-                    style="background:var(--bg-secondary); padding:15px; border-radius:8px; margin-bottom:20px;">
-                    <h3 style="margin-top:0;">Add Custom Category</h3>
-                    <div class="form-row" style="display:flex; gap:10px;">
-                        <input type="text" id="customCatName" placeholder="Category Name (e.g. Castle Gate)"
-                            style="flex:1;">
-                        <input type="text" id="customCatDesc"
-                            placeholder="Description (e.g. Wooden gate with iron bars)" style="flex:2;">
-                        <input type="number" id="customCatCount" value="5" min="1" max="20" style="width:80px;">
-                        <button id="addCustomCategoryBtn" class="btn-secondary">Add Assets</button>
-                    </div>
-                </div>
-
-                <h3>Quick Add (Presets)</h3>
+                <h2>Add Assets by Category</h2>
                 <div class="category-buttons" id="categoryButtons">
                     <!-- Buttons will be dynamically generated -->
                 </div>
