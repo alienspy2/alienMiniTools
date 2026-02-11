@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 import uvicorn
 import sys
@@ -49,7 +50,10 @@ async def lifespan(app: FastAPI):
         app.state.mcp_tool_service = McpToolService()
         logger.info(f"Loaded {len(app.state.mcp_registry.list_all())} MCP servers from mcp.json")
 
-        logger.info(f"Server started on port {config['http_port']} with RPM {config['rpm']}")
+        providers = config.get('providers', {})
+        for pname, pconf in providers.items():
+            logger.info(f"Provider '{pname}': models={pconf['models']}, rpm={pconf['rpm']}")
+        logger.info(f"Server started on port {config['http_port']}")
     except Exception as e:
         logger.error(f"Startup failed: {e}")
         sys.exit(1)
@@ -63,9 +67,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.warning(f"Validation error on {request.method} {request.url.path}: {exc.errors()}")
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
 # --- Helper ---
 def _model_details(model_name: str) -> OllamaModelDetails:
-    family = "gemma" if model_name.lower().startswith("gemma") else "gemini"
+    lower = model_name.lower()
+    if lower.startswith("gemma"):
+        family = "gemma"
+    elif lower.startswith(("gpt-", "o1-", "o3-", "o4-")):
+        family = "gpt"
+    else:
+        family = "gemini"
     return OllamaModelDetails(family=family, families=[family])
 
 # --- Ollama-compatible Endpoints ---

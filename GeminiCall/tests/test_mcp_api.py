@@ -1,4 +1,4 @@
-"""MCP 엔드포인트 통합 테스트."""
+﻿"""MCP 엔드포인트 통합 테스트."""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +10,7 @@ from main import app
 @pytest.fixture
 def client():
     with patch('queue_manager.GenAIService') as MockService, \
+         patch('queue_manager.OpenAIService') as MockOpenAI, \
          patch('queue_manager.RateLimiter') as MockLimiter, \
          patch('main.load_config') as MockConfig, \
          patch('queue_manager.load_config') as MockConfigQM, \
@@ -17,7 +18,12 @@ def client():
          patch('main.McpToolService') as MockMcpSvc:
 
         conf = {
-            "rpm": 60, "models": ["gemma-27b"], "http_port": 1234, "api_key": "x"
+            "rpm": 60, "models": ["gemma-27b"], "http_port": 1234, "api_key": "x",
+            "providers": {
+                "gemini": {"api_key": "x", "models": ["gemma-27b"], "rpm": 60}
+            },
+            "all_models": ["gemma-27b"],
+            "model_provider_map": {"gemma-27b": "gemini"},
         }
         MockConfig.return_value = conf
         MockConfigQM.return_value = conf
@@ -27,6 +33,7 @@ def client():
 
         limit_inst = MockLimiter.return_value
         limit_inst.wait_for_slot = AsyncMock()
+        limit_inst.rpm = 60
 
         # McpServerRegistry mock
         registry_inst = MockRegistry.return_value
@@ -146,7 +153,7 @@ def test_generate_with_mcp_with_servers(client):
         "jsonrpc": "2.0",
         "method": "generate_content",
         "params": {
-            "messages": [{"role": "user", "content": "음성 생성해줘"}],
+            "messages": [{"role": "user", "content": "hello"}],
             "max_iterations": 3
         },
         "id": 2

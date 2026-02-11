@@ -42,6 +42,8 @@ copy config_loader.py "%DEPLOY_DIR%\" >nul
 copy queue_manager.py "%DEPLOY_DIR%\" >nul
 copy rate_limiter.py "%DEPLOY_DIR%\" >nul
 copy genai_service.py "%DEPLOY_DIR%\" >nul
+copy llm_service.py "%DEPLOY_DIR%\" >nul
+copy openai_service.py "%DEPLOY_DIR%\" >nul
 copy mcp_service.py "%DEPLOY_DIR%\" >nul
 copy schema.py "%DEPLOY_DIR%\" >nul
 

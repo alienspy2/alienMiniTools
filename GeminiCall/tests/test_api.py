@@ -1,5 +1,4 @@
-
-import pytest
+﻿import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch, AsyncMock
 from main import app
@@ -7,25 +6,32 @@ from main import app
 @pytest.fixture
 def client():
     # Patch dependencies inside queue_manager and config
-    with patch('queue_manager.GenAIService') as MockService, \
+    with patch('queue_manager.GenAIService') as MockGemini, \
+         patch('queue_manager.OpenAIService') as MockOpenAI, \
          patch('queue_manager.RateLimiter') as MockLimiter, \
          patch('main.load_config') as MockConfig, \
          patch('queue_manager.load_config') as MockConfigQM:
-        
+
         conf = {
-            "rpm": 60, "models": ["gemma-27b"], "http_port": 1234, "api_key": "x"
+            "rpm": 60, "models": ["gemma-27b"], "http_port": 1234, "api_key": "x",
+            "providers": {
+                "gemini": {"api_key": "x", "models": ["gemma-27b"], "rpm": 60}
+            },
+            "all_models": ["gemma-27b"],
+            "model_provider_map": {"gemma-27b": "gemini"},
         }
         MockConfig.return_value = conf
         MockConfigQM.return_value = conf
-        
-        # Setup Service Mock
-        svc_inst = MockService.return_value
+
+        # Setup Gemini Service Mock
+        svc_inst = MockGemini.return_value
         svc_inst.generate_response = AsyncMock(return_value="AI Response")
-        
+
         # Setup Limiter Mock
         limit_inst = MockLimiter.return_value
         limit_inst.wait_for_slot = AsyncMock()
-        
+        limit_inst.rpm = 60
+
         with TestClient(app) as c:
             yield c
 

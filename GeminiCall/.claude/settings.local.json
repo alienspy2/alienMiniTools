@@ -12,7 +12,13 @@
       "Bash(ls:*)",
       "Bash(uv sync:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat\\(geminicall\\): Add MCP tool calling support and enhance Ollama compatibility\n\n- Add MCP server registry with mcp.json persistence \\(auto-save/load\\)\n- Add ReAct agent loop for prompt-based tool calling \\(Gemma 3 support\\)\n- Add /mcp/add, /mcp/remove, /mcp/list endpoints for MCP server management\n- Add /generate_with_mcp endpoint with JSON-RPC 2.0 format\n- Add Ollama /api/show, /api/ps endpoints and model details\n- Handle system_instruction for models that don''t support it \\(Gemma\\)\n- Add verbose debug logging for MCP agent loop\n- Add CLI chat client \\(test_mcp_chat.py\\) and toolcalling test script\n- Add unit tests \\(23\\) and integration tests \\(8\\) for MCP features\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat\\(geminicall\\): Add MCP tool calling support and enhance Ollama compatibility\n\n- Add MCP server registry with mcp.json persistence \\(auto-save/load\\)\n- Add ReAct agent loop for prompt-based tool calling \\(Gemma 3 support\\)\n- Add /mcp/add, /mcp/remove, /mcp/list endpoints for MCP server management\n- Add /generate_with_mcp endpoint with JSON-RPC 2.0 format\n- Add Ollama /api/show, /api/ps endpoints and model details\n- Handle system_instruction for models that don''t support it \\(Gemma\\)\n- Add verbose debug logging for MCP agent loop\n- Add CLI chat client \\(test_mcp_chat.py\\) and toolcalling test script\n- Add unit tests \\(23\\) and integration tests \\(8\\) for MCP features\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(curl:*)",
+      "Bash(uv pip install:*)",
+      "Bash(git -C \"c:\\\\github\\\\alienMiniTools\\\\GeminiCall\" status)",
+      "Bash(git -C \"c:\\\\github\\\\alienMiniTools\\\\GeminiCall\" diff)",
+      "Bash(git -C \"c:\\\\github\\\\alienMiniTools\\\\GeminiCall\" log --oneline -5)",
+      "Bash(git -C \"c:\\\\github\\\\alienMiniTools\\\\GeminiCall\" add .claude/settings.local.json CLAUDE.md config-example.json config_loader.py deploy.bat genai_service.py main.py pyproject.toml queue_manager.py requirements.txt tests/test_api.py tests/test_config.py tests/test_genai_service.py tests/test_mcp_api.py tests/test_queue.py uv.lock llm_service.py openai_service.py run_test_gpt-5-nano.bat test_get_openai_modellist.py test_gpt-5-nano.py examples/)"
     ]
   }
 }
