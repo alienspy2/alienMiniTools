@@ -124,6 +124,36 @@ window, dialog {
 .paned-handle {
     background-color: #3a3a3a;
 }
+
+.terminal-notebook header {
+    background-color: #252525;
+    border-top: 1px solid #3e3e3e;
+}
+
+.terminal-notebook tab {
+    background-color: #2b2b2b;
+    color: #aaaaaa;
+    padding: 4px 8px;
+    border: none;
+}
+
+.terminal-notebook tab:checked {
+    background-color: #0d0d0d;
+    color: #f0f0f0;
+}
+
+.terminal-tab-close {
+    color: #888888;
+    padding: 0px 2px;
+    min-height: 16px;
+    min-width: 16px;
+    font-size: 10px;
+}
+
+.terminal-tab-close:hover {
+    color: #ffffff;
+    background-color: #c62828;
+}
 """
 
 def main():

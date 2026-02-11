@@ -1,6 +1,6 @@
 import gi
 gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk, GObject, GdkPixbuf, GLib, Pango
+from gi.repository import Gtk, Gdk, GObject, GdkPixbuf, GLib, Pango
 import os
 import stat
 import time
@@ -13,6 +13,7 @@ class FileListView(Gtk.Box):
     __gsignals__ = {
         'path-changed': (GObject.SignalFlags.RUN_FIRST, None, (str,)),
         'add-shortcut-requested': (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+        'open-terminal-requested': (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
     # Column indices
@@ -66,6 +67,7 @@ class FileListView(Gtk.Box):
         self.treeview.get_selection().set_mode(Gtk.SelectionMode.MULTIPLE)
         self.treeview.connect("row-activated", self.on_row_activated)
         self.treeview.connect("button-press-event", self.on_button_press)
+        self.treeview.connect("key-press-event", self.on_key_press)
         scrolled.add(self.treeview)
 
         # Columns
@@ -230,6 +232,14 @@ class FileListView(Gtk.Box):
             return True
         return False
 
+    def on_key_press(self, widget, event):
+        if event.keyval == Gdk.KEY_BackSpace:
+            parent = os.path.dirname(self.current_path)
+            if parent != self.current_path:
+                self.set_path(parent)
+            return True
+        return False
+
     def _get_selected_path(self):
         selection = self.treeview.get_selection()
         model, paths = selection.get_selected_rows()
@@ -291,6 +301,17 @@ class FileListView(Gtk.Box):
             "activate", lambda w: self.open_external_app("gemma", target_path)
         )
         menu.append(gemma_item)
+
+        # Separator before terminal
+        menu.append(Gtk.SeparatorMenuItem())
+
+        # Open Terminal (integrated)
+        terminal_dir = target_path if is_dir else str(Path(target_path).parent)
+        terminal_item = self._make_menu_item("Open Terminal", "src/resources/icons/terminal.svg")
+        terminal_item.connect(
+            "activate", lambda w: self.emit('open-terminal-requested', terminal_dir)
+        )
+        menu.append(terminal_item)
 
         menu.show_all()
         menu.popup_at_pointer(event)

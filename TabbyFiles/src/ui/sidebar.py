@@ -75,6 +75,14 @@ class Sidebar(Gtk.Box):
         if row and hasattr(row, 'path'):
             self.emit('path-selected', row.path)
 
+    def update_selection(self, current_path):
+        """현재 경로가 숏컷과 일치하면 선택, 아니면 선택 해제."""
+        for row in self.listbox.get_children():
+            if hasattr(row, 'path') and row.path == current_path:
+                self.listbox.select_row(row)
+                return
+        self.listbox.unselect_all()
+
     def on_button_press(self, widget, event):
         if event.button == 3:  # Right click
             row = self.listbox.get_row_at_y(int(event.y))
