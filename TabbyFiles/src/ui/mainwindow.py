@@ -112,7 +112,7 @@ class MainWindow(Gtk.Window):
 
     def on_open_terminal(self, widget, path):
         """컨텍스트 메뉴에서 Open Terminal 요청 시 새 터미널 탭을 추가합니다."""
-        current_dir = self.file_list.get_current_path()
+        current_dir = path
 
         if self.terminal_panel is None:
             # 패널이 없으면 새로 생성

@@ -28,6 +28,22 @@ window, dialog {
     background-color: #2e2e2e;
 }
 
+.sidebar row.selected-shortcut {
+    background-color: #3e3e3e;
+    color: #ffffff;
+}
+
+/* Drag and Drop indicators */
+.sidebar row.drag-hover-top {
+    border-top: 3px solid #4a9eff;
+    margin-top: -3px;
+}
+
+.sidebar row.drag-hover-bottom {
+    border-bottom: 3px solid #4a9eff;
+    margin-bottom: -3px;
+}
+
 .add-button {
     background-color: #3e3e3e;
     color: #ffffff;
