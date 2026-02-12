@@ -24,7 +24,19 @@ icons = {
     
     "gemma.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#4FC3F7"/><stop offset="100%" style="stop-color:#BA68C8"/></linearGradient></defs><circle cx="12" cy="12" r="10" fill="url(#g)"/><path d="M9 10a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" fill="white"/></svg>""",
 
-    "xed.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" fill="#8D6E63"/><path d="M6 4h12v16H6z" fill="#D7CCC8"/><path d="M8 6h8v2H8zm0 4h8v2H8zm0 4h5v2H8z" fill="#8D6E63"/></svg>"""
+    "xed.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" fill="#8D6E63"/><path d="M6 4h12v16H6z" fill="#D7CCC8"/><path d="M8 6h8v2H8zm0 4h8v2H8zm0 4h5v2H8z" fill="#8D6E63"/></svg>""",
+
+    "compress.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" fill="#FFB74D"/><rect x="10" y="4" width="4" height="2" fill="#F57C00"/><rect x="10" y="8" width="4" height="2" fill="#F57C00"/><rect x="10" y="12" width="4" height="2" fill="#F57C00"/><rect x="9" y="16" width="6" height="4" rx="1" fill="#F57C00"/></svg>""",
+
+    "extract.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" fill="#FFB74D"/><rect x="10" y="4" width="4" height="2" fill="#F57C00"/><rect x="10" y="8" width="4" height="2" fill="#F57C00"/><path d="M8 16l4 4 4-4" stroke="#F57C00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>""",
+
+    "copy.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="8" y="2" width="12" height="16" rx="2" fill="#64B5F6"/><rect x="4" y="6" width="12" height="16" rx="2" fill="#90CAF9"/></svg>""",
+
+    "duplicate.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="8" y="2" width="12" height="16" rx="2" fill="#81C784"/><rect x="4" y="6" width="12" height="16" rx="2" fill="#A5D6A7"/><path d="M10 14h4M12 12v4" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>""",
+
+    "delete.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6 7h12l-1 13H7z" fill="#F06292"/><rect x="8" y="4" width="8" height="3" rx="1" fill="#EC407A"/><line x1="5" y1="7" x2="19" y2="7" stroke="#EC407A" stroke-width="2" stroke-linecap="round"/></svg>""",
+
+    "paste.svg": """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="18" rx="2" fill="#9575CD"/><rect x="8" y="2" width="8" height="4" rx="1" fill="#7E57C2"/><path d="M8 12h8M8 15h5" stroke="#D1C4E9" stroke-width="1.5" stroke-linecap="round"/></svg>""",
 }
 
 if not os.path.exists(ICONS_DIR):

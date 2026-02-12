@@ -11,7 +11,7 @@ window, dialog {
 }
 
 .sidebar {
-    background-color: #1e1e1e;
+    background-color: #262626;
 }
 
 .sidebar row {

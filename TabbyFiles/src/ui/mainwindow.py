@@ -1,6 +1,8 @@
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
+import os
+import sys
 from src.ui.sidebar import Sidebar
 from src.ui.filelist import FileListView
 from src.ui.terminal import TerminalPanel
@@ -91,6 +93,9 @@ class MainWindow(Gtk.Window):
         self.file_list.connect("add-shortcut-requested", self.on_add_shortcut)
         self.file_list.connect("open-terminal-requested", self.on_open_terminal)
 
+        # (test)reload — F5로 앱 재시작
+        self.connect("key-press-event", self._on_key_press)
+
         # Set splitter position
         self.paned.set_position(150)
 
@@ -140,8 +145,14 @@ class MainWindow(Gtk.Window):
             self.terminal_panel.destroy()
             self.terminal_panel = None
 
+    def _on_key_press(self, widget, event):
+        if event.keyval == Gdk.KEY_F5:
+            print("(test)reload: 앱을 재시작합니다...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+            return True
+        return False
+
     def navigate_up(self, button):
-        import os
         current_path = self.file_list.get_current_path()
         parent = os.path.dirname(current_path)
         if parent and parent != current_path:
