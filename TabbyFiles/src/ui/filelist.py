@@ -263,37 +263,46 @@ class FileListView(Gtk.Box):
             menu.append(add_shortcut_item)
             menu.append(Gtk.SeparatorMenuItem())
 
-        # Open in Nemo
+        # Open with submenu
+        open_with_submenu = Gtk.Menu()
+        has_open_with = False
+
         if shutil.which("nemo"):
             nemo_item = self._make_menu_item("Nemo", "src/resources/icons/nemo.svg")
             nemo_item.connect(
                 "activate", lambda w: self.open_external_app("nemo", target_path)
             )
-            menu.append(nemo_item)
+            open_with_submenu.append(nemo_item)
+            has_open_with = True
 
-        # Open in Tabby
         if shutil.which("tabby"):
             tabby_item = self._make_menu_item("Tabby", "src/resources/icons/tabby.svg")
             tabby_item.connect(
                 "activate", lambda w: self.open_external_app("tabby", target_path)
             )
-            menu.append(tabby_item)
+            open_with_submenu.append(tabby_item)
+            has_open_with = True
 
-        # Open in Antigravity
         if shutil.which("antigravity"):
             ag_item = self._make_menu_item("Antigravity", "src/resources/icons/antigravity.svg")
             ag_item.connect(
                 "activate", lambda w: self.open_external_app("antigravity", target_path)
             )
-            menu.append(ag_item)
+            open_with_submenu.append(ag_item)
+            has_open_with = True
 
-        # Open in Xed
         if shutil.which("xed"):
             xed_item = self._make_menu_item("Xed", "src/resources/icons/xed.svg")
             xed_item.connect(
                 "activate", lambda w: self.open_external_app("xed", target_path)
             )
-            menu.append(xed_item)
+            open_with_submenu.append(xed_item)
+            has_open_with = True
+
+        if has_open_with:
+            open_with_item = Gtk.MenuItem(label="Open with")
+            open_with_item.set_submenu(open_with_submenu)
+            menu.append(open_with_item)
 
         # Ask Gemma
         gemma_item = self._make_menu_item("Ask Gemma", "src/resources/icons/gemma.svg")
