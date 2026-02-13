@@ -45,17 +45,34 @@ IronRose/
 
 **작업 세부사항:**
 
-#### 1. VS Code 확장 설치
+#### 1. .NET 10 SDK 설치 확인
+
+**설치 여부 확인:**
+```bash
+dotnet --version
+dotnet --list-sdks
+```
+
+**.NET 10.0.x가 없는 경우 설치:**
+- 공식 사이트: https://dotnet.microsoft.com/download/dotnet/10.0
+- Windows: 설치 프로그램 다운로드 및 실행
+- 설치 후 터미널 재시작하여 확인
+
+**필수 버전:**
+- .NET 10.0.101 이상
+
+#### 2. VS Code 확장 설치
 - **C# Dev Kit** (필수)
 - **.NET Install Tool**
 - **C# Extensions**
 
-#### 2. 솔루션 및 프로젝트 생성 (커맨드라인)
+#### 3. 솔루션 및 프로젝트 생성 (커맨드라인)
 ```bash
 # 솔루션 생성
 dotnet new sln -n IronRose
 
 # 각 프로젝트 생성
+dotnet new classlib -n IronRose.Contracts -f net10.0 -o src/IronRose.Contracts
 dotnet new classlib -n IronRose.Engine -f net10.0 -o src/IronRose.Engine
 dotnet new classlib -n IronRose.Scripting -f net10.0 -o src/IronRose.Scripting
 dotnet new classlib -n IronRose.AssetPipeline -f net10.0 -o src/IronRose.AssetPipeline
@@ -64,6 +81,7 @@ dotnet new classlib -n IronRose.Physics -f net10.0 -o src/IronRose.Physics
 dotnet new console -n IronRose.Bootstrapper -f net10.0 -o src/IronRose.Bootstrapper
 
 # 솔루션에 프로젝트 추가
+dotnet sln add src/IronRose.Contracts/IronRose.Contracts.csproj
 dotnet sln add src/IronRose.Engine/IronRose.Engine.csproj
 dotnet sln add src/IronRose.Scripting/IronRose.Scripting.csproj
 dotnet sln add src/IronRose.AssetPipeline/IronRose.AssetPipeline.csproj
@@ -72,17 +90,14 @@ dotnet sln add src/IronRose.Physics/IronRose.Physics.csproj
 dotnet sln add src/IronRose.Bootstrapper/IronRose.Bootstrapper.csproj
 ```
 
-#### 3. 프로젝트 간 참조 설정
+#### 4. 프로젝트 간 참조 설정
 ```bash
-# Runtime → 모든 프로젝트 참조
-dotnet add src/IronRose.Bootstrapper reference src/IronRose.Engine
-dotnet add src/IronRose.Bootstrapper reference src/IronRose.Rendering
-dotnet add src/IronRose.Bootstrapper reference src/IronRose.Scripting
-dotnet add src/IronRose.Bootstrapper reference src/IronRose.AssetPipeline
-dotnet add src/IronRose.Bootstrapper reference src/IronRose.Physics
+# Bootstrapper → Contracts만 참조 (Phase 2A: Everything is Hot-Reloadable)
+dotnet add src/IronRose.Bootstrapper reference src/IronRose.Contracts
 
-# Rendering → Engine
-dotnet add src/IronRose.Rendering reference src/IronRose.Engine
+# Engine, Rendering → Contracts 참조
+dotnet add src/IronRose.Engine reference src/IronRose.Contracts
+dotnet add src/IronRose.Rendering reference src/IronRose.Contracts
 
 # Scripting → Engine
 dotnet add src/IronRose.Scripting reference src/IronRose.Engine
@@ -94,7 +109,7 @@ dotnet add src/IronRose.Physics reference src/IronRose.Engine
 dotnet add src/IronRose.AssetPipeline reference src/IronRose.Engine
 ```
 
-#### 4. VS Code 설정 파일
+#### 5. VS Code 설정 파일
 **.vscode/launch.json:**
 ```json
 {

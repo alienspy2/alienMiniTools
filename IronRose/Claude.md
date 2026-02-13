@@ -1,3 +1,220 @@
-1. 소스코드는 utf-8 with BOM 사용.
-2. 매 단계 구현마다 반드시 테스트. 테스트는 코드 레벨이 아니라, 반드시 빌드 후 실제 실행파일을 실행해서 할것.
-3. 테스트를 용이하게 하기 위해, 로그를 자세히 쓰고, ai 가 직접 빌드를 조작할 수 있는 경로를 만들어 둘 것. 예를 들어 조작 내용을 json 을 쓰고, 엔진이 이를 읽어서 입력을 시뮬레이션 하는 식.
+# IronRose 프로젝트 개발 가이드라인
+
+## 디자인 가이드라인
+
+### 메인 테마 색상
+
+**IronRose Theme Color**: 금속의 백장미 (Metallic White Rose)
+
+```csharp
+// RGB: (230, 220, 210) - 은은한 베이지 톤
+// 정규화: (0.902, 0.863, 0.824)
+// Hex: #E6DCD2
+
+// Veldrid 사용 예시
+var ironRoseColor = new RgbaFloat(0.902f, 0.863f, 0.824f, 1.0f);
+
+// Unity 스타일 Color32
+var ironRoseColor32 = new Color32(230, 220, 210, 255);
+```
+
+**색상 설명**:
+- 백장미의 우아하고 은은한 흰색
+- 금속의 차가운 광택감
+- RGB로 표현 시 따뜻한 베이지 톤
+- 배경, UI 기본 색상, 엔진 로고 등에 사용
+
+**보조 색상** (추후 정의):
+- 어둡게: 회색 톤 (금속 그림자)
+- 밝게: 순백색 (하이라이트)
+- 강조: 장미의 붉은색 (액센트)
+
+---
+
+## 코딩 스타일
+
+### 인코딩
+- **C# 소스 파일(.cs)**: UTF-8 with BOM 사용
+- **.editorconfig**에 명시되어 자동 적용됨
+
+### 네이밍 컨벤션
+- Unity와 유사한 C# 표준 컨벤션 사용
+- 클래스/메서드: PascalCase
+- 필드/변수: camelCase
+- 상수: UPPER_CASE
+
+---
+
+## 개발 워크플로우
+
+### 1. 단계별 구현 및 검증
+매 단계 구현 후 반드시 다음 순서로 테스트:
+
+```bash
+# 1. 빌드
+dotnet build
+
+# 2. 실행 파일 테스트
+dotnet run --project src/IronRose.Bootstrapper
+
+# 또는 직접 실행
+./src/IronRose.Bootstrapper/bin/Debug/net10.0/IronRose.Bootstrapper.exe
+```
+
+**중요**: 코드 레벨 유닛 테스트만으로는 부족합니다. 반드시 빌드 후 실제 실행 파일을 실행하여 통합 테스트를 수행해야 합니다.
+
+### 2. 로깅 전략
+모든 주요 동작에 대해 상세한 로그를 남겨야 합니다:
+
+```csharp
+// 예시
+Console.WriteLine($"[Engine] Initializing scene: {sceneName}");
+Console.WriteLine($"[Renderer] Creating window: {width}x{height}");
+Console.WriteLine($"[Physics] Timestep: {deltaTime:F4}s");
+```
+
+**로그 카테고리**:
+- `[Bootstrapper]`: 엔진 시작/종료, 어셈블리 로드
+- `[Engine]`: 게임 오브젝트, 씬, 컴포넌트 생명주기
+- `[Renderer]`: 렌더링 파이프라인, 그래픽스 API 호출
+- `[Physics]`: 물리 시뮬레이션, 충돌 감지
+- `[Scripting]`: 스크립트 컴파일, 핫 리로드
+- `[Asset]`: 에셋 로딩, 임포팅
+
+### 3. 진행 상황 추적
+
+매 작업 단계 완료 후 [Progress.md](Progress.md) 파일을 업데이트해야 합니다:
+
+**업데이트 시점**:
+- Phase 완료 시
+- 주요 기능 구현 완료 시
+- 중요한 마일스톤 달성 시
+
+**업데이트 내용**:
+```markdown
+## Phase X: [제목] ✅
+
+**완료 날짜**: YYYY-MM-DD
+**소요 시간**: X시간/일
+
+### 완료된 작업
+- [x] 작업 항목 1
+- [x] 작업 항목 2
+
+### 주요 결정 사항
+- 결정 내용 및 이유
+
+### 알려진 이슈
+- 발견된 문제점 및 해결 계획
+```
+
+**다음 단계 업데이트**:
+```markdown
+## 다음 단계: Phase Y
+
+**목표**: [목표 설명]
+
+### 예정된 작업
+- [ ] 작업 항목 1
+- [ ] 작업 항목 2
+```
+
+**전체 진행도 체크박스 업데이트**:
+```markdown
+- [x] Phase X: 완료된 단계 ✅
+- [ ] Phase Y: 현재 작업 중 🚧
+```
+
+### 4. 핫 리로드 워크플로우
+
+**"Everything is Hot-Reloadable" 아키텍처 달성!**
+
+#### 엔진 코드 핫 리로드 (Phase 2A)
+```
+1. src/IronRose.Engine/*.cs 수정
+2. 저장 → EngineWatcher 자동 감지
+3. bin-hot/{timestamp}/ 폴더로 빌드 (파일 잠금 없음)
+4. 기존 엔진 언로드 (ALC.Unload + GC)
+5. 새 엔진 로드 from bin-hot
+6. 즉시 반영! (재시작 불필요)
+```
+
+**bin-hot 전략**:
+- 런타임: bin-hot/20260213_190432/*.dll 사용
+- 다음 실행: 변경된 소스가 bin/*.dll에 자동 반영
+- 히스토리 보관 (롤백 가능)
+
+**핵심 기술**:
+- AssemblyLoadContext (ALC) - 어셈블리 격리/언로드
+- Shadow Copy (LoadFromStream) - 파일 잠금 방지
+- Reflection - 타입 격리 통신
+
+#### 스크립트 핫 리로드 (Phase 2)
+```
+1. Scripts/*.cs 수정
+2. Roslyn 런타임 컴파일
+3. 즉시 로드 및 실행
+```
+
+### 5. AI 자동화를 위한 제어 인터페이스
+
+엔진은 JSON 기반 명령 파일을 통해 자동화 가능해야 합니다:
+
+#### 명령 파일 예시 (`.claude/test_commands.json`)
+```json
+{
+  "commands": [
+    {"type": "scene.load", "scene": "TestScene"},
+    {"type": "input.key_press", "key": "Space"},
+    {"type": "wait", "duration": 1.0},
+    {"type": "screenshot", "path": "test_output.png"},
+    {"type": "quit"}
+  ]
+}
+```
+
+#### 구현 요구사항
+- 엔진은 시작 시 명령 파일 존재 여부를 확인
+- 명령 파일이 있으면 자동으로 실행하고 결과를 로그로 출력
+- 각 명령 실행 후 성공/실패 상태를 명확히 기록
+- 스크린샷, 로그 파일 등을 지정된 경로에 저장
+
+**목적**: AI가 빌드 → 명령 파일 생성 → 실행 → 결과 확인의 전체 프로세스를 자동화할 수 있도록 함.
+
+---
+
+## 테스트 디렉토리 구조
+
+```
+IronRose/
+├── .claude/
+│   ├── test_commands.json    # AI 자동화 명령
+│   └── test_outputs/          # 테스트 결과물 (스크린샷 등)
+├── tests/
+│   ├── unit/                  # 유닛 테스트
+│   └── integration/           # 통합 테스트
+└── samples/                   # 예제 프로젝트
+    ├── 01_HelloWorld/
+    ├── 02_RotatingCube/
+    └── 03_AIGeneratedScene/
+```
+
+---
+
+## 체크리스트
+
+### 매 작업 단계 완료 시
+- [ ] [Progress.md](Progress.md) 업데이트
+  - [ ] 완료된 작업 체크
+  - [ ] 완료 날짜 기록
+  - [ ] 주요 결정 사항 문서화
+  - [ ] 다음 단계 정의
+- [ ] 빌드 성공 (`dotnet build`)
+- [ ] 실행 파일 테스트 완료
+- [ ] 주요 동작에 로그 추가됨
+
+### 매 커밋/PR 전 확인
+- [ ] UTF-8 BOM 인코딩 확인 (C# 파일)
+- [ ] 명명 규칙 준수
+- [ ] 불필요한 파일 제외 (.gitignore 확인)
+- [ ] 코드 리뷰 준비 완료

@@ -136,9 +136,9 @@ namespace IronRose.Rendering
         {
             _commandList.Begin();
 
-            // 파란색으로 화면 클리어
+            // IronRose 테마 색상으로 화면 클리어 (금속의 백장미)
             _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
-            _commandList.ClearColorTarget(0, new RgbaFloat(0.2f, 0.4f, 0.8f, 1.0f));
+            _commandList.ClearColorTarget(0, new RgbaFloat(0.902f, 0.863f, 0.824f, 1.0f));
 
             _commandList.End();
 
