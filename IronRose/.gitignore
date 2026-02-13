@@ -46,6 +46,9 @@ TestResults/
 .claude/test_outputs/
 .claude/*.log
 
+# Runtime logs
+logs/
+
 # OS generated files
 .DS_Store
 .DS_Store?
