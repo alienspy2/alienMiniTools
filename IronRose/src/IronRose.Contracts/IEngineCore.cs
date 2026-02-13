@@ -7,9 +7,10 @@
     public interface IEngineCore
     {
         /// <summary>
-        /// 엔진 초기화 (윈도우, 그래픽 디바이스 등)
+        /// 엔진 초기화 (그래픽 디바이스 등)
         /// </summary>
-        void Initialize();
+        /// <param name="windowHandle">윈도우 핸들 (Sdl2Window 포인터)</param>
+        void Initialize(object? windowHandle = null);
 
         /// <summary>
         /// 윈도우 이벤트 처리

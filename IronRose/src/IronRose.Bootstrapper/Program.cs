@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Diagnostics;
 using IronRose.Contracts;
+using Veldrid;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
 
 namespace IronRose.Bootstrapper
 {
@@ -9,6 +12,9 @@ namespace IronRose.Bootstrapper
         private static EngineLoader? _engineLoader;
         private static IEngineCore? _engine;
         private static EngineWatcher? _engineWatcher;
+
+        // 윈도우 (Bootstrapper가 관리)
+        private static Sdl2Window? _window;
 
         private static Stopwatch _timer = new Stopwatch();
         private static double _lastTime = 0;
@@ -24,10 +30,13 @@ namespace IronRose.Bootstrapper
             Console.WriteLine("[Bootstrapper] IronRose Engine Starting...");
             Console.WriteLine("[Bootstrapper] === Everything is Hot-Reloadable ===");
 
+            // 윈도우 생성 (Bootstrapper가 관리)
+            CreateWindow();
+
             // 엔진 동적 로드
             _engineLoader = new EngineLoader();
             _engine = _engineLoader.LoadEngine();
-            _engine.Initialize();
+            _engine.Initialize(_window);
 
             // 엔진 파일 감시 및 핫 리로드 설정
             _engineWatcher = new EngineWatcher();
@@ -45,48 +54,51 @@ namespace IronRose.Bootstrapper
             Console.WriteLine("[Bootstrapper] Shutting down...");
             _engineWatcher?.Dispose();
             _engine?.Shutdown();
+            _window?.Close();
             Console.WriteLine("[Bootstrapper] Engine stopped");
+        }
+
+        static void CreateWindow()
+        {
+            Console.WriteLine("[Bootstrapper] Creating window...");
+
+            WindowCreateInfo windowCI = new WindowCreateInfo()
+            {
+                X = 100,
+                Y = 100,
+                WindowWidth = 1280,
+                WindowHeight = 720,
+                WindowTitle = "IronRose Engine"
+            };
+
+            _window = VeldridStartup.CreateWindow(ref windowCI);
+            Console.WriteLine($"[Bootstrapper] Window created: {_window.Width}x{_window.Height}");
         }
 
         static void OnEngineRebuilt(string hotBuildPath)
         {
             try
             {
-                Console.WriteLine($"[DEBUG] OnEngineRebuilt START: {hotBuildPath}");
-                Console.WriteLine("[Bootstrapper] Hot build complete");
+                Console.WriteLine($"[Bootstrapper] Hot build complete: {hotBuildPath}");
                 Console.WriteLine("[Bootstrapper] Unloading old engine...");
 
-                Console.WriteLine("[DEBUG] Step 1: Setting engine to null");
                 _engine = null;
-
-                Console.WriteLine("[DEBUG] Step 2: Sleeping 100ms");
                 System.Threading.Thread.Sleep(100);
 
-                Console.WriteLine("[DEBUG] Step 3: Calling UnloadEngine");
                 _engineLoader?.UnloadEngine();
-
-                Console.WriteLine("[DEBUG] Step 4: Sleeping 200ms for GC");
                 System.Threading.Thread.Sleep(200);
 
-                Console.WriteLine("[Bootstrapper] Loading new engine from hot build...");
-                Console.WriteLine($"[DEBUG] Step 5: Loading from {hotBuildPath}");
+                Console.WriteLine("[Bootstrapper] Loading new engine (keeping window)...");
 
-                // 새 엔진 로드 (bin-hot 폴더에서)
+                // 새 엔진 로드 (같은 윈도우 재사용)
                 _engine = _engineLoader?.LoadEngine(hotBuildPath);
-                Console.WriteLine("[DEBUG] Step 6: LoadEngine returned");
+                _engine?.Initialize(_window);
 
-                Console.WriteLine("[DEBUG] Step 7: Calling Initialize");
-                _engine?.Initialize();
-                Console.WriteLine("[DEBUG] Step 8: Initialize complete");
-
-                Console.WriteLine("[Bootstrapper] ✅ HOT RELOAD SUCCESS!");
+                Console.WriteLine("[Bootstrapper] ✅ HOT RELOAD SUCCESS - Window preserved!");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Bootstrapper] ❌ HOT RELOAD FAILED!");
-                Console.WriteLine($"[Bootstrapper] Exception: {ex.GetType().Name}");
-                Console.WriteLine($"[Bootstrapper] Message: {ex.Message}");
-                Console.WriteLine($"[Bootstrapper] StackTrace:");
+                Console.WriteLine($"[Bootstrapper] ❌ HOT RELOAD FAILED: {ex.Message}");
                 Console.WriteLine(ex.StackTrace);
             }
         }
@@ -113,32 +125,31 @@ namespace IronRose.Bootstrapper
                     _fpsTimer = 0;
                 }
 
-                // 엔진이 없으면 대기 (핫 리로드 중일 수 있음)
+                // 윈도우 이벤트 처리 (Bootstrapper가 직접)
+                if (_window != null && !_window.Exists)
+                {
+                    Console.WriteLine("[Bootstrapper] Window closed by user");
+                    break;
+                }
+
+                _window?.PumpEvents();
+
+                // 엔진이 없으면 대기 (핫 리로드 중)
                 if (_engine == null)
                 {
                     System.Threading.Thread.Sleep(10);
                     continue;
                 }
 
-                // 이벤트 처리
+                // 엔진 업데이트 및 렌더링
                 try
                 {
-                    if (!_engine.ProcessEvents())
-                    {
-                        Console.WriteLine("[Bootstrapper] Window closed");
-                        break;
-                    }
-
-                    // 엔진 업데이트
                     _engine.Update(_deltaTime);
-
-                    // 렌더링
                     _engine.Render();
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[Bootstrapper] ERROR in engine loop: {ex.Message}");
-                    // 핫 리로드 중 오류는 무시하고 계속
+                    Console.WriteLine($"[Bootstrapper] ERROR: {ex.Message}");
                     System.Threading.Thread.Sleep(50);
                     continue;
                 }

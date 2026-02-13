@@ -39,8 +39,10 @@ namespace IronRose.Bootstrapper
                 {
                     var fileName = Path.GetFileName(dllFile);
 
-                    // Contracts는 기본 ALC에만 있어야 함, 중복 로드 금지
-                    if (fileName.StartsWith("IronRose.Contracts"))
+                    // Contracts와 Veldrid는 기본 ALC에만 있어야 함, 중복 로드 금지
+                    if (fileName.StartsWith("IronRose.Contracts") ||
+                        fileName.StartsWith("Veldrid") ||
+                        fileName.StartsWith("Silk.NET"))
                     {
                         Console.WriteLine($"[EngineLoader] Skipped (use default ALC): {fileName}");
                         continue;
@@ -68,18 +70,27 @@ namespace IronRose.Bootstrapper
 
             foreach (var asmName in additionalAssemblies)
             {
-                if (_currentALC.Assemblies.Any(a => a.GetName().Name == asmName))
+                // 타임스탬프 포함 이름도 허용 (예: IronRose.Engine_20260213_195640)
+                if (_currentALC.Assemblies.Any(a => a.GetName().Name.StartsWith(asmName)))
                 {
                     Console.WriteLine($"[EngineLoader] Already loaded: {asmName}");
                     continue;
                 }
 
                 // 핫 리로드 경로 또는 기본 경로에서 찾기
-                var asmPath = hotBuildPath != null
-                    ? Path.Combine(hotBuildPath, $"{asmName}.dll")
-                    : Path.GetFullPath($"src/{asmName}/bin/Debug/net10.0/{asmName}.dll");
+                string? asmPath = null;
+                if (hotBuildPath != null)
+                {
+                    // bin-hot 폴더에서 패턴 매칭 (IronRose.Engine*.dll)
+                    var matchingFiles = Directory.GetFiles(hotBuildPath, $"{asmName}*.dll");
+                    asmPath = matchingFiles.FirstOrDefault();
+                }
+                else
+                {
+                    asmPath = Path.GetFullPath($"src/{asmName}/bin/Debug/net10.0/{asmName}.dll");
+                }
 
-                if (File.Exists(asmPath))
+                if (asmPath != null && File.Exists(asmPath))
                 {
                     byte[] assemblyBytes = File.ReadAllBytes(asmPath);
                     using var ms = new MemoryStream(assemblyBytes);
@@ -88,13 +99,13 @@ namespace IronRose.Bootstrapper
                 }
                 else
                 {
-                    Console.WriteLine($"[EngineLoader] WARNING: Assembly not found: {asmPath}");
+                    Console.WriteLine($"[EngineLoader] WARNING: Assembly not found for: {asmName}");
                 }
             }
 
-            // EngineCore 인스턴스 생성
+            // EngineCore 인스턴스 생성 (타임스탬프 포함 이름도 허용)
             var engineAssembly = _currentALC.Assemblies
-                .FirstOrDefault(a => a.GetName().Name == "IronRose.Engine");
+                .FirstOrDefault(a => a.GetName().Name.StartsWith("IronRose.Engine"));
 
             if (engineAssembly == null)
             {

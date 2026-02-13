@@ -35,6 +35,12 @@ namespace IronRose.Bootstrapper
 
         private void OnFileChanged(object sender, FileSystemEventArgs e)
         {
+            // obj, bin, bin-hot 폴더의 변경사항 무시
+            if (e.Name != null && (e.Name.Contains("\\obj\\") || e.Name.Contains("\\bin\\") || e.Name.Contains("\\bin-hot\\")))
+            {
+                return;
+            }
+
             Console.WriteLine($"[EngineWatcher] Detected change: {e.Name}");
 
             // 타이머 리셋 (디바운싱)
@@ -53,19 +59,20 @@ namespace IronRose.Bootstrapper
             _isRebuilding = true;
             Console.WriteLine("[EngineWatcher] ===== HOT RELOAD START =====");
 
-            // 고유 이름으로 빌드 (타임스탬프 기반)
+            // 고유 이름으로 빌드 (타임스탬프 기반 - bin-hot 전략)
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string hotDir = Path.GetFullPath($"bin-hot/{timestamp}");
             Directory.CreateDirectory(hotDir);
 
-            // 고유 폴더로 빌드
             Console.WriteLine($"[EngineWatcher] Building to: {hotDir}");
+
+            // msbuild를 사용해서 Rebuild (clean + build 한 번에)
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "dotnet",
-                    Arguments = $"build IronRose.sln --no-restore -o \"{hotDir}\"",
+                    Arguments = $"msbuild IronRose.sln /t:Rebuild /p:Configuration=Debug /p:OutputPath=\"{hotDir}\\\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,

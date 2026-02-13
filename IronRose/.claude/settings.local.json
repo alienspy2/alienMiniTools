@@ -2,7 +2,24 @@
   "permissions": {
     "allow": [
       "Bash(grep:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: IronRose 엔진 설계 문서 및 Phase별 상세 계획 작성\n\n주요 변경사항:\n- MasterPlan.md 작성 \\(Phase 0-11 전체 로드맵\\)\n- 12개 Phase별 상세 구현 계획 문서 작성 \\(docs/\\)\n- \"Everything is Hot-Reloadable\" 아키텍처 적용\n  - Bootstrapper만 고정 \\(~500줄\\)\n  - Engine.dll 포함 모든 것이 리로드 가능\n  - AI가 엔진 기능도 확장 가능\n\n기술 스택:\n- .NET 10, Veldrid \\(Vulkan\\), Silk.NET \\(SDL3\\)\n- Roslyn 핫 리로딩, BepuPhysics v2, Box2D\n- StbImageSharp \\(이미지 로딩\\)\n- TOML 직렬화\n\n설계 철학:\n- 단순성 우선 \\(KISS\\)\n- Unity 아키텍처 직접 구현 \\(Shim/ECS 변환 없음\\)\n- VS Code 개발 환경\n- 실용주의 > 이론적 완벽함\n\nCo-Authored-By: Claude Sonnet 4.5 \\(1M context\\) <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(dotnet --version:*)",
+      "Bash(dotnet --list-sdks:*)",
+      "Bash(dir:*)",
+      "Bash(dotnet new:*)",
+      "Bash(dotnet sln:*)",
+      "Bash(dotnet sln add:*)",
+      "Bash(dotnet add:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet run:*)",
+      "Bash(test:*)",
+      "Bash(pkill:*)",
+      "Bash(taskkill:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Phase 0-2A 완료 - \"Everything is Hot-Reloadable\" 달성\n\nPhase 0: 프로젝트 구조 및 환경 설정\n- .NET 10 SDK, 7개 프로젝트 생성 \\(Contracts, Engine, Rendering, Scripting, Physics, AssetPipeline, Bootstrapper\\)\n- .editorconfig, .gitignore, VS Code 설정\n- NuGet 패키지 설치 \\(Veldrid, Roslyn, SDL 등\\)\n\nPhase 1: 최소 실행 가능 엔진\n- Bootstrapper: 메인 루프, 타이밍 시스템\n- GraphicsManager: Veldrid + Vulkan 초기화\n- 1280x720 윈도우, 금속 백장미 색상 렌더링\n- 60 FPS 안정적 실행\n\nPhase 2: Roslyn 핫 리로딩 시스템\n- ScriptCompiler: Roslyn 기반 C# 컴파일\n- ScriptDomain: AssemblyLoadContext로 동적 로드/언로드\n- Scripts/*.cs 런타임 컴파일 및 즉시 실행\n\nPhase 2A: Engine Core 핫 리로딩\n- IronRose.Contracts: 인터페이스 분리\n- EngineCore: IEngineCore 구현\n- EngineLoader: AssemblyLoadContext + Shadow Copy \\(파일 잠금 방지\\)\n- EngineWatcher: src/**/*.cs 파일 감지 + 자동 빌드\n- bin-hot 전략: 타임스탬프 기반 빌드로 충돌 방지\n- Engine.dll 런타임 수정 → 즉시 반영 성공!\n\n주요 기술:\n- AssemblyLoadContext \\(ALC\\): 어셈블리 격리 및 언로드\n- Shadow Copy \\(LoadFromStream\\): 파일 잠금 방지\n- Reflection: 타입 격리 통신\n- FileSystemWatcher + 디바운싱: 자동 빌드\n\n코드 통계:\n- 프로젝트: 7개\n- 코드: ~1000줄\n- NuGet 패키지: 18개\n\nCo-Authored-By: Claude Sonnet 4.5 \\(1M context\\) <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(ls:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(tee:*)"
     ]
   }
 }
