@@ -35,17 +35,40 @@ AI와의 협업, 실시간 코드 주입, 그리고 유니티를 대체한다는
 
 AI가 생성한 코드를 게임을 끄지 않고 즉시 적용하려면 \*\*AssemblyLoadContext (ALC)\*\*를 활용한 핫 스왑 구조가 필수적입니다.3
 
-**구현 메커니즘:**
+**구현 메커니즘: "Everything is Hot-Reloadable"**
 
-1. **Core Domain 분리:** 엔진의 핵심 기능(렌더러, ECS, 물리 등)은 Core.dll에 둡니다.  
-2. **Script Domain 격리:** 사용자의 게임 로직(유니티 스타일 스크립트)은 Script.dll로 동적 컴파일하여 별도의 AssemblyLoadContext에 로드합니다.  
-3. **Reload Loop:**  
-   * AI가 코드 생성 \-\> Roslyn이 메모리 내에서 컴파일(MemoryStream).  
-   * 기존 ScriptALC 언로드(Unload) 및 GC 수행.  
-   * 새로운 ScriptALC 생성 후 컴파일된 DLL 로드.  
-   * **상태 복원 (State Restoration):** 기존 객체들의 직렬화된 데이터(TOML)를 새 로드된 클래스의 인스턴스에 주입.
+1. **Bootstrapper (고정):** 최소한의 진입점만 고정합니다.
+   * SDL/Veldrid 초기화
+   * AssemblyLoadContext 관리
+   * 기본 이벤트 루프
+   * 약 500줄 미만의 코드
 
-이 구조는 AI가 코드를 잘못 짜서 무한 루프나 크래시가 발생하더라도, 엔진 전체가 죽지 않고 해당 ALC만 폐기하면 되므로 안전성이 뛰어납니다.5
+2. **Engine Domain (리로드 가능):** 엔진 핵심도 동적으로 로드합니다.
+   * GameObject, Component, Transform
+   * 렌더링 시스템
+   * 물리 시스템
+   * AI가 엔진 기능도 확장 가능!
+
+3. **Game Domain (리로드 가능):** 사용자의 게임 로직입니다.
+   * MonoBehaviour 스크립트
+   * 게임별 컴포넌트
+
+4. **Reload Loop:**
+   * AI가 코드 생성 (Engine 또는 Game 코드)
+   * Roslyn이 메모리 내에서 컴파일(MemoryStream)
+   * 해당 Domain의 ALC 언로드 및 GC 수행
+   * 새로운 ALC 생성 후 컴파일된 DLL 로드
+   * **상태 복원 (State Restoration):** 직렬화된 데이터(TOML)를 새 인스턴스에 주입
+
+**장점:**
+* 엔진 자체도 런타임에 수정 가능
+* AI가 "GameObject에 새 기능 추가해줘"도 가능
+* 극도의 유연성
+
+**안전성:**
+* Bootstrapper만 안전하면 됨
+* 크래시 시 해당 Domain만 재로드
+* 단순함 유지 (복잡한 경계 없음)
 
 ### **4.2 Unity 아키텍처 구현 (Direct Implementation)**
 
@@ -70,7 +93,7 @@ AI(LLM)는 인터넷상의 방대한 유니티 코드로 학습되어 있습니�
 
 * **YAML 파서:** **VYaml** 또는 **YamlDotNet**을 사용하여 유니티 특유의 YAML 태그(\!u\!)를 처리합니다.9  
 * **GUID 매핑:** 유니티의 .meta 파일에 있는 GUID를 읽어, 엔진 내부의 AssetID와 매핑 테이블을 구축합니다. 이를 통해 스크립트나 씬에서 깨진 참조 없이 에셋을 로드할 수 있습니다.\[14\]  
-* **Mesh/Texture:** .fbx나 .png는 **AssimpNet**과 **ImageSharp** (혹은 StbImageSharp)을 통해 Veldrid 리소스로 변환합니다.
+* **Mesh/Texture:** .fbx나 .png는 **AssimpNet**과 **StbImageSharp**을 통해 Veldrid 리소스로 변환합니다.
 
 ## ---
 
