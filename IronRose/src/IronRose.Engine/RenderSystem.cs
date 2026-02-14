@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Veldrid;
@@ -58,6 +59,7 @@ namespace IronRose.Rendering
         private GraphicsDevice? _device;
         private Pipeline? _pipeline;
         private Pipeline? _wireframePipeline;
+        private Pipeline? _spritePipeline;
         private DeviceBuffer? _transformBuffer;
         private DeviceBuffer? _materialBuffer;
         private DeviceBuffer? _lightBuffer;
@@ -173,7 +175,32 @@ namespace IronRose.Rendering
                 comparisonKind: ComparisonKind.LessEqual);
 
             _wireframePipeline = factory.CreateGraphicsPipeline(wireframeDesc);
-            Console.WriteLine("[RenderSystem] Pipeline created successfully (texture + lighting)");
+
+            // Sprite pipeline: alpha blend, depth test but no depth write, no culling
+            var spriteDesc = pipelineDesc;
+            spriteDesc.BlendState = new BlendStateDescription(
+                RgbaFloat.Black,
+                new BlendAttachmentDescription(
+                    blendEnabled: true,
+                    sourceColorFactor: BlendFactor.SourceAlpha,
+                    destinationColorFactor: BlendFactor.InverseSourceAlpha,
+                    colorFunction: BlendFunction.Add,
+                    sourceAlphaFactor: BlendFactor.One,
+                    destinationAlphaFactor: BlendFactor.InverseSourceAlpha,
+                    alphaFunction: BlendFunction.Add));
+            spriteDesc.DepthStencilState = new DepthStencilStateDescription(
+                depthTestEnabled: true,
+                depthWriteEnabled: false,
+                comparisonKind: ComparisonKind.LessEqual);
+            spriteDesc.RasterizerState = new RasterizerStateDescription(
+                cullMode: FaceCullMode.None,
+                fillMode: PolygonFillMode.Solid,
+                frontFace: FrontFace.Clockwise,
+                depthClipEnabled: true,
+                scissorTestEnabled: false);
+
+            _spritePipeline = factory.CreateGraphicsPipeline(spriteDesc);
+            Console.WriteLine("[RenderSystem] Pipeline created successfully (texture + lighting + sprites)");
         }
 
         public void Render(CommandList cl, Camera? camera, float aspectRatio)
@@ -197,6 +224,18 @@ namespace IronRose.Rendering
             {
                 cl.SetPipeline(_wireframePipeline);
                 DrawAllRenderers(cl, viewProj, useWireframeColor: true);
+            }
+
+            // --- Sprite pass (alpha blend, unlit) ---
+            if (_spritePipeline != null && SpriteRenderer._allSpriteRenderers.Count > 0)
+            {
+                DrawAllSprites(cl, viewProj, camera);
+            }
+
+            // --- Text pass (alpha blend, unlit — reuses sprite pipeline) ---
+            if (_spritePipeline != null && TextRenderer._allTextRenderers.Count > 0)
+            {
+                DrawAllTexts(cl, viewProj, camera);
             }
         }
 
@@ -338,6 +377,163 @@ namespace IronRose.Rendering
             }
         }
 
+        private void DrawAllSprites(CommandList cl, System.Numerics.Matrix4x4 viewProj, Camera camera)
+        {
+            // Upload unlit light data (LightCount = -1)
+            var unlitLightData = new LightUniforms
+            {
+                CameraPos = new Vector4(camera.transform.position.x, camera.transform.position.y, camera.transform.position.z, 0),
+                LightCount = -1,
+            };
+            cl.UpdateBuffer(_lightBuffer, 0, unlitLightData);
+
+            cl.SetPipeline(_spritePipeline);
+
+            // Collect active sprite renderers
+            var active = SpriteRenderer._allSpriteRenderers
+                .Where(sr => sr.enabled && sr.sprite != null &&
+                             sr.gameObject.activeInHierarchy && !sr._isDestroyed)
+                .ToList();
+
+            if (active.Count == 0) return;
+
+            // Sort: sortingOrder ASC, then camera distance DESC (back to front)
+            var camPos = camera.transform.position;
+            active.Sort((a, b) =>
+            {
+                int orderCmp = a.sortingOrder.CompareTo(b.sortingOrder);
+                if (orderCmp != 0) return orderCmp;
+
+                float distA = (a.transform.position - camPos).sqrMagnitude;
+                float distB = (b.transform.position - camPos).sqrMagnitude;
+                return distB.CompareTo(distA); // farther first
+            });
+
+            foreach (var sr in active)
+            {
+                sr.EnsureMesh();
+                if (sr._cachedMesh == null) continue;
+
+                var mesh = sr._cachedMesh;
+                mesh.UploadToGPU(_device!);
+                if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
+
+                // World matrix from transform
+                var t = sr.transform;
+                var worldMatrix = UnityEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+
+                var transforms = new TransformUniforms
+                {
+                    World = worldMatrix,
+                    ViewProjection = viewProj,
+                };
+                cl.UpdateBuffer(_transformBuffer, 0, transforms);
+
+                // Material: sprite color, no emission
+                var color = sr.color;
+                TextureView? texView = null;
+                float hasTexture = 0f;
+
+                sr.sprite!.texture.UploadToGPU(_device!);
+                if (sr.sprite.texture.TextureView != null)
+                {
+                    texView = sr.sprite.texture.TextureView;
+                    hasTexture = 1f;
+                }
+
+                var materialData = new MaterialUniforms
+                {
+                    Color = new Vector4(color.r, color.g, color.b, color.a),
+                    Emission = new Vector4(0, 0, 0, 0),
+                    HasTexture = hasTexture,
+                };
+                cl.UpdateBuffer(_materialBuffer, 0, materialData);
+
+                var perObjectSet = GetOrCreateResourceSet(texView);
+                cl.SetGraphicsResourceSet(0, perObjectSet);
+                cl.SetGraphicsResourceSet(1, _perFrameResourceSet);
+
+                cl.SetVertexBuffer(0, mesh.VertexBuffer);
+                cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
+                cl.DrawIndexed((uint)mesh.indices.Length);
+            }
+        }
+
+        private void DrawAllTexts(CommandList cl, System.Numerics.Matrix4x4 viewProj, Camera camera)
+        {
+            // Unlit mode (LightCount = -1)
+            var unlitLightData = new LightUniforms
+            {
+                CameraPos = new Vector4(camera.transform.position.x, camera.transform.position.y, camera.transform.position.z, 0),
+                LightCount = -1,
+            };
+            cl.UpdateBuffer(_lightBuffer, 0, unlitLightData);
+
+            cl.SetPipeline(_spritePipeline);
+
+            // Collect active TextRenderers
+            var active = TextRenderer._allTextRenderers
+                .Where(tr => tr.enabled && tr.font?.atlasTexture != null &&
+                             !string.IsNullOrEmpty(tr.text) &&
+                             tr.gameObject.activeInHierarchy && !tr._isDestroyed)
+                .ToList();
+
+            if (active.Count == 0) return;
+
+            // Sort: sortingOrder ASC, then camera distance DESC (back to front)
+            var camPos = camera.transform.position;
+            active.Sort((a, b) =>
+            {
+                int orderCmp = a.sortingOrder.CompareTo(b.sortingOrder);
+                if (orderCmp != 0) return orderCmp;
+                float distA = (a.transform.position - camPos).sqrMagnitude;
+                float distB = (b.transform.position - camPos).sqrMagnitude;
+                return distB.CompareTo(distA);
+            });
+
+            foreach (var tr in active)
+            {
+                tr.EnsureMesh();
+                if (tr._cachedMesh == null) continue;
+
+                var mesh = tr._cachedMesh;
+                mesh.UploadToGPU(_device!);
+                if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
+
+                var t = tr.transform;
+                var worldMatrix = UnityEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+
+                var transforms = new TransformUniforms { World = worldMatrix, ViewProjection = viewProj };
+                cl.UpdateBuffer(_transformBuffer, 0, transforms);
+
+                // Texture: font atlas
+                TextureView? texView = null;
+                float hasTexture = 0f;
+                tr.font!.atlasTexture!.UploadToGPU(_device!);
+                if (tr.font.atlasTexture.TextureView != null)
+                {
+                    texView = tr.font.atlasTexture.TextureView;
+                    hasTexture = 1f;
+                }
+
+                var materialData = new MaterialUniforms
+                {
+                    Color = new Vector4(tr.color.r, tr.color.g, tr.color.b, tr.color.a),
+                    Emission = new Vector4(0, 0, 0, 0),
+                    HasTexture = hasTexture,
+                };
+                cl.UpdateBuffer(_materialBuffer, 0, materialData);
+
+                var perObjectSet = GetOrCreateResourceSet(texView);
+                cl.SetGraphicsResourceSet(0, perObjectSet);
+                cl.SetGraphicsResourceSet(1, _perFrameResourceSet);
+
+                cl.SetVertexBuffer(0, mesh.VertexBuffer);
+                cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
+                cl.DrawIndexed((uint)mesh.indices.Length);
+            }
+        }
+
         private static string FindShaderDirectory()
         {
             // Try relative paths from working directory
@@ -360,6 +556,7 @@ namespace IronRose.Rendering
         {
             _pipeline?.Dispose();
             _wireframePipeline?.Dispose();
+            _spritePipeline?.Dispose();
             _transformBuffer?.Dispose();
             _materialBuffer?.Dispose();
             _lightBuffer?.Dispose();

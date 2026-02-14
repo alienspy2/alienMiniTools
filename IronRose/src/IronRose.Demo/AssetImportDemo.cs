@@ -65,6 +65,23 @@ public class AssetImportDemo : MonoBehaviour
         renderer.material = new Material(new Color(0.85f, 0.65f, 0.4f));
         meshObj.transform.position = new Vector3(0, 0, 0);
 
+        // Load preview.png from the same asset folder as a sprite
+        var assetDir = System.IO.Path.GetDirectoryName(assetPath)!;
+        var pngPath = System.IO.Path.Combine(assetDir, "preview.png");
+        if (System.IO.File.Exists(pngPath))
+        {
+            var tex = Texture2D.LoadFromFile(pngPath);
+            var sprite = Sprite.Create(tex,
+                new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+
+            var spriteObj = new GameObject("Preview Sprite");
+            var sr = spriteObj.AddComponent<SpriteRenderer>();
+            sr.sprite = sprite;
+            spriteObj.transform.position = new Vector3(-2.5f, 1.5f, 0);
+            spriteObj.transform.localScale = Vector3.one * 0.2f;
+            Debug.Log($"[AssetImportDemo] Preview sprite loaded: {pngPath}");
+        }
+
         Debug.Log("[AssetImportDemo] Asset import demo ready!");
     }
 

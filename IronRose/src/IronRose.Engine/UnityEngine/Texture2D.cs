@@ -66,6 +66,12 @@ namespace UnityEngine
             return new Texture2D(1, 1, data);
         }
 
+        public void SetPixels(byte[] rgbaData)
+        {
+            _pixelData = rgbaData;
+            _isDirty = true;
+        }
+
         public void UploadToGPU(GraphicsDevice device)
         {
             if (!_isDirty || _pixelData == null)

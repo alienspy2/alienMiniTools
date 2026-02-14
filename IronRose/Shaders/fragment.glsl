@@ -52,6 +52,13 @@ void main()
 
     vec4 baseColor = Color * texColor;
 
+    // Unlit mode (sprites) — LightCount < 0
+    if (LightCount < 0)
+    {
+        out_Color = vec4(baseColor.rgb + Emission.rgb, baseColor.a);
+        return;
+    }
+
     // If no lights, use hardcoded fallback (backwards compatibility)
     if (LightCount <= 0)
     {

@@ -407,6 +407,12 @@ namespace UnityEngine
                     if (comp is MeshRenderer mr)
                         MeshRenderer._allRenderers.Remove(mr);
 
+                    if (comp is SpriteRenderer spr)
+                        SpriteRenderer._allSpriteRenderers.Remove(spr);
+
+                    if (comp is TextRenderer txr)
+                        TextRenderer._allTextRenderers.Remove(txr);
+
                     if (comp is Light light)
                         Light._allLights.Remove(light);
 
@@ -442,6 +448,12 @@ namespace UnityEngine
 
                 if (comp is MeshRenderer mr)
                     MeshRenderer._allRenderers.Remove(mr);
+
+                if (comp is SpriteRenderer spr)
+                    SpriteRenderer._allSpriteRenderers.Remove(spr);
+
+                if (comp is TextRenderer txr)
+                    TextRenderer._allTextRenderers.Remove(txr);
 
                 if (comp is Light light)
                     Light._allLights.Remove(light);
@@ -479,6 +491,8 @@ namespace UnityEngine
 
             // Clear rendering registries
             MeshRenderer.ClearAll();
+            SpriteRenderer.ClearAll();
+            TextRenderer.ClearAll();
             Light.ClearAll();
             Camera.ClearMain();
         }
