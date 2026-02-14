@@ -62,7 +62,7 @@ Unity API 호환성을 유지하면서도 **런타임 코드 생성 및 핫 리�
 git clone https://github.com/yourusername/IronRose.git
 cd IronRose
 dotnet build
-dotnet run --project src/IronRose.Bootstrapper
+dotnet run --project src/IronRose.Engine
 ```
 
 ### 첫 번째 스크립트

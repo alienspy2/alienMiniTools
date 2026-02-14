@@ -9,26 +9,25 @@
 
 ### 0.1 솔루션 구조 설계
 
-> **"Everything is Hot-Reloadable" 아키텍처**
+> **플러그인 기반 핫 리로드 아키텍처**
 >
-> Bootstrapper만 고정하고, 엔진 코어를 포함한 모든 것이 리로드 가능합니다!
+> 엔진(IronRose.Engine)이 EXE 진입점이자 안정적 기반이고,
+> 플러그인과 LiveCode를 핫 리로드합니다.
 
 ```
 IronRose/
 ├── src/
-│   ├── IronRose.Bootstrapper/      # 최소 진입점 (고정, ~500줄)
+│   ├── IronRose.Engine/            # 엔진 핵심 (EXE, 진입점 + 메인 루프)
 │   │                                # - SDL/Veldrid 초기화
-│   │                                # - AssemblyLoadContext 관리
-│   │                                # - 메인 루프
-│   │
-│   ├── IronRose.Engine/            # 엔진 핵심 (리로드 가능!)
 │   │                                # - GameObject, Component, Transform
 │   │                                # - MonoBehaviour 시스템
+│   │                                # - 플러그인 매니저
 │   │
-│   ├── IronRose.Scripting/         # Roslyn 컴파일러 (리로드 가능)
-│   ├── IronRose.AssetPipeline/     # Unity 에셋 임포터 (리로드 가능)
-│   ├── IronRose.Rendering/         # 렌더링 (리로드 가능)
-│   └── IronRose.Physics/           # 물리 엔진 (리로드 가능)
+│   ├── IronRose.Contracts/         # 플러그인 API 계약
+│   ├── IronRose.Scripting/         # Roslyn 컴파일러
+│   ├── IronRose.AssetPipeline/     # Unity 에셋 임포터
+│   ├── IronRose.Rendering/         # 렌더링
+│   └── IronRose.Physics/           # 물리 엔진
 │
 ├── samples/
 │   ├── 01_HelloWorld/
@@ -38,10 +37,10 @@ IronRose/
 └── docs/
 ```
 
-**핵심 차이:**
-- ❌ 기존: IronRose.Bootstrapper (고정된 런타임)
-- ✅ 새로운: IronRose.Bootstrapper (최소 부트스트래퍼)
-- ✅ **모든 엔진 코드가 동적 로드 및 리로드 가능**
+**핵심 구조:**
+- ✅ IronRose.Engine (EXE, 안정적 기반)
+- ✅ IronRose.Contracts (플러그인 API 컨테이너)
+- ✅ **플러그인/LiveCode만 핫 리로드 대상**
 
 **작업 세부사항:**
 
@@ -78,7 +77,6 @@ dotnet new classlib -n IronRose.Scripting -f net10.0 -o src/IronRose.Scripting
 dotnet new classlib -n IronRose.AssetPipeline -f net10.0 -o src/IronRose.AssetPipeline
 dotnet new classlib -n IronRose.Rendering -f net10.0 -o src/IronRose.Rendering
 dotnet new classlib -n IronRose.Physics -f net10.0 -o src/IronRose.Physics
-dotnet new console -n IronRose.Bootstrapper -f net10.0 -o src/IronRose.Bootstrapper
 
 # 솔루션에 프로젝트 추가
 dotnet sln add src/IronRose.Contracts/IronRose.Contracts.csproj
@@ -87,17 +85,13 @@ dotnet sln add src/IronRose.Scripting/IronRose.Scripting.csproj
 dotnet sln add src/IronRose.AssetPipeline/IronRose.AssetPipeline.csproj
 dotnet sln add src/IronRose.Rendering/IronRose.Rendering.csproj
 dotnet sln add src/IronRose.Physics/IronRose.Physics.csproj
-dotnet sln add src/IronRose.Bootstrapper/IronRose.Bootstrapper.csproj
 ```
 
 #### 4. 프로젝트 간 참조 설정
 ```bash
-# Bootstrapper → Contracts만 참조 (Phase 2A: Everything is Hot-Reloadable)
-dotnet add src/IronRose.Bootstrapper reference src/IronRose.Contracts
-
-# Engine, Rendering → Contracts 참조
+# Engine → Contracts, Rendering 참조
 dotnet add src/IronRose.Engine reference src/IronRose.Contracts
-dotnet add src/IronRose.Rendering reference src/IronRose.Contracts
+dotnet add src/IronRose.Engine reference src/IronRose.Rendering
 
 # Scripting → Engine
 dotnet add src/IronRose.Scripting reference src/IronRose.Engine
@@ -120,7 +114,7 @@ dotnet add src/IronRose.AssetPipeline reference src/IronRose.Engine
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            "program": "${workspaceFolder}/src/IronRose.Bootstrapper/bin/Debug/net10.0/IronRose.Bootstrapper.dll",
+            "program": "${workspaceFolder}/src/IronRose.Engine/bin/Debug/net10.0/IronRose.Engine.dll",
             "args": [],
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",

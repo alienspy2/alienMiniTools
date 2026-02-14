@@ -15,11 +15,11 @@ Shim(껍데기)이 아닌 실제 동작하는 엔진 구조입니다.
 > - Unity 아키텍처 그대로 구현
 > - 성능 문제는 나중에 병목이 실제로 발생하면 최적화
 
-> **"Everything is Hot-Reloadable"**
+> **플러그인 기반 핫 리로드**
 >
-> - **IronRose.Engine도 리로드 가능!**
-> - AI가 GameObject에 새 기능 추가 가능
-> - 엔진 자체를 런타임에 수정 가능
+> - 엔진은 안정적 기반으로 유지
+> - 플러그인/LiveCode로 기능을 확장하고 핫 리로드
+> - AI Digest로 검증된 코드를 엔진에 통합
 
 ---
 
@@ -294,7 +294,7 @@ namespace UnityEngine
 
 ---
 
-### 3.4 씬 관리 및 업데이트 루프 (IronRose.Bootstrapper)
+### 3.4 씬 관리 및 업데이트 루프 (IronRose.Engine)
 
 **SceneManager.cs:**
 ```csharp

@@ -44,7 +44,7 @@ namespace IronRose.Rendering
             {
                 PreferStandardClipSpaceYDirection = true,
                 PreferDepthRangeZeroToOne = true,
-                Debug = true
+                Debug = false
             };
 
             _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_window, options, GraphicsBackend.Vulkan);
@@ -189,7 +189,7 @@ namespace IronRose.Rendering
                 _graphicsDevice?.Dispose();
                 Console.WriteLine("[Renderer] GraphicsDevice disposed");
 
-                // 윈도우는 Bootstrapper가 관리하므로 닫지 않음
+                // 윈도우는 Program.cs가 관리하므로 닫지 않음
                 _window = null;
                 Console.WriteLine("[Renderer] Window reference cleared (not closed)");
             }

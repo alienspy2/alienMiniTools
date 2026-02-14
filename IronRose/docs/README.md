@@ -26,6 +26,11 @@ IronRose 게임 엔진의 상세 개발 계획 문서입니다.
   - AssemblyLoadContext 핫 스왑
   - 상태 보존 시스템
 
+- **[Phase 2B: 플러그인 시스템](전략변경.md)** *(진행 중)*
+  - ~~Phase 2A: 엔진 핫 리로드~~ → 폐기, 플러그인 방식으로 전환
+  - Bootstrapper/Engine 통합 완료
+  - 플러그인 인프라, 엔진 API, 핫 리로드
+
 - **[Phase 3: Unity Architecture 구현](Phase3_UnityArchitecture.md)** *(4-5일)*
   - 기본 수학 타입 (Vector3, Quaternion, Color)
   - GameObject & Component 시스템

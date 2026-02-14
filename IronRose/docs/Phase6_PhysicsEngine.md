@@ -259,12 +259,12 @@ namespace UnityEngine
 
 ### 6.3 물리 시뮬레이션 루프
 
-**PhysicsLoop.cs (IronRose.Bootstrapper):**
+**PhysicsLoop.cs (IronRose.Engine):**
 ```csharp
 using IronRose.Physics;
 using System.Diagnostics;
 
-namespace IronRose.Bootstrapper
+namespace IronRose.Engine
 {
     public class PhysicsLoop
     {

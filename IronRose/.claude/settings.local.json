@@ -19,7 +19,16 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Phase 0-2A 완료 - \"Everything is Hot-Reloadable\" 달성\n\nPhase 0: 프로젝트 구조 및 환경 설정\n- .NET 10 SDK, 7개 프로젝트 생성 \\(Contracts, Engine, Rendering, Scripting, Physics, AssetPipeline, Bootstrapper\\)\n- .editorconfig, .gitignore, VS Code 설정\n- NuGet 패키지 설치 \\(Veldrid, Roslyn, SDL 등\\)\n\nPhase 1: 최소 실행 가능 엔진\n- Bootstrapper: 메인 루프, 타이밍 시스템\n- GraphicsManager: Veldrid + Vulkan 초기화\n- 1280x720 윈도우, 금속 백장미 색상 렌더링\n- 60 FPS 안정적 실행\n\nPhase 2: Roslyn 핫 리로딩 시스템\n- ScriptCompiler: Roslyn 기반 C# 컴파일\n- ScriptDomain: AssemblyLoadContext로 동적 로드/언로드\n- Scripts/*.cs 런타임 컴파일 및 즉시 실행\n\nPhase 2A: Engine Core 핫 리로딩\n- IronRose.Contracts: 인터페이스 분리\n- EngineCore: IEngineCore 구현\n- EngineLoader: AssemblyLoadContext + Shadow Copy \\(파일 잠금 방지\\)\n- EngineWatcher: src/**/*.cs 파일 감지 + 자동 빌드\n- bin-hot 전략: 타임스탬프 기반 빌드로 충돌 방지\n- Engine.dll 런타임 수정 → 즉시 반영 성공!\n\n주요 기술:\n- AssemblyLoadContext \\(ALC\\): 어셈블리 격리 및 언로드\n- Shadow Copy \\(LoadFromStream\\): 파일 잠금 방지\n- Reflection: 타입 격리 통신\n- FileSystemWatcher + 디바운싱: 자동 빌드\n\n코드 통계:\n- 프로젝트: 7개\n- 코드: ~1000줄\n- NuGet 패키지: 18개\n\nCo-Authored-By: Claude Sonnet 4.5 \\(1M context\\) <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(ls:*)",
       "Bash(dotnet clean:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "Bash(find:*)",
+      "Bash(chmod:*)",
+      "Bash(done)",
+      "Bash(# Try different field names grep -roh ''\"\"usage\"\":{[^}]*}'' ~/.claude/projects/*/*.jsonl)",
+      "Bash(# Get full usage lines with output_tokens too grep -oh ''\"\"usage\"\":{[^}]*}[^}]*}'' ~/.claude/projects/*/*.jsonl)",
+      "Bash(# Calculate total tokens and cost across ALL sessions\npython3 << 'PYEOF'\nimport json, glob, re\n\ntotals = {\n    'input_tokens': 0,\n    'output_tokens': 0,\n    'cache_creation_input_tokens': 0,\n    'cache_read_input_tokens': 0,\n}\n\npattern = re.compile\\(r'\"usage\":\\(\\\\{[^}]*\\\\{[^}]*\\\\}[^}]*\\\\}\\)'\\)\n\nfor fpath in glob.glob\\('/home/alienspy/.claude/projects/*/*.jsonl'\\):\n    with open\\(fpath\\) as f:\n        for line in f:\n            for m in pattern.finditer\\(line\\):\n                try:\n                    usage = json.loads\\(m.group\\(1\\)\\)\n                    for key in totals:\n                        totals[key] += usage.get\\(key, 0\\)\n                except:\n                    pass\n\n# Opus 4.6 pricing\ninput_cost = totals['input_tokens'] * 15 / 1_000_000\noutput_cost = totals['output_tokens'] * 75 / 1_000_000\ncache_write_cost = totals['cache_creation_input_tokens'] * 18.75 / 1_000_000\ncache_read_cost = totals['cache_read_input_tokens'] * 1.875 / 1_000_000\ntotal_cost = input_cost + output_cost + cache_write_cost + cache_read_cost\n\nprint\\(\"=== All Sessions Total \\(Opus 4.6 pricing\\) ===\"\\)\nprint\\(f\"  Input tokens:       {totals['input_tokens']:>12,}  \\(${input_cost:.4f}\\)\"\\)\nprint\\(f\"  Output tokens:      {totals['output_tokens']:>12,}  \\(${output_cost:.4f}\\)\"\\)\nprint\\(f\"  Cache write tokens: {totals['cache_creation_input_tokens']:>12,}  \\(${cache_write_cost:.4f}\\)\"\\)\nprint\\(f\"  Cache read tokens:  {totals['cache_read_input_tokens']:>12,}  \\(${cache_read_cost:.4f}\\)\"\\)\nprint\\(f\"  ---\"\\)\nprint\\(f\"  Total cost:         ${total_cost:.4f}\"\\)\nPYEOF)",
+      "Bash(python3:*)",
+      "Bash(ldconfig:*)",
+      "Bash(dpkg:*)"
     ]
   }
 }

@@ -5,32 +5,17 @@
 
 ---
 
-## 설계 철학: "Everything is Hot-Reloadable"
+## 설계 철학: 플러그인 기반 핫 리로드
 
-### 전통적 접근 (복잡함)
+### IronRose 아키텍처
 ```
-[Runtime.exe (고정)]
-  └─ [Core.dll (고정)] ← 렌더러, 물리
-       └─ [Script.dll (리로드)] ← 게임 로직만
+[IronRose.Engine (EXE, 안정적 기반)]
+  ├─ [Plugin DLLs (ALC 핫 리로드)] ← 게임 로직, 커스텀 기능
+  └─ [LiveCode/*.cs (Roslyn 핫 리로드)] ← 빠른 프로토타입
 ```
-- ❌ Core와 Script 사이 복잡한 경계
-- ❌ 엔진 기능은 수정 불가
-
-### IronRose 접근 (단순함)
-```
-[Bootstrapper.exe (최소)]
-  ├─ [Engine.dll (리로드)] ← GameObject, 렌더러
-  └─ [Game.dll (리로드)] ← 게임 로직
-```
-- ✅ **모든 것이 리로드 가능**
-- ✅ AI가 엔진 기능도 확장 가능
-- ✅ 경계 없음 = 단순함
-
-**Bootstrapper는 500줄 미만:**
-- SDL/Veldrid 초기화
-- AssemblyLoadContext 관리
-- 메인 루프
-- 그게 전부!
+- ✅ 엔진 코어는 안정적으로 유지
+- ✅ 플러그인/LiveCode만 핫 리로드
+- ✅ AI Digest로 검증된 코드를 엔진에 통합
 
 ---
 
@@ -313,7 +298,7 @@ namespace IronRose.Scripting
 
 ### 2.4 테스트: "Hello World" 스크립트
 
-**Scripts/TestScript.cs (외부 파일):**
+**LiveCode/TestScript.cs (외부 파일):**
 ```csharp
 using System;
 
@@ -344,10 +329,10 @@ static void InitializeScripting()
     _scriptDomain = new ScriptDomain();
 
     // 초기 컴파일
-    CompileAndLoadScripts("Scripts/TestScript.cs");
+    CompileAndLoadScripts("LiveCode/TestScript.cs");
 
     // 파일 변경 감시
-    _watcher = new FileSystemWatcher("Scripts", "*.cs");
+    _watcher = new FileSystemWatcher("LiveCode", "*.cs");
     _watcher.Changed += OnScriptFileChanged;
     _watcher.EnableRaisingEvents = true;
 }

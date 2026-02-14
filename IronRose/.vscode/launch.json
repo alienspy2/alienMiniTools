@@ -6,7 +6,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            "program": "${workspaceFolder}/src/IronRose.Bootstrapper/bin/Debug/net10.0/IronRose.Bootstrapper.dll",
+            "program": "${workspaceFolder}/src/IronRose.Engine/bin/Debug/net10.0/IronRose.Engine.dll",
             "args": [],
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",

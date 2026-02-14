@@ -8,8 +8,9 @@
 
 - [x] Phase 0: 프로젝트 구조 및 환경 설정 ✅
 - [x] Phase 1: 최소 실행 가능 엔진 (Bootstrapper) ✅
-- [x] Phase 2: Roslyn 핫 리로딩 시스템 (Scripts) ✅
+- [x] Phase 2: Roslyn 핫 리로딩 시스템 (LiveCode) ✅
 - [x] Phase 2A: Engine Core 핫 리로딩 ✅
+- [x] Phase 2B-0: Bootstrapper/Engine 통합 ✅
 - [ ] Phase 3: Unity Architecture (GameObject, Component)
 - [ ] Phase 3: 입력 시스템
 - [ ] Phase 4: 물리 엔진 통합
@@ -157,7 +158,7 @@
 #### 4. 스크립팅 통합
 - [x] Program.cs 업데이트 (스크립팅 시스템 통합)
 - [x] FileSystemWatcher 설정
-- [x] Scripts 디렉토리 구조
+- [x] LiveCode 디렉토리 구조
 
 #### 5. 테스트
 - [x] TestScript.cs 컴파일 성공
@@ -255,6 +256,27 @@
 - ✅ ~~핫 리로드 후 윈도우 재생성~~ → Bootstrapper가 윈도우 관리
 - ✅ ~~ALC 타입 격리~~ → Veldrid를 기본 ALC에서만 로드
 - ✅ ~~ALC not fully unloaded~~ → 정상 언로드 확인
+
+---
+
+## Phase 2B-0: Bootstrapper/Engine 통합 ✅
+
+**완료 날짜**: 2026-02-13
+
+### 완료된 작업
+- [x] Engine.csproj → EXE 전환 (OutputType, AllowUnsafeBlocks, Veldrid.StartupUtilities, Rendering 참조)
+- [x] Program.cs를 Engine으로 이동 (EngineLoader/EngineWatcher/IEngineCore 제거)
+- [x] EngineCore.cs 리플렉션 제거 (직접 참조로 전환)
+- [x] IEngineCore.cs 삭제 (Contracts 프로젝트는 유지)
+- [x] Bootstrapper 디렉토리 전체 삭제
+- [x] IronRose.sln에서 Bootstrapper 제거
+- [x] 부수 파일 업데이트 (launch.json, Claude.md, GraphicsManager 주석)
+
+### 주요 결정 사항
+- **전략 변경**: Phase 2A(엔진 전체 핫 리로드) → Phase 2B(플러그인 기반 핫 리로드)
+- **Bootstrapper 제거**: 엔진을 동적 로드할 필요가 없으므로 통합
+- **리플렉션 제거**: IronRose.Rendering을 직접 참조하여 타입 안전성 확보
+- **Contracts 유지**: 향후 플러그인 API 컨테이너로 활용 예정
 
 ---
 

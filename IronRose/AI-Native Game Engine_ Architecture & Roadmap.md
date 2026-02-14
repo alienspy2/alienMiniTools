@@ -35,40 +35,39 @@ AI와의 협업, 실시간 코드 주입, 그리고 유니티를 대체한다는
 
 AI가 생성한 코드를 게임을 끄지 않고 즉시 적용하려면 \*\*AssemblyLoadContext (ALC)\*\*를 활용한 핫 스왑 구조가 필수적입니다.3
 
-**구현 메커니즘: "Everything is Hot-Reloadable"**
+**구현 메커니즘: 플러그인 기반 핫 리로드**
 
-1. **Bootstrapper (고정):** 최소한의 진입점만 고정합니다.
-   * SDL/Veldrid 초기화
-   * AssemblyLoadContext 관리
-   * 기본 이벤트 루프
-   * 약 500줄 미만의 코드
+> **참고**: 초기 설계는 "Everything is Hot-Reloadable" (엔진 전체 핫 리로드)였으나,
+> 복잡도와 안정성 문제로 플러그인 기반 핫 리로드로 전략 변경됨.
+> 상세: [전략변경.md](docs/전략변경.md)
 
-2. **Engine Domain (리로드 가능):** 엔진 핵심도 동적으로 로드합니다.
+1. **IronRose.Engine (EXE, 안정적 기반):** 진입점 + 엔진 코어
+   * SDL/Veldrid 초기화, 메인 루프
    * GameObject, Component, Transform
-   * 렌더링 시스템
-   * 물리 시스템
-   * AI가 엔진 기능도 확장 가능!
+   * 렌더링/물리 시스템
+   * 플러그인 매니저
 
-3. **Game Domain (리로드 가능):** 사용자의 게임 로직입니다.
-   * MonoBehaviour 스크립트
-   * 게임별 컴포넌트
+2. **Plugin DLLs (ALC 핫 리로드):** 게임 로직 및 확장 기능
+   * ALC(AssemblyLoadContext)로 격리/핫 리로드
+   * 엔진 API(IEngine, EnginePlugin)를 통해 확장
 
-4. **Reload Loop:**
-   * AI가 코드 생성 (Engine 또는 Game 코드)
-   * Roslyn이 메모리 내에서 컴파일(MemoryStream)
-   * 해당 Domain의 ALC 언로드 및 GC 수행
-   * 새로운 ALC 생성 후 컴파일된 DLL 로드
-   * **상태 복원 (State Restoration):** 직렬화된 데이터(TOML)를 새 인스턴스에 주입
+3. **LiveCode (Roslyn 핫 리로드):** 빠른 프로토타입
+   * *.cs 파일을 Roslyn으로 런타임 컴파일
+   * 플러그인 API 사용 가능
+
+4. **AI Digest:** 검증된 플러그인 코드를 엔진에 통합
+   * Claude Code가 플러그인 코드를 분석/변환
+   * 엔진 코드로 병합 + 테스트 작성
 
 **장점:**
-* 엔진 자체도 런타임에 수정 가능
-* AI가 "GameObject에 새 기능 추가해줘"도 가능
-* 극도의 유연성
+* 엔진 코어는 항상 안정적
+* 플러그인 예외 시 해당 플러그인만 해제
+* 빠른 반복 개발 (작은 DLL 핫 리로드)
 
 **안전성:**
-* Bootstrapper만 안전하면 됨
-* 크래시 시 해당 Domain만 재로드
-* 단순함 유지 (복잡한 경계 없음)
+* 엔진은 재시작 없이 안정 유지
+* 플러그인 크래시 시 try-catch로 격리
+* AI Digest로 검증된 코드만 엔진에 통합
 
 ### **4.2 Unity 아키텍처 구현 (Direct Implementation)**
 

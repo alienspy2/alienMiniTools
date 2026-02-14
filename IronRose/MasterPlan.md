@@ -27,26 +27,25 @@ Unity API 호환성을 유지하면서도 런타임 코드 생성 및 핫 리로
 
 #### 0.1 솔루션 구조 설계
 
-> **"Everything is Hot-Reloadable" 아키텍처**
+> **플러그인 기반 핫 리로드 아키텍처**
 >
-> Bootstrapper만 고정하고, 나머지는 모두 동적 로드합니다.
+> 엔진(IronRose.Engine)이 EXE 진입점이자 안정적 기반이고,
+> 플러그인과 LiveCode를 핫 리로드합니다.
 
 ```
 IronRose/
 ├── src/
-│   ├── IronRose.Bootstrapper/      # 최소 진입점 (고정, ~500줄)
+│   ├── IronRose.Engine/            # 엔진 핵심 (EXE, 진입점 + 메인 루프)
 │   │                                # - SDL/Veldrid 초기화
-│   │                                # - AssemblyLoadContext 관리
-│   │                                # - 메인 루프
-│   │
-│   ├── IronRose.Engine/            # 엔진 핵심 (리로드 가능!)
 │   │                                # - GameObject, Component, Transform
 │   │                                # - MonoBehaviour 시스템
+│   │                                # - 플러그인 매니저
 │   │
-│   ├── IronRose.Scripting/         # Roslyn 컴파일러 (리로드 가능)
-│   ├── IronRose.AssetPipeline/     # Unity 에셋 임포터 (리로드 가능)
-│   ├── IronRose.Rendering/         # 렌더링 (리로드 가능)
-│   └── IronRose.Physics/           # 물리 엔진 (리로드 가능)
+│   ├── IronRose.Contracts/         # 플러그인 API 계약
+│   ├── IronRose.Scripting/         # Roslyn 컴파일러
+│   ├── IronRose.AssetPipeline/     # Unity 에셋 임포터
+│   ├── IronRose.Rendering/         # 렌더링
+│   └── IronRose.Physics/           # 물리 엔진
 │
 ├── samples/
 │   ├── 01_HelloWorld/
@@ -56,10 +55,10 @@ IronRose/
 └── docs/
 ```
 
-**핵심 차이:**
-- ❌ IronRose.Runtime (고정된 런타임)
-- ✅ IronRose.Bootstrapper (최소 부트스트래퍼)
-- ✅ **모든 엔진 코드가 리로드 가능**
+**핵심 구조:**
+- ✅ IronRose.Engine (EXE, 안정적 기반)
+- ✅ IronRose.Contracts (플러그인 API 컨테이너)
+- ✅ **플러그인/LiveCode만 핫 리로드 대상**
 
 #### 0.2 NuGet 패키지 설치
 - **Veldrid** (+ Veldrid.SPIRV, Veldrid.ImageSharp)
@@ -81,33 +80,28 @@ git commit -m "Initial commit: IronRose project structure"
 
 ---
 
-## **Phase 1: 최소 실행 가능 엔진 (Bootstrapper)**
+## **Phase 1: 최소 실행 가능 엔진**
 
 ### 목표
-최소한의 Bootstrapper를 만들어 SDL3 윈도우를 열고 Veldrid로 화면을 클리어합니다.
-
-> **Bootstrapper는 500줄 미만으로 유지!**
-> - SDL/Veldrid 초기화
-> - 메인 루프
-> - 그게 전부!
+IronRose.Engine(EXE)에서 SDL 윈도우를 열고 Veldrid로 화면을 클리어합니다.
 
 ### 작업 항목
 
-#### 1.1 SDL3 윈도우 생성 (IronRose.Bootstrapper)
+#### 1.1 윈도우 생성 (IronRose.Engine)
 ```csharp
 // Program.cs
-using Silk.NET.SDL;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
 
-namespace IronRose.Bootstrapper
+namespace IronRose.Engine
 {
     class Program
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("IronRose Bootstrapper Starting...");
+            Console.WriteLine("[IronRose] Engine Starting...");
 
-            var window = Sdl.CreateWindow("IronRose Engine", 1280, 720);
-            // 메인 루프 구현
+            // 윈도우 생성 및 메인 루프
         }
     }
 }
@@ -138,10 +132,10 @@ var graphicsDevice = GraphicsDevice.CreateVulkan(options, window);
 ### 목표
 런타임에 C# 코드를 컴파일하고 AssemblyLoadContext로 핫 리로딩하는 핵심 기능을 구현합니다.
 
-> **설계 철학: "Everything is Hot-Reloadable"**
+> **설계 철학: 플러그인 기반 핫 리로드**
 >
-> 엔진 코어도 리로드 가능하게 만듭니다. Bootstrapper(최소 진입점)만 고정하고,
-> 나머지는 모두 동적 로드합니다. AI가 엔진 기능도 확장 가능합니다!
+> 엔진(IronRose.Engine)은 안정적 기반으로 유지하고,
+> 플러그인과 LiveCode를 핫 리로드합니다.
 
 ### 작업 항목
 
@@ -156,59 +150,31 @@ public class ScriptCompiler
 
 #### 2.2 AssemblyLoadContext 핫 스왑 구조
 
-**DomainManager.cs (IronRose.Bootstrapper):**
+**ScriptDomain.cs (IronRose.Scripting):**
 ```csharp
-public class DomainManager
+public class ScriptDomain
 {
-    private Dictionary<string, AssemblyLoadContext> _domains = new();
+    private AssemblyLoadContext? _currentALC;
 
-    // 엔진 도메인 (리로드 가능!)
-    public void LoadEngine(string engineDllPath)
+    public void LoadScripts(byte[] assemblyBytes)
     {
-        UnloadDomain("Engine");
-
-        var engineALC = new AssemblyLoadContext("Engine", isCollectible: true);
-        engineALC.LoadFromAssemblyPath(engineDllPath);
-
-        _domains["Engine"] = engineALC;
+        _currentALC = new AssemblyLoadContext("ScriptContext", isCollectible: true);
+        using var ms = new MemoryStream(assemblyBytes);
+        _currentALC.LoadFromStream(ms);
     }
 
-    // 게임 도메인 (리로드 가능)
-    public void LoadGame(string gameDllPath)
+    public void Reload(byte[] newAssemblyBytes)
     {
-        UnloadDomain("Game");
-
-        var gameALC = new AssemblyLoadContext("Game", isCollectible: true);
-        gameALC.LoadFromAssemblyPath(gameDllPath);
-
-        _domains["Game"] = gameALC;
-    }
-
-    // 도메인 언로드
-    private void UnloadDomain(string name)
-    {
-        if (_domains.TryGetValue(name, out var alc))
-        {
-            alc.Unload();
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            _domains.Remove(name);
-        }
-    }
-
-    // 전체 리로드
-    public void ReloadAll()
-    {
-        LoadEngine("IronRose.Engine.dll");
-        LoadGame("Game.dll");
+        UnloadPreviousContext();
+        LoadScripts(newAssemblyBytes);
     }
 }
 ```
 
 **핵심:**
-- Engine.dll도 리로드 가능!
-- Game.dll도 리로드 가능!
-- Bootstrapper만 고정!
+- 플러그인(DLL)은 ALC로 핫 리로드
+- LiveCode(*.cs)는 Roslyn으로 핫 리로드
+- 엔진 코어는 안정적으로 유지
 
 #### 2.3 상태 보존 시스템
 - 핫 리로드 전 객체 상태를 TOML로 직렬화
@@ -223,7 +189,7 @@ public interface IHotReloadable
 
 #### 2.4 테스트: "Hello World" 스크립트
 ```csharp
-// Scripts/TestScript.cs
+// LiveCode/TestScript.cs
 public class TestScript
 {
     public void Update()
@@ -352,7 +318,7 @@ public class MonoBehaviour : Component
 }
 ```
 
-#### 3.4 씬 관리 및 업데이트 루프 (IronRose.Runtime)
+#### 3.4 씬 관리 및 업데이트 루프 (IronRose.Engine)
 ```csharp
 public class SceneManager
 {
@@ -883,10 +849,10 @@ IronRose는 단순히 Unity를 복제하는 것이 아니라,
    - 코드는 실행되는 동안 계속 진화할 수 있어야 합니다.
    - AI는 개발자의 파트너이자 학습 도구여야 합니다.
 
-4. **극한의 유연성 (Everything is Hot-Reloadable)**
-   - **엔진 코어도 리로드 가능** - AI가 엔진 기능도 확장
-   - Bootstrapper(500줄)만 고정, 나머지는 모두 동적
-   - "프롬프트로 엔진도 만드는 엔진"
+4. **극한의 유연성 (플러그인 기반 핫 리로드)**
+   - **플러그인/LiveCode 핫 리로드** - 빠른 반복 개발
+   - 엔진은 안정적 기반, 플러그인으로 기능 확장
+   - AI Digest로 검증된 플러그인 코드를 엔진에 통합
 
 > **"Make it work, make it right, make it fast - in that order."**
 

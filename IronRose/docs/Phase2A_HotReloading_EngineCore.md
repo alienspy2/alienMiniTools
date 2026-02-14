@@ -1,6 +1,9 @@
-# Phase 2A: Engine Core 핫 리로딩
+# Phase 2A: Engine Core 핫 리로딩 (폐기됨)
 
-## 목표
+> **이 문서는 Phase 2B(플러그인 기반 핫 리로드)로 전략 변경되어 폐기되었습니다.**
+> 이력 참조용으로만 보존합니다. 현재 아키텍처는 [전략변경.md](전략변경.md)를 참조하세요.
+
+## 목표 (폐기됨)
 **"Everything is Hot-Reloadable"의 진정한 구현**
 
 Bootstrapper만 고정하고, IronRose.Engine.dll을 포함한 모든 엔진 코드를 핫 리로드 가능하게 만듭니다.
@@ -16,7 +19,7 @@ Bootstrapper만 고정하고, IronRose.Engine.dll을 포함한 모든 엔진 코
   ├─ using IronRose.Rendering;    ← 정적 참조 (핫 리로드 불가)
   ├─ using IronRose.Scripting;    ← 정적 참조 (핫 리로드 불가)
   │
-  └─ [Scripts/*.cs] ────────────→ [Roslyn] → [ALC] (핫 리로드 가능)
+  └─ [LiveCode/*.cs] ───────────→ [Roslyn] → [ALC] (핫 리로드 가능)
 ```
 
 **문제점**:
@@ -36,7 +39,7 @@ Bootstrapper만 고정하고, IronRose.Engine.dll을 포함한 모든 엔진 코
   │                          Rendering.dll (핫 리로드 가능)
   │                          Scripting.dll (핫 리로드 가능)
   │
-  └─ [ScriptContext ALC] ──→ Scripts/*.cs (핫 리로드 가능)
+  └─ [ScriptContext ALC] ──→ LiveCode/*.cs (핫 리로드 가능)
 ```
 
 **핵심 원칙**:
@@ -482,8 +485,8 @@ _watcher.InternalBufferSize = 64 * 1024;  // 기본: 8KB → 64KB
 
 ### 옵션 2: 하이브리드 (현재 + 개선)
 - **Engine.dll**: 정적 빌드 (재시작 필요)
-- **Scripts 폴더**: 핫 리로드 유지
-- **Scripts → Engine 이동**: AI Agent가 자동화
+- **LiveCode 폴더**: 핫 리로드 유지
+- **LiveCode → Engine 이동**: AI Agent가 자동화
 - 1일 소요
 
 ### 옵션 3: Phase 3 우선
@@ -501,7 +504,7 @@ _watcher.InternalBufferSize = 64 * 1024;  // 기본: 8KB → 64KB
 1. GameObject/Component 없이는 엔진 핫 리로드를 테스트하기 어려움
 2. 핫 리로드는 **개발 경험 개선**이지 **핵심 기능**은 아님
 3. 복잡도가 높아 디버깅 시간이 길어질 수 있음
-4. AI Agent 자동화로 Scripts → Engine 이동이 가능
+4. AI Agent 자동화로 LiveCode → Engine 이동이 가능
 
 **하지만 도전하고 싶다면**:
 - "Everything is Hot-Reloadable"은 매우 강력한 기능
@@ -520,7 +523,7 @@ _watcher.InternalBufferSize = 64 * 1024;  // 기본: 8KB → 64KB
 → 엔진 구조 먼저 완성
 → Phase 7에서 핫 리로드 개선
 
-**C. 하이브리드** (Scripts만 핫 리로드, 1일)
+**C. 하이브리드** (LiveCode만 핫 리로드, 1일)
 → 현재 상태 유지
 → AI Agent 자동화로 보완
 

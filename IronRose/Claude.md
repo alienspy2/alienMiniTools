@@ -55,10 +55,10 @@ var ironRoseColor32 = new Color32(230, 220, 210, 255);
 dotnet build
 
 # 2. 실행 파일 테스트
-dotnet run --project src/IronRose.Bootstrapper
+dotnet run --project src/IronRose.Engine
 
 # 또는 직접 실행
-./src/IronRose.Bootstrapper/bin/Debug/net10.0/IronRose.Bootstrapper.exe
+./src/IronRose.Engine/bin/Debug/net10.0/IronRose.Engine
 ```
 
 **중요**: 코드 레벨 유닛 테스트만으로는 부족합니다. 반드시 빌드 후 실제 실행 파일을 실행하여 통합 테스트를 수행해야 합니다.
@@ -74,7 +74,7 @@ Console.WriteLine($"[Physics] Timestep: {deltaTime:F4}s");
 ```
 
 **로그 카테고리**:
-- `[Bootstrapper]`: 엔진 시작/종료, 어셈블리 로드
+- `[IronRose]`: 엔진 시작/종료
 - `[Engine]`: 게임 오브젝트, 씬, 컴포넌트 생명주기
 - `[Renderer]`: 렌더링 파이프라인, 그래픽스 API 호출
 - `[Physics]`: 물리 시뮬레이션, 충돌 감지
@@ -127,31 +127,9 @@ Console.WriteLine($"[Physics] Timestep: {deltaTime:F4}s");
 
 ### 4. 핫 리로드 워크플로우
 
-**"Everything is Hot-Reloadable" 아키텍처 달성!**
-
-#### 엔진 코드 핫 리로드 (Phase 2A)
-```
-1. src/IronRose.Engine/*.cs 수정
-2. 저장 → EngineWatcher 자동 감지
-3. bin-hot/{timestamp}/ 폴더로 빌드 (파일 잠금 없음)
-4. 기존 엔진 언로드 (ALC.Unload + GC)
-5. 새 엔진 로드 from bin-hot
-6. 즉시 반영! (재시작 불필요)
-```
-
-**bin-hot 전략**:
-- 런타임: bin-hot/20260213_190432/*.dll 사용
-- 다음 실행: 변경된 소스가 bin/*.dll에 자동 반영
-- 히스토리 보관 (롤백 가능)
-
-**핵심 기술**:
-- AssemblyLoadContext (ALC) - 어셈블리 격리/언로드
-- Shadow Copy (LoadFromStream) - 파일 잠금 방지
-- Reflection - 타입 격리 통신
-
 #### 스크립트 핫 리로드 (Phase 2)
 ```
-1. Scripts/*.cs 수정
+1. LiveCode/*.cs 수정
 2. Roslyn 런타임 컴파일
 3. 즉시 로드 및 실행
 ```

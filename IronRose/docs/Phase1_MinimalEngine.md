@@ -1,94 +1,54 @@
-# Phase 1: 최소 실행 가능 엔진 (Bootstrapper)
+# Phase 1: 최소 실행 가능 엔진
 
 ## 목표
-최소한의 Bootstrapper를 만들어 SDL3 윈도우를 열고 Veldrid로 화면을 클리어합니다.
-
-> **"Bootstrapper는 500줄 미만으로 유지!"**
->
-> - SDL/Veldrid 초기화만
-> - AssemblyLoadContext 관리 준비
-> - 메인 루프
-> - 그게 전부!
+IronRose.Engine(EXE)에서 SDL 윈도우를 열고 Veldrid로 화면을 클리어합니다.
 
 ---
 
 ## 작업 항목
 
-### 1.1 SDL3 윈도우 생성 (IronRose.Bootstrapper)
+### 1.1 윈도우 생성 (IronRose.Engine)
 
 **Program.cs 구현:**
 ```csharp
-using Silk.NET.SDL;
 using System;
+using System.Diagnostics;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
 
-namespace IronRose.Bootstrapper
+namespace IronRose.Engine
 {
     class Program
     {
-        private static Sdl _sdl = null!;
-        private static unsafe Window* _window;
-        private static bool _running = true;
+        private static Sdl2Window? _window;
 
-        static unsafe void Main(string[] args)
+        static void Main(string[] args)
         {
-            Console.WriteLine("IronRose Engine Starting...");
+            Console.WriteLine("[IronRose] Engine Starting...");
 
-            // SDL 초기화
-            _sdl = Sdl.GetApi();
-            if (_sdl.Init(Sdl.InitVideo) < 0)
-            {
-                Console.WriteLine($"SDL Init Failed: {_sdl.GetErrorS()}");
-                return;
-            }
-
-            // 윈도우 생성
-            _window = _sdl.CreateWindow(
-                "IronRose Engine",
-                Sdl.WindowposCentered,
-                Sdl.WindowposCentered,
-                1280,
-                720,
-                (uint)(WindowFlags.Shown | WindowFlags.Vulkan)
-            );
-
-            if (_window == null)
-            {
-                Console.WriteLine($"Window Creation Failed: {_sdl.GetErrorS()}");
-                return;
-            }
-
-            // 메인 루프
+            CreateWindow();
             MainLoop();
 
-            // 정리
-            _sdl.DestroyWindow(_window);
-            _sdl.Quit();
+            _window?.Close();
         }
 
-        static unsafe void MainLoop()
+        static void CreateWindow()
         {
-            Event evt;
-
-            while (_running)
+            WindowCreateInfo windowCI = new WindowCreateInfo()
             {
-                // 이벤트 처리
-                while (_sdl.PollEvent(&evt) != 0)
-                {
-                    if (evt.Type == (uint)EventType.Quit)
-                    {
-                        _running = false;
-                    }
-                    else if (evt.Type == (uint)EventType.Keydown)
-                    {
-                        if (evt.Key.Keysym.Sym == (int)KeyCode.Escape)
-                        {
-                            _running = false;
-                        }
-                    }
-                }
+                X = 100, Y = 100,
+                WindowWidth = 1280, WindowHeight = 720,
+                WindowTitle = "IronRose Engine"
+            };
+            _window = VeldridStartup.CreateWindow(ref windowCI);
+        }
 
+        static void MainLoop()
+        {
+            while (_window != null && _window.Exists)
+            {
+                _window.PumpEvents();
                 // TODO: 렌더링 (Phase 1.2에서 구현)
-
                 System.Threading.Thread.Sleep(16); // ~60 FPS
             }
         }
@@ -104,16 +64,21 @@ namespace IronRose.Bootstrapper
 ```csharp
 using Veldrid;
 using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
 
 namespace IronRose.Rendering
 {
     public class GraphicsManager
     {
-        private GraphicsDevice _graphicsDevice = null!;
-        private CommandList _commandList = null!;
+        private GraphicsDevice? _graphicsDevice;
+        private CommandList? _commandList;
+        private Sdl2Window? _window;
 
-        public unsafe void Initialize(IntPtr windowHandle)
+        public void Initialize(object? windowHandle = null)
         {
+            if (windowHandle is Sdl2Window window)
+                _window = window;
+
             var options = new GraphicsDeviceOptions
             {
                 PreferStandardClipSpaceYDirection = true,
@@ -121,25 +86,15 @@ namespace IronRose.Rendering
                 Debug = true
             };
 
-            // Vulkan 디바이스 생성
-            _graphicsDevice = GraphicsDevice.CreateVulkan(
-                options,
-                windowHandle
-            );
-
+            _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_window, options, GraphicsBackend.Vulkan);
             _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
-
-            Console.WriteLine($"Graphics Device Created: {_graphicsDevice.BackendType}");
         }
 
         public void Render()
         {
-            _commandList.Begin();
-
-            // IronRose 테마 색상으로 화면 클리어 (금속의 백장미)
-            _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
+            _commandList!.Begin();
+            _commandList.SetFramebuffer(_graphicsDevice!.SwapchainFramebuffer);
             _commandList.ClearColorTarget(0, new RgbaFloat(0.902f, 0.863f, 0.824f, 1.0f));
-
             _commandList.End();
 
             _graphicsDevice.SubmitCommands(_commandList);
@@ -155,34 +110,26 @@ namespace IronRose.Rendering
 }
 ```
 
-**Program.cs 업데이트:**
+**EngineCore.cs (IronRose.Engine):**
 ```csharp
-private static GraphicsManager _graphics = null!;
+using IronRose.Rendering;
+using Veldrid.Sdl2;
 
-static unsafe void Main(string[] args)
+namespace IronRose.Engine
 {
-    // ... SDL 초기화 ...
-
-    // 그래픽 초기화
-    _graphics = new GraphicsManager();
-    _graphics.Initialize((IntPtr)_window);
-
-    MainLoop();
-
-    // 정리
-    _graphics.Dispose();
-    _sdl.DestroyWindow(_window);
-    _sdl.Quit();
-}
-
-static void MainLoop()
-{
-    while (_running)
+    public class EngineCore
     {
-        // ... 이벤트 처리 ...
+        private GraphicsManager? _graphicsManager;
 
-        // 렌더링
-        _graphics.Render();
+        public void Initialize(Sdl2Window? window = null)
+        {
+            _graphicsManager = new GraphicsManager();
+            _graphicsManager.Initialize(window);
+        }
+
+        public void Update(double deltaTime) { }
+        public void Render() => _graphicsManager?.Render();
+        public void Shutdown() => _graphicsManager?.Dispose();
     }
 }
 ```

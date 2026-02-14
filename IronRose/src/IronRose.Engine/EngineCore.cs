@@ -1,62 +1,34 @@
-﻿using IronRose.Contracts;
+using IronRose.Rendering;
+using Veldrid.Sdl2;
 using System;
-using System.Linq;
 
 namespace IronRose.Engine
 {
-    public class EngineCore : IEngineCore
+    public class EngineCore
     {
-        private object? _graphicsManager;
-        private object? _scriptDomain;
-        private object? _window;
+        private GraphicsManager? _graphicsManager;
+        private Sdl2Window? _window;
         private int _frameCount = 0;
 
-        public void Initialize(object? windowHandle = null)
+        public void Initialize(Sdl2Window? window = null)
         {
-            Console.WriteLine("╔════════════════════════════════════════════════════╗");
-            Console.WriteLine("║ ✨ Engine.dll Hot-Reloadable! ✨                  ║");
-            Console.WriteLine("╚════════════════════════════════════════════════════╝");
             Console.WriteLine("[Engine] EngineCore initializing...");
 
-            _window = windowHandle;
+            _window = window;
 
-            // 리플렉션으로 GraphicsManager 생성
-            var renderingAssembly = AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(a => a.GetName().Name == "IronRose.Rendering");
+            _graphicsManager = new GraphicsManager();
 
-            if (renderingAssembly != null)
+            if (_window != null)
             {
-                var graphicsManagerType = renderingAssembly.GetType("IronRose.Rendering.GraphicsManager");
-                if (graphicsManagerType != null)
-                {
-                    _graphicsManager = Activator.CreateInstance(graphicsManagerType);
-
-                    // Initialize(window) 호출
-                    if (_window != null)
-                    {
-                        Console.WriteLine($"[Engine] Passing window to GraphicsManager: {_window.GetType().Name}");
-                        var initMethod = graphicsManagerType.GetMethod("Initialize");
-                        initMethod?.Invoke(_graphicsManager, new[] { _window });
-                        Console.WriteLine("[Engine] GraphicsManager initialized with existing window");
-                    }
-                    else
-                    {
-                        Console.WriteLine("[Engine] No window provided, GraphicsManager will create new one");
-                        var initMethod = graphicsManagerType.GetMethod("Initialize");
-                        initMethod?.Invoke(_graphicsManager, new object?[] { null });
-                    }
-                }
+                Console.WriteLine($"[Engine] Passing window to GraphicsManager: {_window.GetType().Name}");
+                _graphicsManager.Initialize(_window);
+                Console.WriteLine("[Engine] GraphicsManager initialized with existing window");
             }
             else
             {
-                Console.WriteLine("[Engine] ERROR: Rendering assembly not found");
+                Console.WriteLine("[Engine] No window provided, GraphicsManager will create new one");
+                _graphicsManager.Initialize(null);
             }
-        }
-
-        public bool ProcessEvents()
-        {
-            // Bootstrapper가 처리하므로 항상 true 반환
-            return true;
         }
 
         public void Update(double deltaTime)
@@ -74,24 +46,16 @@ namespace IronRose.Engine
             {
                 var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 var filename = $"logs/screenshot_frame{_frameCount}_{timestamp}.png";
-
-                var requestMethod = _graphicsManager.GetType().GetMethod("RequestScreenshot");
-                requestMethod?.Invoke(_graphicsManager, new object[] { filename });
+                _graphicsManager.RequestScreenshot(filename);
             }
 
-            var method = _graphicsManager.GetType().GetMethod("Render");
-            method?.Invoke(_graphicsManager, null);
+            _graphicsManager.Render();
         }
 
         public void Shutdown()
         {
             Console.WriteLine("[Engine] EngineCore shutting down...");
-
-            if (_graphicsManager != null)
-            {
-                var method = _graphicsManager.GetType().GetMethod("Dispose");
-                method?.Invoke(_graphicsManager, null);
-            }
+            _graphicsManager?.Dispose();
         }
     }
 }
