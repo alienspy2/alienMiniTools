@@ -17,6 +17,11 @@ namespace IronRose.Engine
         private IWindow? _window;
         private int _frameCount = 0;
         private AssetDatabase? _assetDatabase;
+        private PhysicsManager? _physicsManager;
+
+        // Fixed timestep (물리)
+        private const float FixedDeltaTime = 1f / 50f;
+        private double _fixedAccumulator = 0;
 
         // 스크립팅
         private ScriptCompiler? _compiler;
@@ -74,6 +79,10 @@ namespace IronRose.Engine
 
             // 플러그인 API 연결
             IronRose.API.Screen.SetClearColorImpl = (r, g, b) => _graphicsManager.SetClearColor(r, g, b);
+
+            // PhysicsManager 초기화
+            _physicsManager = new PhysicsManager();
+            _physicsManager.Initialize();
 
             // AssetDatabase 초기화
             _assetDatabase = new AssetDatabase();
@@ -210,6 +219,17 @@ namespace IronRose.Engine
                 CompileAndLoadLiveCode(liveCodePath);
             }
 
+            // Fixed timestep 물리 루프
+            _fixedAccumulator += deltaTime;
+            while (_fixedAccumulator >= FixedDeltaTime)
+            {
+                Time.fixedDeltaTime = FixedDeltaTime;
+                Time.fixedTime += FixedDeltaTime;
+                _physicsManager?.FixedUpdate(FixedDeltaTime);
+                SceneManager.FixedUpdate(FixedDeltaTime);
+                _fixedAccumulator -= FixedDeltaTime;
+            }
+
             // Legacy 스크립트 Update 호출
             _scriptDomain?.Update();
 
@@ -262,6 +282,7 @@ namespace IronRose.Engine
             Application.QuitAction = null;
             SceneManager.Clear();
             _assetDatabase?.UnloadAll();
+            _physicsManager?.Dispose();
             _liveCodeWatcher?.Dispose();
             _renderSystem?.Dispose();
             _graphicsManager?.Dispose();

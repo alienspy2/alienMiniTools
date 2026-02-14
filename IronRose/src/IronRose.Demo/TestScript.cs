@@ -28,7 +28,8 @@ public class TestScript : MonoBehaviour
         Debug.Log("[2] Asset Import");
         Debug.Log("[3] Sprite Renderer");
         Debug.Log("[4] Text Renderer");
-        Debug.Log("[5] (reserved)");
+        Debug.Log("[5] 3D Physics");
+        Debug.Log("[6] 2D Physics");
         Debug.Log("[F1] Wireframe toggle | [ESC] Quit");
         Debug.Log("==============================");
 
@@ -48,6 +49,7 @@ public class TestScript : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Alpha3)) LoadDemo(3);
         if (Input.GetKeyDown(KeyCode.Alpha4)) LoadDemo(4);
         if (Input.GetKeyDown(KeyCode.Alpha5)) LoadDemo(5);
+        if (Input.GetKeyDown(KeyCode.Alpha6)) LoadDemo(6);
 
         // Wireframe toggle
         if (Input.GetKeyDown(KeyCode.F1))
@@ -111,7 +113,15 @@ public class TestScript : MonoBehaviour
                 break;
 
             case 5:
-                Debug.Log("[Demo] Demo 5 not yet implemented");
+                var go5 = new GameObject("PhysicsDemo3D");
+                go5.AddComponent<PhysicsDemo3D>();
+                Debug.Log("[Demo] >> 3D Physics");
+                break;
+
+            case 6:
+                var go6 = new GameObject("PhysicsDemo2D");
+                go6.AddComponent<PhysicsDemo2D>();
+                Debug.Log("[Demo] >> 2D Physics");
                 break;
         }
 
@@ -139,7 +149,8 @@ public class TestScript : MonoBehaviour
                  + "[2] Asset Import\n"
                  + "[3] Sprite Renderer\n"
                  + "[4] Text Renderer\n"
-                 + "[5] (reserved)\n"
+                 + "[5] 3D Physics\n"
+                 + "[6] 2D Physics\n"
                  + "[F1] Wireframe | [ESC] Quit";
         tr.color = Color.black;
         tr.alignment = TextAlignment.Left;

@@ -530,109 +530,83 @@ public class TextureImporter
 
 ## **Phase 6: 물리 엔진 통합 (선택사항)**
 
+> 상세 계획: [Phase6_PhysicsEngine.md](Phase6_PhysicsEngine.md)
+
 ### 목표
 3D 및 2D 물리 시뮬레이션을 통합하여 Unity의 물리 기능을 재현합니다.
 
 > **참고:** 물리 엔진은 모든 게임에 필수는 아닙니다.
 > 물리가 필요한 게임을 만들 때 이 Phase를 진행하세요.
 
+### 아키텍처
+- **IronRose.Physics**: BepuPhysics v2.4.0 + Aether.Physics2D v2.2.0 순수 래퍼 (System.Numerics 타입)
+- **IronRose.Engine**: Unity API 래퍼 (Component 상속) + PhysicsManager 통합
+
 ### 작업 항목
 
-#### 6.1 3D 물리: BepuPhysics v2 통합
+#### 6.0 사전 작업: FixedUpdate 인프라
+- MonoBehaviour.FixedUpdate() + 충돌 콜백 (OnCollisionEnter/Stay/Exit, OnTriggerEnter/Stay/Exit)
+- EngineCore Fixed timestep 누적기 (50Hz)
+- SceneManager.FixedUpdate() 루프
+- Time.fixedDeltaTime
+
+#### 6.1 3D 물리: BepuPhysics v2
 ```csharp
-// Unity 스타일 Rigidbody 래퍼
-public class Rigidbody : Component
+// IronRose.Physics — 순수 래퍼
+public class PhysicsWorld3D : IDisposable
 {
-    private BepuPhysics.BodyHandle _bepuBody;
-
-    public Vector3 velocity { get; set; }
-    public float mass { get; set; }
-    public bool useGravity { get; set; }
-
-    public void AddForce(Vector3 force);
-    public void AddTorque(Vector3 torque);
+    public void Initialize(Vector3 gravity);
+    public void Step(float deltaTime);
+    public BodyHandle AddDynamicBody(Vector3 pos, Quaternion rot, TypedIndex shape, float mass);
+    public TypedIndex AddBoxShape(float x, float y, float z);
 }
 
-// Collider 래퍼
-public class BoxCollider : Component
-{
-    public Vector3 size;
-    private BepuPhysics.CollidableHandle _collider;
-}
-
-public class SphereCollider : Component
-{
-    public float radius;
-}
+// IronRose.Engine/UnityEngine — Unity API
+public class Rigidbody : Component { /* velocity, mass, AddForce, SyncFromPhysics */ }
+public abstract class Collider : Component { /* isTrigger, center */ }
+public class BoxCollider : Collider { /* size */ }
+public class SphereCollider : Collider { /* radius */ }
 ```
 
-#### 6.2 2D 물리: Box2D 통합
+#### 6.2 2D 물리: Aether.Physics2D
 ```csharp
-public class Rigidbody2D : Component
+// IronRose.Physics — 순수 래퍼
+public class PhysicsWorld2D : IDisposable
 {
-    private Box2D.Body _box2dBody;
-
-    public Vector2 velocity { get; set; }
-    public float mass { get; set; }
-    public float gravityScale { get; set; }
+    public void Initialize(float gravityX, float gravityY);
+    public void Step(float deltaTime);
+    public Body CreateDynamicBody(float posX, float posY);
+    public void AttachRectangle(Body body, float w, float h, float density);
 }
 
-public class BoxCollider2D : Component
-{
-    public Vector2 size;
-}
-
-public class CircleCollider2D : Component
-{
-    public float radius;
-}
+// IronRose.Engine/UnityEngine — Unity API
+public class Rigidbody2D : Component { /* velocity, gravityScale, AddForce */ }
+public abstract class Collider2D : Component { /* isTrigger, offset */ }
+public class BoxCollider2D : Collider2D { /* size */ }
+public class CircleCollider2D : Collider2D { /* radius */ }
 ```
 
-#### 6.3 물리 시뮬레이션 루프
+#### 6.3 PhysicsManager (IronRose.Engine)
+- PhysicsWorld3D/2D 통합 관리
+- Transform ↔ Physics 양방향 동기화
+- 충돌 콜백 디스패치
+
+#### 6.4 Unity 물리 유틸리티
 ```csharp
-public class PhysicsManager
-{
-    private BepuPhysics.Simulation _simulation3D;
-    private Box2D.World _world2D;
-
-    public void FixedUpdate(float deltaTime)
-    {
-        // 3D 물리 시뮬레이션
-        _simulation3D.Timestep(deltaTime);
-
-        // 2D 물리 시뮬레이션
-        _world2D.Step(deltaTime, velocityIterations: 8, positionIterations: 3);
-
-        // 물리 결과를 Transform에 동기화
-        SyncPhysicsToTransforms();
-    }
-}
-```
-
-#### 6.4 Unity 물리 API 호환
-```csharp
-// Unity의 Physics 유틸리티 메서드
-public static class Physics
-{
-    public static bool Raycast(Vector3 origin, Vector3 direction, out RaycastHit hit);
-    public static Collider[] OverlapSphere(Vector3 position, float radius);
-}
-
-public static class Physics2D
-{
-    public static RaycastHit2D Raycast(Vector2 origin, Vector2 direction);
-    public static Collider2D[] OverlapCircle(Vector2 point, float radius);
-}
+public static class Physics { Raycast, OverlapSphere, CheckSphere }
+public static class Physics2D { Raycast, OverlapCircle }
+public class Collision { contacts, relativeVelocity }
 ```
 
 **검증 기준:**
 ✅ 큐브가 바닥으로 떨어지는 중력 시뮬레이션
-✅ 두 오브젝트가 충돌하면 OnCollisionEnter 콜백 호출
-✅ Raycast로 마우스 클릭한 오브젝트 감지
+✅ MonoBehaviour.FixedUpdate() 50Hz 호출
+✅ 두 오브젝트 충돌 시 OnCollisionEnter 콜백 호출 (선택)
+✅ Raycast로 마우스 클릭한 오브젝트 감지 (선택)
 
 **참고 자료:**
-- [BepuPhysics v2 Documentation](https://github.com/bepu/bepuphysics2)
-- [Box2D Manual](https://box2d.org/documentation/)
+- [BepuPhysics v2](https://github.com/bepu/bepuphysics2)
+- [Aether.Physics2D](https://github.com/tainicom/Aether.Physics2D)
 
 ---
 

@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\IronRose.Contracts\IronRose.Contracts.csproj" />
+    <ProjectReference Include="..\IronRose.Physics\IronRose.Physics.csproj" />
     <ProjectReference Include="..\IronRose.Rendering\IronRose.Rendering.csproj" />
     <ProjectReference Include="..\IronRose.Scripting\IronRose.Scripting.csproj" />
   </ItemGroup>

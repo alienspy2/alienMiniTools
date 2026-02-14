@@ -36,10 +36,27 @@ namespace UnityEngine
         public virtual void Awake() { }
         public virtual void OnEnable() { }
         public virtual void Start() { }
+        public virtual void FixedUpdate() { }
         public virtual void Update() { }
         public virtual void LateUpdate() { }
         public virtual void OnDisable() { }
         public virtual void OnDestroy() { }
+
+        // --- 3D Physics callbacks ---
+        public virtual void OnCollisionEnter(Collision collision) { }
+        public virtual void OnCollisionStay(Collision collision) { }
+        public virtual void OnCollisionExit(Collision collision) { }
+        public virtual void OnTriggerEnter(Collider other) { }
+        public virtual void OnTriggerStay(Collider other) { }
+        public virtual void OnTriggerExit(Collider other) { }
+
+        // --- 2D Physics callbacks ---
+        public virtual void OnCollisionEnter2D(Collision2D collision) { }
+        public virtual void OnCollisionStay2D(Collision2D collision) { }
+        public virtual void OnCollisionExit2D(Collision2D collision) { }
+        public virtual void OnTriggerEnter2D(Collider2D other) { }
+        public virtual void OnTriggerStay2D(Collider2D other) { }
+        public virtual void OnTriggerExit2D(Collider2D other) { }
 
         // --- Coroutines ---
         public Coroutine StartCoroutine(IEnumerator routine)

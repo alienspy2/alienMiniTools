@@ -64,6 +64,24 @@ namespace UnityEngine
         }
 
         // ================================================================
+        // Fixed Update Loop (physics)
+        // ================================================================
+
+        public static void FixedUpdate(float fixedDeltaTime)
+        {
+            for (int i = 0; i < _behaviours.Count; i++)
+            {
+                var b = _behaviours[i];
+                if (!IsActive(b)) continue;
+                try { b.FixedUpdate(); }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"Exception in FixedUpdate() of {b.GetType().Name}: {ex.Message}");
+                }
+            }
+        }
+
+        // ================================================================
         // Main Update Loop
         // ================================================================
 
@@ -416,6 +434,18 @@ namespace UnityEngine
                     if (comp is Light light)
                         Light._allLights.Remove(light);
 
+                    if (comp is Rigidbody rb3)
+                    {
+                        rb3.RemoveFromPhysics();
+                        Rigidbody._allRigidbodies.Remove(rb3);
+                    }
+
+                    if (comp is Rigidbody2D rb2d3)
+                    {
+                        rb2d3.RemoveFromPhysics();
+                        Rigidbody2D._allRigidbodies2D.Remove(rb2d3);
+                    }
+
                     if (comp is Camera cam && Camera.main == cam)
                         Camera.ClearMain();
 
@@ -458,6 +488,18 @@ namespace UnityEngine
                 if (comp is Light light)
                     Light._allLights.Remove(light);
 
+                if (comp is Rigidbody rb)
+                {
+                    rb.RemoveFromPhysics();
+                    Rigidbody._allRigidbodies.Remove(rb);
+                }
+
+                if (comp is Rigidbody2D rb2d)
+                {
+                    rb2d.RemoveFromPhysics();
+                    Rigidbody2D._allRigidbodies2D.Remove(rb2d);
+                }
+
                 comp.gameObject.RemoveComponent(comp);
                 comp._isDestroyed = true;
             }
@@ -495,6 +537,13 @@ namespace UnityEngine
             TextRenderer.ClearAll();
             Light.ClearAll();
             Camera.ClearMain();
+
+            // Clear physics registries
+            Rigidbody.ClearAll();
+            Rigidbody2D.ClearAll();
+
+            // Reset physics worlds (BepuPhysics / Aether body 제거)
+            IronRose.Engine.PhysicsManager.Instance?.Reset();
         }
 
         // ================================================================
