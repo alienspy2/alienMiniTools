@@ -11,6 +11,12 @@ namespace UnityEngine
         /// <summary>로그 출력 활성화 여부 (기본 true)</summary>
         public static bool Enabled { get; set; } = true;
 
+        /// <summary>와이어프레임 오버레이 표시 여부 (기본 false)</summary>
+        public static bool wireframe { get; set; } = false;
+
+        /// <summary>와이어프레임 색상 (기본 검정)</summary>
+        public static Color wireframeColor { get; set; } = Color.black;
+
         static Debug()
         {
             Directory.CreateDirectory("logs");

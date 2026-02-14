@@ -14,6 +14,18 @@ namespace IronRose.Rendering
         private string? _pendingScreenshot;
         private RgbaFloat _clearColor = new RgbaFloat(0.902f, 0.863f, 0.824f, 1.0f);
 
+        public GraphicsDevice? Device => _graphicsDevice;
+        public CommandList? CommandList => _commandList;
+
+        public float AspectRatio
+        {
+            get
+            {
+                if (_window == null || _window.Size.Y == 0) return 16f / 9f;
+                return (float)_window.Size.X / _window.Size.Y;
+            }
+        }
+
         public void SetClearColor(float r, float g, float b)
         {
             _clearColor = new RgbaFloat(r, g, b, 1.0f);
@@ -40,7 +52,7 @@ namespace IronRose.Rendering
                 swapchainSource,
                 (uint)_window.Size.X,
                 (uint)_window.Size.Y,
-                null,   // depthFormat
+                PixelFormat.D32_Float_S8_UInt,  // Depth buffer enabled
                 false,  // vsync
                 false   // srgb
             );
@@ -85,21 +97,21 @@ namespace IronRose.Rendering
             throw new PlatformNotSupportedException("Unsupported windowing platform");
         }
 
-        public void Render()
+        public void BeginFrame()
         {
-            if (_graphicsDevice == null || _commandList == null)
-            {
-                Console.WriteLine("[Renderer] ERROR: GraphicsDevice or CommandList is null");
-                return;
-            }
+            if (_graphicsDevice == null || _commandList == null) return;
 
             _commandList.Begin();
-
             _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
             _commandList.ClearColorTarget(0, _clearColor);
+            _commandList.ClearDepthStencil(1f);
+        }
+
+        public void EndFrame()
+        {
+            if (_graphicsDevice == null || _commandList == null) return;
 
             _commandList.End();
-
             _graphicsDevice.SubmitCommands(_commandList);
 
             // 스크린샷 요청이 있으면 SwapBuffers() 전에 캡처
@@ -110,6 +122,12 @@ namespace IronRose.Rendering
             }
 
             _graphicsDevice.SwapBuffers();
+        }
+
+        public void Render()
+        {
+            BeginFrame();
+            EndFrame();
         }
 
         public void RequestScreenshot(string filename)

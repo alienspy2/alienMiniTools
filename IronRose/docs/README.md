@@ -35,6 +35,7 @@ IronRose 게임 엔진의 상세 개발 계획 문서입니다.
   - 기본 수학 타입 (Vector3, Quaternion, Color)
   - GameObject & Component 시스템
   - MonoBehaviour 라이프사이클
+  - Unity InputSystem (액션 기반 입력: InputAction, 2DVector 컴포짓)
 
 ### 🎨 렌더링 및 에셋 (Phase 4-5)
 - **[Phase 4: 기본 렌더링 파이프라인](Phase4_BasicRendering.md)** *(5-6일)*

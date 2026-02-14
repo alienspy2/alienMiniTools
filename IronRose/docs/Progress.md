@@ -1,6 +1,6 @@
 # IronRose 개발 진행 상황
 
-**최종 업데이트**: 2026-02-14 (Phase 3.5 입력 시스템 + Silk.NET 마이그레이션)
+**최종 업데이트**: 2026-02-14 (Phase 3.5+ Unity InputSystem 구현)
 
 ---
 
@@ -13,7 +13,9 @@
 - [x] Phase 2B-0: Bootstrapper/Engine 통합 ✅
 - [x] Phase 3: Unity Architecture (GameObject, Component) ✅
 - [x] Phase 3.5: 입력 시스템 (Silk.NET 마이그레이션) ✅
-- [ ] Phase 4: 물리 엔진 통합
+- [x] Phase 3.5+: Unity InputSystem (액션 기반 입력) ✅
+- [x] Phase 3.5++: Unity 호환성 확장 (Mathf, Random, Object, Destroy, Coroutine, Transform 계층 등) ✅
+- [ ] Phase 4: 고급 렌더링 파이프라인
 - [ ] Phase 5: 스크립팅 시스템
 - [ ] Phase 6: 에셋 파이프라인
 - [ ] Phase 7: 핫 리로드
@@ -372,30 +374,158 @@ src/IronRose.Engine/UnityEngine/
 
 ---
 
+## Phase 3.5+: Unity InputSystem (액션 기반 입력) ✅
+
+**완료 날짜**: 2026-02-14
+
+### 완료된 작업
+
+#### 신규 파일 (7개)
+- [x] `UnityEngine/InputSystem/InputActionType.cs` - enum: Button, Value, PassThrough
+- [x] `UnityEngine/InputSystem/InputActionPhase.cs` - enum: Disabled, Waiting, Started, Performed, Canceled
+- [x] `UnityEngine/InputSystem/InputBinding.cs` - 바인딩 사양 + CompositeBinder (fluent `.With()` API)
+- [x] `UnityEngine/InputSystem/InputControlPath.cs` - 경로 파싱 (`<Keyboard>/space` → `KeyCode.Space`) + 레거시 Input 재활용
+- [x] `UnityEngine/InputSystem/InputAction.cs` - 핵심 액션 클래스 + CallbackContext + phase 전이 + `ReadValue<T>()`
+- [x] `UnityEngine/InputSystem/InputActionMap.cs` - 액션 그룹 (AddAction, FindAction, Enable/Disable)
+- [x] `UnityEngine/InputSystem/InputSystem.cs` - 정적 매니저 (활성 액션 추적, Update 루프)
+
+#### 수정 파일 (2개)
+- [x] `Program.cs` — `InputSystem.Update()` 호출 추가 (Input.Update() 직후)
+- [x] `LiveCode/TestScript.cs` — InputSystem 사용 데모 (WASD 2DVector 컴포짓 + Space 버튼)
+
+### 주요 설계 결정
+
+1. **레거시 Input 재활용**: InputSystem이 기존 `UnityEngine.Input` 정적 상태를 읽음 (Silk.NET 이벤트 중복 등록 없음)
+2. **Phase 전이 모델**: `Waiting → Started → Performed → Canceled`
+   - Button: 누를 때 Started+Performed, 뗄 때 Canceled
+   - Value: 매 프레임 값이 있으면 Performed 재호출
+   - PassThrough: 입력이 있는 모든 프레임에 Performed
+3. **컴포짓 바인딩**: `2DVector` (Up/Down/Left/Right → Vector2), `1DAxis` (Positive/Negative → float)
+4. **경로 파싱**: `<Keyboard>/a-z`, `<Mouse>/leftButton` 등 Unity InputSystem 경로 형식 지원
+
+### 프레임 업데이트 흐름
+```
+Program.OnUpdate()
+  → Input.Update()           // 레거시 (기존)
+  → InputSystem.Update()     // 신규: 모든 활성 InputAction 평가
+  → EngineCore.Update()      // 게임 로직
+```
+
+### 사용 예시
+```csharp
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class TestScript : MonoBehaviour
+{
+    private InputAction moveAction;
+    private InputAction jumpAction;
+
+    public override void Awake()
+    {
+        moveAction = new InputAction("Move", InputActionType.Value);
+        moveAction.AddCompositeBinding("2DVector")
+            .With("Up", "<Keyboard>/w")
+            .With("Down", "<Keyboard>/s")
+            .With("Left", "<Keyboard>/a")
+            .With("Right", "<Keyboard>/d");
+
+        jumpAction = new InputAction("Jump", InputActionType.Button, "<Keyboard>/space");
+        jumpAction.performed += ctx => Debug.Log("[InputSystem] Jump!");
+
+        moveAction.Enable();
+        jumpAction.Enable();
+    }
+
+    public override void Update()
+    {
+        Vector2 move = moveAction.ReadValue<Vector2>();
+        if (move.x != 0 || move.y != 0)
+            Debug.Log($"[InputSystem] Move: {move}");
+    }
+}
+```
+
+### 테스트 결과
+- ✅ `dotnet build` 성공 (경고 0개, 오류 0개)
+- ✅ 레거시 `UnityEngine.Input`과 `UnityEngine.InputSystem` 공존
+
+### 신규 파일 목록 (7개)
+```
+src/IronRose.Engine/UnityEngine/InputSystem/
+├── InputActionType.cs     (~10줄)
+├── InputActionPhase.cs    (~10줄)
+├── InputBinding.cs        (~30줄)
+├── InputControlPath.cs    (~170줄)
+├── InputAction.cs         (~210줄)
+├── InputActionMap.cs      (~45줄)
+└── InputSystem.cs         (~25줄)
+```
+
+---
+
+## Phase 3.5++: Unity 호환성 확장 ✅
+
+**완료 날짜**: 2026-02-14
+
+### 완료된 작업
+
+#### 신규 파일 (6개)
+- [x] `UnityEngine/Mathf.cs` — Sin, Cos, Lerp, Clamp, Clamp01, SmoothDamp, PingPong, Repeat, Approximately 등 ~40개 메서드
+- [x] `UnityEngine/Random.cs` — Range(float/int), insideUnitSphere, onUnitSphere, insideUnitCircle, rotation, ColorHSV
+- [x] `UnityEngine/Object.cs` — 기반 클래스: Destroy(deferred), DestroyImmediate, Instantiate(deep clone), FindObjectOfType/s, implicit bool
+- [x] `UnityEngine/Attributes.cs` — SerializeField, HideInInspector, Header, Range, Tooltip, Space, RequireComponent 등
+- [x] `UnityEngine/YieldInstruction.cs` — WaitForSeconds, WaitForEndOfFrame, WaitUntil, WaitWhile, CustomYieldInstruction
+- [x] `UnityEngine/Coroutine.cs` — Coroutine 핸들 (중첩 코루틴 지원)
+
+#### 기존 수정 (8개)
+- [x] `Component.cs` — Object 상속, name→gameObject 위임, tag, GetComponentInChildren/InParent, GetComponentsInChildren/InParent
+- [x] `GameObject.cs` — Object 상속, SetActive/activeSelf/activeInHierarchy, tag/layer/CompareTag, Find/FindWithTag/FindGameObjectsWithTag, AddComponent 자동 MonoBehaviour 등록
+- [x] `MonoBehaviour.cs` — OnEnable/OnDisable, enabled setter 연동, StartCoroutine(IEnumerator/string)/StopCoroutine/StopAllCoroutines, Invoke/InvokeRepeating/CancelInvoke/IsInvoking
+- [x] `Transform.cs` — parent/children 계층, SetParent(worldPositionStays), localPosition/localRotation/localScale, 월드↔로컬 좌표 자동 변환, lossyScale, LookAt, RotateAround, TransformPoint/InverseTransformPoint, Space enum
+- [x] `SceneManager.cs` — GameObject 레지스트리, 코루틴 스케줄러(WaitForSeconds/중첩/CustomYield), Invoke 타이머, Deferred Destroy 큐, activeInHierarchy 체크, 중복 등록 방지
+- [x] `Quaternion.cs` — Inverse, Normalize, normalized, Lerp/Slerp/SlerpUnclamped, RotateTowards, Angle, LookRotation, FromToRotation
+- [x] `Vector3.cs` — MoveTowards, SmoothDamp, Angle/SignedAngle, Scale, Project/ProjectOnPlane, Reflect, ClampMagnitude, Min/Max, RotateTowards, LerpUnclamped, Normalize(), Set(), indexer
+- [x] `Color.cs` — HSVToRGB, RGBToHSV
+
+### 주요 설계 결정
+
+1. **UnityEngine.Object 베이스**: Component와 GameObject가 Object를 상속. `implicit operator bool`로 Destroy된 오브젝트 null 체크 패턴 지원
+2. **Deferred Destroy**: `Object.Destroy(go, delay)` → SceneManager 큐 → 프레임 끝 처리. 자식 재귀 파괴 + OnDisable/OnDestroy 호출 + 레지스트리 정리
+3. **Transform 로컬/월드 분리**: 내부에 localPosition/localRotation 저장, position/rotation은 부모 체인 계산. SetParent(worldPositionStays) 지원
+4. **코루틴 스케줄러**: SceneManager에서 중앙 관리. WaitForSeconds 타이머, 중첩 Coroutine/IEnumerator 자동 감지, CustomYieldInstruction 지원
+5. **AddComponent 자동 등록**: MonoBehaviour를 AddComponent하면 SceneManager.RegisterBehaviour 자동 호출 (중복 방지 guard 포함)
+6. **라이프사이클 확장**: Awake → OnEnable → Start → Update → Coroutines → LateUpdate → Destroy 처리 → frameCount++
+
+### 테스트 결과
+- ✅ `dotnet build` 성공 (경고 0개, 오류 0개)
+- ✅ Demo 프로젝트 정상 실행 (60 FPS 안정)
+- ✅ 기존 모든 기능 정상 동작 (렌더링, Input, InputSystem, 핫 리로드)
+
+---
+
 ## 다음 단계: Phase 4
 
-**목표**: 기본 렌더링 파이프라인 (3D 메시 렌더링)
-
-### 예정된 작업
-- [ ] MeshRenderer, Mesh, Material 컴포넌트
-- [ ] 기본 셰이더 (GLSL → SPIR-V)
-- [ ] Camera 시스템
-- [ ] 큐브 프리미티브 생성 및 렌더링
+**목표**: 고급 렌더링 파이프라인
 
 ---
 
 ## 개발 메트릭
 
 ### 코드 통계
-- **프로젝트 수**: 6개 (Engine, Contracts, Scripting, Rendering, AssetPipeline, Physics)
-- **총 라인 수**: ~1700줄 (Phase 3)
+- **프로젝트 수**: 7개 (Engine, Demo, Contracts, Scripting, Rendering, AssetPipeline, Physics)
+- **총 라인 수**: ~5400줄 (Phase 3.5++)
   - Engine/Program.cs: ~120줄
-  - Engine/EngineCore.cs: ~200줄
-  - Engine/UnityEngine/*.cs: ~530줄 (11파일)
+  - Engine/EngineCore.cs: ~250줄
+  - Engine/RenderSystem.cs: ~180줄
+  - Engine/UnityEngine/*.cs: ~3300줄 (27파일)
+  - Engine/UnityEngine/InputSystem/*.cs: ~500줄 (7파일)
   - Rendering/GraphicsManager.cs: ~85줄
+  - Rendering/ShaderCompiler.cs: ~50줄
   - Scripting/ScriptCompiler.cs: ~145줄
   - Scripting/ScriptDomain.cs: ~165줄
   - Scripting/StateManager.cs: ~50줄
+  - Demo/*.cs: ~215줄
 - **NuGet 패키지**: 18개
 
 ### 빌드 통계
@@ -412,7 +542,26 @@ src/IronRose.Engine/UnityEngine/
 
 ## 변경 이력
 
-### 2026-02-14
+### 2026-02-14 (Phase 3.5++ Unity 호환성 확장)
+- **Phase 3.5++ 완료** ✅ (Unity 호환성 대폭 확장)
+  - **신규 6파일**:
+    - `Mathf.cs`: Sin, Cos, Lerp, Clamp, SmoothDamp, PingPong, Repeat, Approximately 등 ~40개 메서드
+    - `Random.cs`: Range, insideUnitSphere, onUnitSphere, insideUnitCircle, rotation, ColorHSV
+    - `Object.cs`: 기반 클래스 — Destroy(deferred), DestroyImmediate, Instantiate(deep clone), FindObjectOfType, implicit bool
+    - `Attributes.cs`: SerializeField, Header, Range, Tooltip, RequireComponent 등 Unity 어트리뷰트
+    - `YieldInstruction.cs`: WaitForSeconds, WaitForEndOfFrame, WaitUntil, WaitWhile, CustomYieldInstruction
+    - `Coroutine.cs`: 코루틴 핸들 클래스
+  - **기존 수정 8파일**:
+    - `Component.cs`: Object 상속, GetComponentInChildren/InParent
+    - `GameObject.cs`: Object 상속, SetActive/activeSelf/activeInHierarchy, Find/FindWithTag, tag/layer
+    - `MonoBehaviour.cs`: OnEnable/OnDisable, StartCoroutine/StopCoroutine, Invoke/InvokeRepeating/CancelInvoke
+    - `Transform.cs`: parent/children 계층, localPosition/localRotation, 월드↔로컬 변환, LookAt, RotateAround
+    - `SceneManager.cs`: GO 레지스트리, 코루틴 스케줄러, Invoke 타이머, Deferred Destroy 큐
+    - `Quaternion.cs`: Inverse, Lerp/Slerp, LookRotation, RotateTowards, FromToRotation, Angle
+    - `Vector3.cs`: MoveTowards, SmoothDamp, Angle/SignedAngle, Scale, Project, Reflect, ClampMagnitude
+    - `Color.cs`: HSVToRGB, RGBToHSV
+  - UnityEngine 전체: 27파일 ~3300줄 + InputSystem 7파일 ~500줄
+  - Demo 프로젝트 정상 실행 (60 FPS)
 - **Debug 토글 & ImageSharp 취약성 수정**
   - `Debug.Enabled` 프로퍼티 추가 (로그 출력 ON/OFF 토글)
   - `ScreenCaptureEnabled` ON/OFF 토글 테스트 통과
@@ -440,6 +589,17 @@ src/IronRose.Engine/UnityEngine/
     - anyKey, anyKeyDown
   - **KeyCode enum** + Silk.NET.Input.Key 매핑 (A-Z, 0-9, F1-F12, 화살표, 수정자, 키패드)
   - LiveCode TestScript에 WASD/마우스 입력 데모 추가
+- **Phase 3.5+ 완료** ✅ (Unity InputSystem - 액션 기반 입력)
+  - **UnityEngine.InputSystem 네임스페이스** (7개 신규 파일)
+    - InputAction: 콜백 기반 입력 (started/performed/canceled)
+    - InputActionType: Button, Value, PassThrough
+    - InputActionPhase: Disabled → Waiting → Started → Performed → Canceled
+    - InputBinding + CompositeBinder: 2DVector/1DAxis 컴포짓 바인딩
+    - InputControlPath: `<Keyboard>/space` 경로 파싱 → 레거시 Input 재활용
+    - InputActionMap: 액션 그룹 관리
+    - InputSystem: 정적 매니저 (Update 루프 연동)
+  - Program.cs에 `InputSystem.Update()` 추가 (Input.Update() 직후)
+  - TestScript에 InputSystem 데모 추가 (WASD 2DVector + Space 버튼 콜백)
 
 ### 2026-02-13
 - **Phase 0 완료** ✅

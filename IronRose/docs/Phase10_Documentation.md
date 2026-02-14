@@ -149,18 +149,45 @@ public class PlayerController : MonoBehaviour
 
     void Update()
     {
-        // TODO: Input 시스템 구현 필요
-        float h = 0; // Input.GetAxis("Horizontal");
-        float v = 0; // Input.GetAxis("Vertical");
+        float h = Input.GetAxis("Horizontal");
+        float v = Input.GetAxis("Vertical");
 
         transform.Translate(new Vector3(h, 0, v) * speed * Time.deltaTime);
     }
 }
 ```
 
+**InputSystem 방식도 지원:**
+```csharp
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class PlayerController : MonoBehaviour
+{
+    private InputAction moveAction;
+
+    public override void Awake()
+    {
+        moveAction = new InputAction("Move", InputActionType.Value);
+        moveAction.AddCompositeBinding("2DVector")
+            .With("Up", "<Keyboard>/w")
+            .With("Down", "<Keyboard>/s")
+            .With("Left", "<Keyboard>/a")
+            .With("Right", "<Keyboard>/d");
+        moveAction.Enable();
+    }
+
+    public override void Update()
+    {
+        Vector2 move = moveAction.ReadValue<Vector2>();
+        transform.Translate(new Vector3(move.x, 0, move.y) * 5f * Time.deltaTime);
+    }
+}
+```
+
 ## 알려진 차이점
 
-1. **Input 시스템**: 아직 미구현. SDL 입력을 직접 사용하거나 자체 구현 필요.
+1. ~~**Input 시스템**: 아직 미구현.~~ → ✅ 레거시 Input + InputSystem 모두 구현 완료
 2. **Resources.Load()**: AssetDatabase.Load<T>()로 대체.
 3. **Coroutines**: 아직 미지원. async/await 사용 권장.
 ```

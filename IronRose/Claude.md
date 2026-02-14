@@ -59,10 +59,10 @@ var ironRoseColor32 = new Color32(230, 220, 210, 255);
 dotnet build
 
 # 2. 실행 파일 테스트
-dotnet run --project src/IronRose.Engine
+dotnet run --project src/IronRose.Demo
 
 # 또는 직접 실행
-./src/IronRose.Engine/bin/Debug/net10.0/IronRose.Engine
+./src/IronRose.Demo/bin/Debug/net10.0/IronRose.Demo
 ```
 
 **중요**: 코드 레벨 유닛 테스트만으로는 부족합니다. 반드시 빌드 후 실제 실행 파일을 실행하여 통합 테스트를 수행해야 합니다.
@@ -138,7 +138,13 @@ Console.WriteLine($"[Physics] Timestep: {deltaTime:F4}s");
 3. 즉시 로드 및 실행
 ```
 
-### 5. AI 자동화를 위한 제어 인터페이스
+### 5. 스크립트 편입 (`/digest`)
+
+엔진 실행이 종료된 후, 핫 리로드로 검증이 완료된 LiveCode 스크립트를 `/digest` 커맨드로 `src/IronRose.Demo/` 프로젝트에 편입합니다.
+- LiveCode에서 테스트 완료된 `.cs` 파일을 Demo 프로젝트로 이동
+- LiveCode 디렉토리는 항상 실험/개발 중인 스크립트만 유지
+
+### 6. AI 자동화를 위한 제어 인터페이스
 
 엔진은 JSON 기반 명령 파일을 통해 자동화 가능해야 합니다:
 
@@ -165,20 +171,24 @@ Console.WriteLine($"[Physics] Timestep: {deltaTime:F4}s");
 
 ---
 
-## 테스트 디렉토리 구조
+## 프로젝트 디렉토리 구조
 
 ```
 IronRose/
 ├── .claude/
-│   ├── test_commands.json    # AI 자동화 명령
+│   ├── commands/              # Claude 커스텀 커맨드
+│   ├── test_commands.json     # AI 자동화 명령
 │   └── test_outputs/          # 테스트 결과물 (스크린샷 등)
-├── tests/
-│   ├── unit/                  # 유닛 테스트
-│   └── integration/           # 통합 테스트
-└── samples/                   # 예제 프로젝트
-    ├── 01_HelloWorld/
-    ├── 02_RotatingCube/
-    └── 03_AIGeneratedScene/
+├── Shaders/                   # 셰이더 파일
+├── src/
+│   ├── IronRose.Engine/       # 엔진 코어 (라이브러리)
+│   ├── IronRose.Demo/         # 실행 진입점 및 데모 스크립트
+│   ├── IronRose.Rendering/    # 렌더링 파이프라인
+│   ├── IronRose.Scripting/    # 스크립팅 시스템
+│   ├── IronRose.Physics/      # 물리 엔진
+│   ├── IronRose.AssetPipeline/ # 에셋 파이프라인
+│   └── IronRose.Contracts/    # 공통 인터페이스
+└── docs/                      # 문서
 ```
 
 ---

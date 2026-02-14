@@ -38,6 +38,17 @@ namespace UnityEngine
             }
         }
 
+        public Quaternion normalized
+        {
+            get
+            {
+                float mag = MathF.Sqrt(x * x + y * y + z * z + w * w);
+                if (mag < 1e-10f) return identity;
+                float inv = 1f / mag;
+                return new Quaternion(x * inv, y * inv, z * inv, w * inv);
+            }
+        }
+
         public static Quaternion Euler(float x, float y, float z)
         {
             const float deg2rad = MathF.PI / 180f;
@@ -67,6 +78,165 @@ namespace UnityEngine
             return new Quaternion(axis.x * s, axis.y * s, axis.z * s, MathF.Cos(rad));
         }
 
+        public static Quaternion Inverse(Quaternion q)
+        {
+            float dot = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+            if (dot < 1e-10f) return identity;
+            float inv = 1f / dot;
+            return new Quaternion(-q.x * inv, -q.y * inv, -q.z * inv, q.w * inv);
+        }
+
+        public static Quaternion Normalize(Quaternion q) => q.normalized;
+
+        public static Quaternion Lerp(Quaternion a, Quaternion b, float t)
+        {
+            t = Math.Clamp(t, 0f, 1f);
+            return LerpUnclamped(a, b, t);
+        }
+
+        public static Quaternion LerpUnclamped(Quaternion a, Quaternion b, float t)
+        {
+            float dot = Dot(a, b);
+            if (dot < 0f)
+                b = new Quaternion(-b.x, -b.y, -b.z, -b.w);
+
+            return new Quaternion(
+                a.x + (b.x - a.x) * t,
+                a.y + (b.y - a.y) * t,
+                a.z + (b.z - a.z) * t,
+                a.w + (b.w - a.w) * t
+            ).normalized;
+        }
+
+        public static Quaternion Slerp(Quaternion a, Quaternion b, float t)
+        {
+            t = Math.Clamp(t, 0f, 1f);
+            return SlerpUnclamped(a, b, t);
+        }
+
+        public static Quaternion SlerpUnclamped(Quaternion a, Quaternion b, float t)
+        {
+            float dot = Dot(a, b);
+            if (dot < 0f)
+            {
+                b = new Quaternion(-b.x, -b.y, -b.z, -b.w);
+                dot = -dot;
+            }
+
+            if (dot > 0.9995f)
+            {
+                // Very close — use linear interpolation
+                return LerpUnclamped(a, b, t);
+            }
+
+            float theta = MathF.Acos(dot);
+            float sinTheta = MathF.Sin(theta);
+            float wa = MathF.Sin((1f - t) * theta) / sinTheta;
+            float wb = MathF.Sin(t * theta) / sinTheta;
+
+            return new Quaternion(
+                wa * a.x + wb * b.x,
+                wa * a.y + wb * b.y,
+                wa * a.z + wb * b.z,
+                wa * a.w + wb * b.w
+            );
+        }
+
+        public static Quaternion RotateTowards(Quaternion from, Quaternion to, float maxDegreesDelta)
+        {
+            float angle = Angle(from, to);
+            if (angle == 0f) return to;
+            return SlerpUnclamped(from, to, MathF.Min(1f, maxDegreesDelta / angle));
+        }
+
+        public static float Angle(Quaternion a, Quaternion b)
+        {
+            float dot = MathF.Min(MathF.Abs(Dot(a, b)), 1f);
+            return 2f * MathF.Acos(dot) * (180f / MathF.PI);
+        }
+
+        public static Quaternion LookRotation(Vector3 forward, Vector3 upwards = default)
+        {
+            if (upwards == Vector3.zero) upwards = Vector3.up;
+
+            forward = forward.normalized;
+            if (forward.sqrMagnitude < 1e-10f) return identity;
+
+            Vector3 right = Vector3.Cross(upwards, forward).normalized;
+            if (right.sqrMagnitude < 1e-10f)
+            {
+                // forward is parallel to upwards, pick arbitrary up
+                right = Vector3.Cross(Vector3.right, forward).normalized;
+                if (right.sqrMagnitude < 1e-10f)
+                    right = Vector3.Cross(Vector3.forward, forward).normalized;
+            }
+            upwards = Vector3.Cross(forward, right);
+
+            float m00 = right.x, m01 = upwards.x, m02 = forward.x;
+            float m10 = right.y, m11 = upwards.y, m12 = forward.y;
+            float m20 = right.z, m21 = upwards.z, m22 = forward.z;
+
+            float trace = m00 + m11 + m22;
+            Quaternion q;
+
+            if (trace > 0f)
+            {
+                float s = MathF.Sqrt(trace + 1f) * 2f;
+                q = new Quaternion(
+                    (m21 - m12) / s,
+                    (m02 - m20) / s,
+                    (m10 - m01) / s,
+                    0.25f * s);
+            }
+            else if (m00 > m11 && m00 > m22)
+            {
+                float s = MathF.Sqrt(1f + m00 - m11 - m22) * 2f;
+                q = new Quaternion(
+                    0.25f * s,
+                    (m01 + m10) / s,
+                    (m02 + m20) / s,
+                    (m21 - m12) / s);
+            }
+            else if (m11 > m22)
+            {
+                float s = MathF.Sqrt(1f + m11 - m00 - m22) * 2f;
+                q = new Quaternion(
+                    (m01 + m10) / s,
+                    0.25f * s,
+                    (m12 + m21) / s,
+                    (m02 - m20) / s);
+            }
+            else
+            {
+                float s = MathF.Sqrt(1f + m22 - m00 - m11) * 2f;
+                q = new Quaternion(
+                    (m02 + m20) / s,
+                    (m12 + m21) / s,
+                    0.25f * s,
+                    (m10 - m01) / s);
+            }
+
+            return q.normalized;
+        }
+
+        public static Quaternion FromToRotation(Vector3 fromDirection, Vector3 toDirection)
+        {
+            float dot = Vector3.Dot(fromDirection.normalized, toDirection.normalized);
+            if (dot >= 1f) return identity;
+            if (dot <= -1f)
+            {
+                // 180-degree rotation
+                var axis = Vector3.Cross(Vector3.right, fromDirection);
+                if (axis.sqrMagnitude < 1e-6f)
+                    axis = Vector3.Cross(Vector3.up, fromDirection);
+                return AngleAxis(180f, axis.normalized);
+            }
+
+            var cross = Vector3.Cross(fromDirection, toDirection);
+            return new Quaternion(cross.x, cross.y, cross.z, 1f + dot).normalized;
+        }
+
+        // --- Operators ---
         public static Quaternion operator *(Quaternion a, Quaternion b) => new(
             a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
             a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,

@@ -207,7 +207,7 @@ public class TestScript
 
 ---
 
-## **Phase 3: Unity Architecture 구현** ✅ (2026-02-14 완료)
+## **Phase 3: Unity Architecture 구현** ✅ (2026-02-14 완료, 3.5++ 호환성 확장 포함)
 
 ### 목표
 Unity의 GameObject/Component 아키텍처를 **있는 그대로** 구현합니다.
@@ -363,6 +363,42 @@ public static class Debug
     public static void LogWarning(object message) => Console.WriteLine($"[WARN] {message}");
     public static void LogError(object message) => Console.WriteLine($"[ERROR] {message}");
 }
+```
+
+#### 3.6 Unity InputSystem (액션 기반 입력) ✅
+기존 `UnityEngine.Input` (레거시)을 유지하면서, Unity 새 Input System (`UnityEngine.InputSystem`) API를 구현합니다.
+기존 Silk.NET 입력 인프라 위에 액션 기반 API 레이어를 구축합니다.
+
+```csharp
+using UnityEngine.InputSystem;
+
+var moveAction = new InputAction("Move", InputActionType.Value);
+moveAction.AddCompositeBinding("2DVector")
+    .With("Up", "<Keyboard>/w")
+    .With("Down", "<Keyboard>/s")
+    .With("Left", "<Keyboard>/a")
+    .With("Right", "<Keyboard>/d");
+
+var jumpAction = new InputAction("Jump", InputActionType.Button, "<Keyboard>/space");
+jumpAction.performed += ctx => Debug.Log("Jump!");
+
+moveAction.Enable();
+jumpAction.Enable();
+
+// Update에서:
+Vector2 move = moveAction.ReadValue<Vector2>();
+```
+
+**구현 파일 (7개):**
+```
+UnityEngine/InputSystem/
+├── InputActionType.cs      # enum: Button, Value, PassThrough
+├── InputActionPhase.cs     # enum: Disabled, Waiting, Started, Performed, Canceled
+├── InputBinding.cs         # 바인딩 사양 + CompositeBinder
+├── InputControlPath.cs     # 경로 파싱 ("<Keyboard>/space" → KeyCode)
+├── InputAction.cs          # 핵심 액션 클래스 + CallbackContext
+├── InputActionMap.cs       # 액션 그룹
+└── InputSystem.cs          # 정적 매니저 (Update 루프 연동)
 ```
 
 **검증 기준:**
