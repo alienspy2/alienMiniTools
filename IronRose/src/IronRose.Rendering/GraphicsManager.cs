@@ -13,6 +13,12 @@ namespace IronRose.Rendering
         private CommandList? _commandList;
         private Sdl2Window? _window;
         private string? _pendingScreenshot;
+        private RgbaFloat _clearColor = new RgbaFloat(0.902f, 0.863f, 0.824f, 1.0f);
+
+        public void SetClearColor(float r, float g, float b)
+        {
+            _clearColor = new RgbaFloat(r, g, b, 1.0f);
+        }
 
         public void Initialize(object? windowHandle = null)
         {
@@ -73,9 +79,8 @@ namespace IronRose.Rendering
 
             _commandList.Begin();
 
-            // IronRose 테마 색상 (금속의 백장미)
             _commandList.SetFramebuffer(_graphicsDevice.SwapchainFramebuffer);
-            _commandList.ClearColorTarget(0, new RgbaFloat(1.0f, 0.0f, 0.0f, 1.0f));
+            _commandList.ClearColorTarget(0, _clearColor);
 
             _commandList.End();
 

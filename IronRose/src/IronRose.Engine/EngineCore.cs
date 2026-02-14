@@ -1,6 +1,10 @@
+using IronRose.API;
 using IronRose.Rendering;
+using IronRose.Scripting;
 using Veldrid.Sdl2;
 using System;
+using System.IO;
+using System.Linq;
 
 namespace IronRose.Engine
 {
@@ -9,6 +13,13 @@ namespace IronRose.Engine
         private GraphicsManager? _graphicsManager;
         private Sdl2Window? _window;
         private int _frameCount = 0;
+
+        // LiveCode 스크립팅
+        private ScriptCompiler? _compiler;
+        private ScriptDomain? _scriptDomain;
+        private FileSystemWatcher? _liveCodeWatcher;
+        private bool _reloadRequested = false;
+        private DateTime _lastReloadTime = DateTime.MinValue;
 
         public void Initialize(Sdl2Window? window = null)
         {
@@ -29,11 +40,98 @@ namespace IronRose.Engine
                 Console.WriteLine("[Engine] No window provided, GraphicsManager will create new one");
                 _graphicsManager.Initialize(null);
             }
+
+            // 플러그인 API 연결
+            Screen.SetClearColorImpl = (r, g, b) => _graphicsManager.SetClearColor(r, g, b);
+
+            // LiveCode 스크립팅 초기화
+            InitializeScripting();
+        }
+
+        private void InitializeScripting()
+        {
+            Console.WriteLine("[Engine] Initializing LiveCode scripting...");
+
+            _compiler = new ScriptCompiler();
+            _compiler.AddReference(typeof(Screen)); // IronRose.Contracts (플러그인 API)
+            _scriptDomain = new ScriptDomain();
+
+            // LiveCode 디렉토리 확인
+            string liveCodePath = Path.GetFullPath("LiveCode");
+            if (!Directory.Exists(liveCodePath))
+            {
+                Console.WriteLine($"[Engine] LiveCode directory not found: {liveCodePath}");
+                return;
+            }
+
+            Console.WriteLine($"[Engine] LiveCode directory: {liveCodePath}");
+
+            // 초기 컴파일 및 로드
+            CompileAndLoadScripts(liveCodePath);
+
+            // FileSystemWatcher 설정
+            _liveCodeWatcher = new FileSystemWatcher(liveCodePath, "*.cs");
+            _liveCodeWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size;
+            _liveCodeWatcher.Changed += OnLiveCodeChanged;
+            _liveCodeWatcher.Created += OnLiveCodeChanged;
+            _liveCodeWatcher.Deleted += OnLiveCodeChanged;
+            _liveCodeWatcher.EnableRaisingEvents = true;
+
+            Console.WriteLine("[Engine] FileSystemWatcher active on LiveCode/");
+        }
+
+        private void CompileAndLoadScripts(string liveCodePath)
+        {
+            var csFiles = Directory.GetFiles(liveCodePath, "*.cs");
+            if (csFiles.Length == 0)
+            {
+                Console.WriteLine("[Engine] No .cs files found in LiveCode/");
+                return;
+            }
+
+            Console.WriteLine($"[Engine] Compiling {csFiles.Length} LiveCode files...");
+
+            var result = _compiler!.CompileFromFiles(csFiles, "LiveCode");
+            if (result.Success && result.AssemblyBytes != null)
+            {
+                if (_scriptDomain!.IsLoaded)
+                    _scriptDomain.Reload(result.AssemblyBytes);
+                else
+                    _scriptDomain.LoadScripts(result.AssemblyBytes);
+
+                Console.WriteLine("[Engine] ✅ LiveCode loaded successfully!");
+            }
+            else
+            {
+                Console.WriteLine("[Engine] ❌ LiveCode compilation failed");
+            }
+        }
+
+        private void OnLiveCodeChanged(object sender, FileSystemEventArgs e)
+        {
+            // 디바운싱 (1초 이내 중복 이벤트 무시)
+            var now = DateTime.Now;
+            if ((now - _lastReloadTime).TotalSeconds < 1.0)
+                return;
+
+            _lastReloadTime = now;
+            _reloadRequested = true;
+            Console.WriteLine($"[Engine] 🔄 LiveCode changed: {e.Name} → reload scheduled");
         }
 
         public void Update(double deltaTime)
         {
-            // TODO: GameObject/Component 업데이트 (Phase 3에서 구현)
+            // 핫 리로드 요청 처리 (메인 스레드에서)
+            if (_reloadRequested)
+            {
+                _reloadRequested = false;
+                string liveCodePath = Path.GetFullPath("LiveCode");
+                Console.WriteLine("[Engine] 🔄 Hot reloading LiveCode...");
+                CompileAndLoadScripts(liveCodePath);
+            }
+
+            // 스크립트 Update 호출
+            _scriptDomain?.Update();
         }
 
         public void Render()
@@ -45,7 +143,7 @@ namespace IronRose.Engine
             if (_frameCount == 1 || _frameCount == 60 || _frameCount % 300 == 0)
             {
                 var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                var filename = $"logs/screenshot_frame{_frameCount}_{timestamp}.png";
+                var filename = Path.Combine("logs", $"screenshot_frame{_frameCount}_{timestamp}.png");
                 _graphicsManager.RequestScreenshot(filename);
             }
 
@@ -55,6 +153,7 @@ namespace IronRose.Engine
         public void Shutdown()
         {
             Console.WriteLine("[Engine] EngineCore shutting down...");
+            _liveCodeWatcher?.Dispose();
             _graphicsManager?.Dispose();
         }
     }

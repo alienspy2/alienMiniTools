@@ -50,15 +50,32 @@ namespace IronRose.Scripting
             }
         }
 
+        public CompilationResult CompileFromFiles(string[] filePaths, string assemblyName = "DynamicScript")
+        {
+            Console.WriteLine($"[Scripting] Compiling {filePaths.Length} files: {assemblyName}");
+
+            var syntaxTrees = filePaths
+                .Where(f => File.Exists(f))
+                .Select(f => CSharpSyntaxTree.ParseText(File.ReadAllText(f), path: f))
+                .ToArray();
+
+            return CompileFromSyntaxTrees(syntaxTrees, assemblyName);
+        }
+
         public CompilationResult CompileFromSource(string sourceCode, string assemblyName = "DynamicScript")
         {
             Console.WriteLine($"[Scripting] Compiling: {assemblyName}");
 
             var syntaxTree = CSharpSyntaxTree.ParseText(sourceCode);
 
+            return CompileFromSyntaxTrees(new[] { syntaxTree }, assemblyName);
+        }
+
+        private CompilationResult CompileFromSyntaxTrees(SyntaxTree[] syntaxTrees, string assemblyName)
+        {
             var compilation = CSharpCompilation.Create(
                 assemblyName,
-                new[] { syntaxTree },
+                syntaxTrees,
                 _references,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
                     .WithOptimizationLevel(OptimizationLevel.Debug)

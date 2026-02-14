@@ -33,6 +33,10 @@ var ironRoseColor32 = new Color32(230, 220, 210, 255);
 
 ## 코딩 스타일
 
+### 크로스 플랫폼
+- **파일 경로**: 항상 `Path.Combine()`을 사용. `"foo/bar"` 또는 `"foo\\bar"` 금지.
+- **줄 끝**: LF 기본 (`.editorconfig`, `.gitattributes` 참조)
+
 ### 인코딩
 - **C# 소스 파일(.cs)**: UTF-8 with BOM 사용
 - **.editorconfig**에 명시되어 자동 적용됨
