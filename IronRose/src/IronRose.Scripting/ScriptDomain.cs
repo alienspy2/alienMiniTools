@@ -10,8 +10,19 @@ namespace IronRose.Scripting
         private AssemblyLoadContext? _currentALC;
         private Assembly? _currentAssembly;
         private readonly List<object> _scriptInstances = new();
+        private Func<Type, bool>? _typeFilter;
 
         public bool IsLoaded => _scriptInstances.Count > 0;
+
+        public void SetTypeFilter(Func<Type, bool> filter)
+        {
+            _typeFilter = filter;
+        }
+
+        public Type[] GetLoadedTypes()
+        {
+            return _currentAssembly?.GetTypes() ?? Array.Empty<Type>();
+        }
 
         public void LoadScripts(byte[] assemblyBytes)
         {
@@ -19,6 +30,18 @@ namespace IronRose.Scripting
 
             // 새로운 ALC 생성
             _currentALC = new AssemblyLoadContext($"ScriptContext_{DateTime.Now.Ticks}", isCollectible: true);
+
+            // ALC Resolving: default ALC fallback (IronRose.Engine 등 참조 해결)
+            _currentALC.Resolving += (alc, assemblyName) =>
+            {
+                // default ALC에서 이미 로드된 어셈블리 찾기
+                foreach (var loaded in AssemblyLoadContext.Default.Assemblies)
+                {
+                    if (loaded.GetName().Name == assemblyName.Name)
+                        return loaded;
+                }
+                return null;
+            };
 
             // 어셈블리 로드
             using var ms = new System.IO.MemoryStream(assemblyBytes);
@@ -95,6 +118,10 @@ namespace IronRose.Scripting
 
             foreach (var type in _currentAssembly.GetTypes())
             {
+                // TypeFilter가 설정된 경우 필터링 (MonoBehaviour 제외)
+                if (_typeFilter != null && !_typeFilter(type))
+                    continue;
+
                 // Update() 메서드가 있는 클래스만 인스턴스화
                 if (type.GetMethod("Update") != null)
                 {

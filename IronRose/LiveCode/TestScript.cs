@@ -1,20 +1,13 @@
-using System;
+using UnityEngine;
 using IronRose.API;
 
-public class TestScript
+public class TestScript : MonoBehaviour
 {
-    private int _frameCount = 0;
-
-    public void Update()
+    public override void Update()
     {
-        _frameCount++;
-
-        // 빨간색으로 변경!
         Screen.SetClearColor(1.0f, 0.0f, 0.0f);
-
-        if (_frameCount % 60 == 0)
-        {
-            Console.WriteLine($"[TestScript] Frame: {_frameCount} | ClearColor: RED");
-        }
+        transform.Rotate(0, Time.deltaTime * 45, 0);
+        if (Time.frameCount % 60 == 0)
+            Debug.Log($"[TestScript] Frame: {Time.frameCount} | Rotation: {transform.rotation}");
     }
 }

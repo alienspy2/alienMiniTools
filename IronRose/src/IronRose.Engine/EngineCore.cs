@@ -1,6 +1,7 @@
 using IronRose.API;
 using IronRose.Rendering;
 using IronRose.Scripting;
+using UnityEngine;
 using Veldrid.Sdl2;
 using System;
 using System.IO;
@@ -54,7 +55,12 @@ namespace IronRose.Engine
 
             _compiler = new ScriptCompiler();
             _compiler.AddReference(typeof(Screen)); // IronRose.Contracts (플러그인 API)
+            _compiler.AddReference(typeof(EngineCore).Assembly.Location); // IronRose.Engine (UnityEngine 타입)
             _scriptDomain = new ScriptDomain();
+
+            // MonoBehaviour 타입은 ScriptDomain의 legacy 인스턴스화에서 제외
+            var monoBehaviourType = typeof(MonoBehaviour);
+            _scriptDomain.SetTypeFilter(type => !monoBehaviourType.IsAssignableFrom(type));
 
             // LiveCode 디렉토리 확인
             string liveCodePath = Path.GetFullPath("LiveCode");
@@ -94,16 +100,46 @@ namespace IronRose.Engine
             var result = _compiler!.CompileFromFiles(csFiles, "LiveCode");
             if (result.Success && result.AssemblyBytes != null)
             {
+                // 기존 MonoBehaviour 정리 (OnDestroy 호출)
+                SceneManager.Clear();
+
                 if (_scriptDomain!.IsLoaded)
                     _scriptDomain.Reload(result.AssemblyBytes);
                 else
                     _scriptDomain.LoadScripts(result.AssemblyBytes);
+
+                // MonoBehaviour 등록
+                RegisterMonoBehaviours();
 
                 Console.WriteLine("[Engine] ✅ LiveCode loaded successfully!");
             }
             else
             {
                 Console.WriteLine("[Engine] ❌ LiveCode compilation failed");
+            }
+        }
+
+        private void RegisterMonoBehaviours()
+        {
+            var monoBehaviourType = typeof(MonoBehaviour);
+            var types = _scriptDomain!.GetLoadedTypes();
+
+            foreach (var type in types)
+            {
+                if (type.IsAbstract || type.IsInterface) continue;
+                if (!monoBehaviourType.IsAssignableFrom(type)) continue;
+
+                try
+                {
+                    var go = new GameObject(type.Name);
+                    var behaviour = (MonoBehaviour)go.AddComponent(type);
+                    SceneManager.RegisterBehaviour(behaviour);
+                    Console.WriteLine($"[Engine] Registered MonoBehaviour: {type.Name}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Engine] ERROR registering {type.Name}: {ex.Message}");
+                }
             }
         }
 
@@ -130,8 +166,11 @@ namespace IronRose.Engine
                 CompileAndLoadScripts(liveCodePath);
             }
 
-            // 스크립트 Update 호출
+            // Legacy 스크립트 Update 호출
             _scriptDomain?.Update();
+
+            // MonoBehaviour SceneManager Update 호출
+            SceneManager.Update((float)deltaTime);
         }
 
         public void Render()
@@ -153,6 +192,7 @@ namespace IronRose.Engine
         public void Shutdown()
         {
             Console.WriteLine("[Engine] EngineCore shutting down...");
+            SceneManager.Clear();
             _liveCodeWatcher?.Dispose();
             _graphicsManager?.Dispose();
         }

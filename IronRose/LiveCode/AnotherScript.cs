@@ -1,15 +1,10 @@
-using System;
+using UnityEngine;
 
-public class AnotherScript
+public class AnotherScript : MonoBehaviour
 {
-    private int _counter = 0;
-
-    public void Update()
+    public override void Update()
     {
-        _counter++;
-        if (_counter % 120 == 0)  // 2초마다
-        {
-            Console.WriteLine($"[AnotherScript] I'm alive! Counter: {_counter}");
-        }
+        if (Time.frameCount % 120 == 0)
+            Debug.Log($"[AnotherScript] I'm alive! Frame: {Time.frameCount}");
     }
 }

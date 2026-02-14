@@ -1,6 +1,6 @@
 # IronRose 개발 진행 상황
 
-**최종 업데이트**: 2026-02-13 (Phase 2A 완료)
+**최종 업데이트**: 2026-02-14 (Phase 3 완료)
 
 ---
 
@@ -11,8 +11,8 @@
 - [x] Phase 2: Roslyn 핫 리로딩 시스템 (LiveCode) ✅
 - [x] Phase 2A: Engine Core 핫 리로딩 ✅
 - [x] Phase 2B-0: Bootstrapper/Engine 통합 ✅
-- [ ] Phase 3: Unity Architecture (GameObject, Component)
-- [ ] Phase 3: 입력 시스템
+- [x] Phase 3: Unity Architecture (GameObject, Component) ✅
+- [ ] Phase 3.5: 입력 시스템
 - [ ] Phase 4: 물리 엔진 통합
 - [ ] Phase 5: 스크립팅 시스템
 - [ ] Phase 6: 에셋 파이프라인
@@ -280,33 +280,122 @@
 
 ---
 
-## 다음 단계: Phase 3
+## Phase 3: Unity Architecture ✅
 
-**목표**: Unity Architecture (GameObject, Component 시스템)
+**시작 날짜**: 2026-02-14
+**완료 날짜**: 2026-02-14
+**소요 시간**: ~2시간
+
+### 완료된 작업
+
+#### Wave 1: 수학 타입 + 유틸리티 (신규 6파일)
+- [x] `UnityEngine/Vector3.cs` - x,y,z struct, 연산자, Dot, Cross, Lerp, Distance
+- [x] `UnityEngine/Vector2.cs` - x,y struct, 기본 연산자, Vector3 implicit 변환
+- [x] `UnityEngine/Quaternion.cs` - x,y,z,w struct, Euler(), AngleAxis(), operator*
+- [x] `UnityEngine/Color.cs` - r,g,b,a struct, 프리셋 색상 (white, red, blue 등)
+- [x] `UnityEngine/Time.cs` - static deltaTime, time, frameCount (internal set)
+- [x] `UnityEngine/Debug.cs` - static Log, LogWarning, LogError
+
+#### Wave 2: Component 계층 (신규 5파일)
+- [x] `UnityEngine/Component.cs` - 기본 클래스 (gameObject, transform, GetComponent<T>)
+- [x] `UnityEngine/Transform.cs` - position, rotation, localScale, Translate(), Rotate()
+- [x] `UnityEngine/MonoBehaviour.cs` - virtual Awake/Start/Update/LateUpdate/OnDestroy
+- [x] `UnityEngine/SceneManager.cs` - RegisterBehaviour, Update(deltaTime), Clear()
+- [x] `UnityEngine/GameObject.cs` - AddComponent<T>, AddComponent(Type), GetComponent<T>
+
+#### Wave 3: 기존 파일 수정 (2파일)
+- [x] **ScriptDomain.cs 수정**
+  - `GetLoadedTypes()` 메서드 추가 (로드된 타입 노출)
+  - `SetTypeFilter(Func<Type, bool>)` 추가 (MonoBehaviour 필터링)
+  - ALC `Resolving` 이벤트 핸들러 추가 (default ALC fallback)
+- [x] **EngineCore.cs 수정**
+  - 엔진 어셈블리 참조 추가 (UnityEngine 타입 컴파일용)
+  - TypeFilter 설정 (MonoBehaviour를 legacy 인스턴스화에서 제외)
+  - `RegisterMonoBehaviours()` 신규 메서드 (GameObject 생성 + AddComponent + Awake)
+  - `CompileAndLoadScripts()`: SceneManager.Clear() → Reload → RegisterMonoBehaviours 흐름
+  - `Update()`: SceneManager.Update() 호출 추가
+  - `Shutdown()`: SceneManager.Clear() 호출 추가
+
+#### Wave 4: LiveCode 스크립트 전환
+- [x] `LiveCode/TestScript.cs` → MonoBehaviour 패턴으로 전환
+  - Screen.SetClearColor + transform.Rotate + Time/Debug 사용
+- [x] `LiveCode/AnotherScript.cs` → MonoBehaviour 패턴으로 전환
+
+### 주요 설계 결정
+
+1. **UnityEngine 네임스페이스 위치**: `src/IronRose.Engine/UnityEngine/`
+   - IronRose.Engine.dll (default ALC)에 위치
+   - LiveCode ALC가 IronRose.Engine 참조 시 default ALC로 fallback → 타입 동일성 보장
+   - `typeof(MonoBehaviour).IsAssignableFrom(liveCodeType)` 정상 동작
+
+2. **Transform 자기참조 부트스트랩**
+   - GameObject 생성자에서 Transform을 직접 생성하여 수동 와이어링
+   - AddComponent를 거치지 않아 null 참조 문제 해결
+
+3. **MonoBehaviour vs Legacy 이중 처리**
+   - MonoBehaviour: EngineCore → GameObject 생성 + AddComponent → SceneManager 관리
+   - Legacy (Update()만 있는 클래스): 기존 ScriptDomain 리플렉션 방식 유지
+   - ScriptDomain에 TypeFilter로 MonoBehaviour 제외
+
+4. **SceneManager 라이프사이클**
+   - RegisterBehaviour: Awake() 즉시 호출, pendingStart 큐에 추가
+   - Update: pending Start() 처리 → Update() 전체 → LateUpdate() 전체 → frameCount++
+   - Clear: OnDestroy() 호출 후 전체 정리
+
+5. **핫 리로드 흐름**
+   ```
+   파일 변경 감지 → SceneManager.Clear() (OnDestroy 호출)
+   → ScriptDomain.Reload() (ALC 언로드/재로드)
+   → EngineCore.RegisterMonoBehaviours() (GameObject 생성, Awake 호출)
+   → 다음 프레임 SceneManager.Update()에서 Start() 호출
+   ```
+
+### 테스트 결과
+- ✅ `dotnet build` 성공 (오류 0개, 경고는 기존 ImageSharp 취약성만)
+- ✅ 총 11개 신규 파일 생성 + 4개 기존 파일 수정
+- ✅ Unity 스타일 스크립팅 패턴 동작 확인
+
+### 신규 파일 목록 (11개)
+```
+src/IronRose.Engine/UnityEngine/
+├── Vector3.cs        (~65줄)
+├── Vector2.cs        (~60줄)
+├── Quaternion.cs     (~100줄)
+├── Color.cs          (~55줄)
+├── Time.cs           (~10줄)
+├── Debug.cs          (~20줄)
+├── Component.cs      (~12줄)
+├── Transform.cs      (~40줄)
+├── MonoBehaviour.cs   (~15줄)
+├── SceneManager.cs    (~90줄)
+└── GameObject.cs      (~60줄)
+```
+
+---
+
+## 다음 단계: Phase 4
+
+**목표**: 기본 렌더링 파이프라인 (3D 메시 렌더링)
 
 ### 예정된 작업
-- [ ] Vector3, Quaternion, Color 구현
-- [ ] GameObject 클래스
-- [ ] Component 시스템
-- [ ] Transform 컴포넌트
-- [ ] MonoBehaviour 라이프사이클
-- [ ] SceneManager
-- [ ] Time, Debug 유틸리티
-
-### 예상 소요 시간
-2-3일
+- [ ] MeshRenderer, Mesh, Material 컴포넌트
+- [ ] 기본 셰이더 (GLSL → SPIR-V)
+- [ ] Camera 시스템
+- [ ] 큐브 프리미티브 생성 및 렌더링
 
 ---
 
 ## 개발 메트릭
 
 ### 코드 통계
-- **프로젝트 수**: 7개 (Contracts 추가)
-- **총 라인 수**: ~1000줄 (Phase 2A)
-  - Bootstrapper/Program.cs: ~165줄 (스크립팅 통합)
+- **프로젝트 수**: 6개 (Engine, Contracts, Scripting, Rendering, AssetPipeline, Physics)
+- **총 라인 수**: ~1700줄 (Phase 3)
+  - Engine/Program.cs: ~120줄
+  - Engine/EngineCore.cs: ~200줄
+  - Engine/UnityEngine/*.cs: ~530줄 (11파일)
   - Rendering/GraphicsManager.cs: ~85줄
-  - Scripting/ScriptCompiler.cs: ~125줄
-  - Scripting/ScriptDomain.cs: ~135줄
+  - Scripting/ScriptCompiler.cs: ~145줄
+  - Scripting/ScriptDomain.cs: ~165줄
   - Scripting/StateManager.cs: ~50줄
 - **NuGet 패키지**: 18개
 
@@ -323,6 +412,16 @@
 ---
 
 ## 변경 이력
+
+### 2026-02-14
+- **Phase 3 완료** ✅ (Unity Architecture)
+  - UnityEngine 네임스페이스 구현 (Vector3, Vector2, Quaternion, Color, Time, Debug)
+  - GameObject/Component/Transform/MonoBehaviour 아키텍처
+  - SceneManager 라이프사이클 (Awake → Start → Update → LateUpdate → OnDestroy)
+  - ScriptDomain TypeFilter + ALC Resolving fallback
+  - EngineCore에 RegisterMonoBehaviours() 통합
+  - LiveCode 스크립트 MonoBehaviour 패턴으로 전환
+  - "그래픽스 프레임워크"에서 "게임 엔진"으로 전환 달성
 
 ### 2026-02-13
 - **Phase 0 완료** ✅
