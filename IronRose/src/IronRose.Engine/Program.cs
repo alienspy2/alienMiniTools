@@ -1,121 +1,100 @@
 using System;
-using System.Diagnostics;
-using Veldrid;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
+using Silk.NET.Input;
+using Silk.NET.Maths;
+using Silk.NET.Windowing;
 
 namespace IronRose.Engine
 {
     class Program
     {
         private static EngineCore? _engine;
-
-        // 윈도우
-        private static Sdl2Window? _window;
-
-        private static Stopwatch _timer = new Stopwatch();
-        private static double _lastTime = 0;
-        private static double _deltaTime = 0;
+        private static IWindow? _window;
+        private static IInputContext? _inputContext;
 
         // FPS 카운터
         private static int _frameCount = 0;
         private static double _fpsTimer = 0;
-        private static double _currentFps = 0;
 
         static void Main(string[] args)
         {
             Console.WriteLine("[IronRose] Engine Starting...");
 
-            // 윈도우 생성
-            CreateWindow();
+            var options = WindowOptions.DefaultVulkan;
+            options.Size = new Vector2D<int>(1280, 720);
+            options.Position = new Vector2D<int>(100, 100);
+            options.Title = "IronRose Engine";
+            options.UpdatesPerSecond = 60;
+            options.FramesPerSecond = 60;
+            options.API = GraphicsAPI.None; // Veldrid가 Vulkan 직접 관리
 
-            // 엔진 생성
-            _engine = new EngineCore();
-            _engine.Initialize(_window);
+            _window = Window.Create(options);
+            _window.Load += OnLoad;
+            _window.Update += OnUpdate;
+            _window.Render += OnRender;
+            _window.Closing += OnClosing;
 
-            // 타이머 시작
-            _timer.Start();
-            _lastTime = _timer.Elapsed.TotalSeconds;
+            _window.Run();
 
-            // 메인 루프
-            MainLoop();
-
-            // 정리
-            Console.WriteLine("[IronRose] Shutting down...");
-            _engine.Shutdown();
-            _window?.Close();
             Console.WriteLine("[IronRose] Engine stopped");
         }
 
-        static void CreateWindow()
+        static void OnLoad()
         {
-            Console.WriteLine("[IronRose] Creating window...");
+            Console.WriteLine($"[IronRose] Window created: {_window!.Size.X}x{_window.Size.Y}");
 
-            WindowCreateInfo windowCI = new WindowCreateInfo()
-            {
-                X = 100,
-                Y = 100,
-                WindowWidth = 1280,
-                WindowHeight = 720,
-                WindowTitle = "IronRose Engine"
-            };
+            // 입력 시스템 초기화
+            _inputContext = _window.CreateInput();
+            UnityEngine.Input.Initialize(_inputContext);
 
-            _window = VeldridStartup.CreateWindow(ref windowCI);
-            Console.WriteLine($"[IronRose] Window created: {_window.Width}x{_window.Height}");
+            // 엔진 생성 및 초기화
+            _engine = new EngineCore();
+            _engine.Initialize(_window);
         }
 
-        static void MainLoop()
+        static void OnUpdate(double deltaTime)
         {
-            Console.WriteLine("[IronRose] Entering main loop");
-
-            while (true)
+            // FPS 카운터
+            _frameCount++;
+            _fpsTimer += deltaTime;
+            if (_fpsTimer >= 1.0)
             {
-                // 델타 타임 계산
-                double currentTime = _timer.Elapsed.TotalSeconds;
-                _deltaTime = currentTime - _lastTime;
-                _lastTime = currentTime;
-
-                // FPS 카운터
-                _frameCount++;
-                _fpsTimer += _deltaTime;
-                if (_fpsTimer >= 1.0)
-                {
-                    _currentFps = _frameCount / _fpsTimer;
-                    Console.WriteLine($"[IronRose] FPS: {_currentFps:F2} | Frame Time: {_deltaTime * 1000:F2}ms");
-                    _frameCount = 0;
-                    _fpsTimer = 0;
-                }
-
-                // 윈도우 이벤트 처리
-                if (_window != null && !_window.Exists)
-                {
-                    Console.WriteLine("[IronRose] Window closed by user");
-                    break;
-                }
-
-                _window?.PumpEvents();
-
-                // 엔진 업데이트 및 렌더링
-                try
-                {
-                    _engine!.Update(_deltaTime);
-                    _engine.Render();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[IronRose] ERROR: {ex.Message}");
-                    System.Threading.Thread.Sleep(50);
-                    continue;
-                }
-
-                // 프레임 제한 (60 FPS)
-                double frameTime = _timer.Elapsed.TotalSeconds - currentTime;
-                double targetFrameTime = 1.0 / 60.0;
-                if (frameTime < targetFrameTime)
-                {
-                    System.Threading.Thread.Sleep((int)((targetFrameTime - frameTime) * 1000));
-                }
+                var fps = _frameCount / _fpsTimer;
+                Console.WriteLine($"[IronRose] FPS: {fps:F2} | Frame Time: {deltaTime * 1000:F2}ms");
+                _frameCount = 0;
+                _fpsTimer = 0;
             }
+
+            // 입력 상태 갱신
+            UnityEngine.Input.Update();
+
+            // 엔진 업데이트
+            try
+            {
+                _engine!.Update(deltaTime);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[IronRose] ERROR: {ex.Message}");
+            }
+        }
+
+        static void OnRender(double deltaTime)
+        {
+            try
+            {
+                _engine!.Render();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[IronRose] ERROR: {ex.Message}");
+            }
+        }
+
+        static void OnClosing()
+        {
+            Console.WriteLine("[IronRose] Shutting down...");
+            _inputContext?.Dispose();
+            _engine?.Shutdown();
         }
     }
 }

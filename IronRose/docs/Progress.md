@@ -1,6 +1,6 @@
 # IronRose 개발 진행 상황
 
-**최종 업데이트**: 2026-02-14 (Phase 3 완료)
+**최종 업데이트**: 2026-02-14 (Phase 3.5 입력 시스템 + Silk.NET 마이그레이션)
 
 ---
 
@@ -12,7 +12,7 @@
 - [x] Phase 2A: Engine Core 핫 리로딩 ✅
 - [x] Phase 2B-0: Bootstrapper/Engine 통합 ✅
 - [x] Phase 3: Unity Architecture (GameObject, Component) ✅
-- [ ] Phase 3.5: 입력 시스템
+- [x] Phase 3.5: 입력 시스템 (Silk.NET 마이그레이션) ✅
 - [ ] Phase 4: 물리 엔진 통합
 - [ ] Phase 5: 스크립팅 시스템
 - [ ] Phase 6: 에셋 파이프라인
@@ -46,7 +46,8 @@
 - [x] 각 모듈 → Engine 참조
 
 #### 4. NuGet 패키지 설치
-- [x] **Rendering**: Veldrid, Veldrid.SPIRV, Veldrid.ImageSharp, Silk.NET.SDL
+- [x] **Rendering**: Veldrid, Veldrid.SPIRV, Veldrid.ImageSharp
+- [x] **Windowing/Input**: Silk.NET.Windowing, Silk.NET.Input (GLFW 백엔드)
 - [x] **Scripting**: Microsoft.CodeAnalysis.CSharp 5.0.0
 - [x] **AssetPipeline**: YamlDotNet, AssimpNet, SixLabors.ImageSharp
 - [x] **Engine**: Tomlyn
@@ -108,8 +109,8 @@
 - [x] 메인 루프 진입 확인
 
 ### 주요 결정 사항
-- **윈도우 생성**: Silk.NET.SDL 대신 Veldrid.Sdl2 사용
-  - VeldridStartup.CreateWindow()로 윈도우와 GraphicsDevice를 한 번에 생성
+- **윈도우 생성**: Phase 3.5에서 Silk.NET.Windowing으로 전환 완료
+  - 기존 Veldrid.Sdl2 → Silk.NET.Windowing (GLFW 백엔드) + 네이티브 핸들 Veldrid 연동
   - Bootstrapper를 더 간소화 (~50줄)
 - **렌더링**: Vulkan 백엔드 사용
   - 성공적으로 초기화됨
@@ -426,6 +427,19 @@ src/IronRose.Engine/UnityEngine/
   - EngineCore에 RegisterMonoBehaviours() 통합
   - LiveCode 스크립트 MonoBehaviour 패턴으로 전환
   - "그래픽스 프레임워크"에서 "게임 엔진"으로 전환 달성
+- **Phase 3.5 완료** ✅ (입력 시스템 + Silk.NET 마이그레이션)
+  - **Veldrid.Sdl2 → Silk.NET.Windowing + Silk.NET.Input 전면 교체**
+    - Program.cs: Silk.NET 이벤트 루프 (Load/Update/Render/Closing 콜백)
+    - GraphicsManager: 네이티브 핸들(X11/Wayland/Win32) → Veldrid SwapchainSource
+    - EngineCore: IWindow 인터페이스로 전환
+    - Veldrid.StartupUtilities, Silk.NET.SDL 패키지 제거
+  - **Unity 스타일 Input 정적 클래스** (UnityEngine.Input)
+    - GetKey/GetKeyDown/GetKeyUp, GetMouseButton/Down/Up
+    - mousePosition, mouseScrollDelta
+    - GetAxis("Horizontal"/"Vertical"/"Mouse X"/"Mouse Y")
+    - anyKey, anyKeyDown
+  - **KeyCode enum** + Silk.NET.Input.Key 매핑 (A-Z, 0-9, F1-F12, 화살표, 수정자, 키패드)
+  - LiveCode TestScript에 WASD/마우스 입력 데모 추가
 
 ### 2026-02-13
 - **Phase 0 완료** ✅

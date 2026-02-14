@@ -2,7 +2,7 @@ using IronRose.API;
 using IronRose.Rendering;
 using IronRose.Scripting;
 using UnityEngine;
-using Veldrid.Sdl2;
+using Silk.NET.Windowing;
 using System;
 using System.IO;
 using System.Linq;
@@ -12,7 +12,7 @@ namespace IronRose.Engine
     public class EngineCore
     {
         private GraphicsManager? _graphicsManager;
-        private Sdl2Window? _window;
+        private IWindow? _window;
         private int _frameCount = 0;
 
         // LiveCode 스크립팅
@@ -25,25 +25,16 @@ namespace IronRose.Engine
         // 디버깅 스크린캡처 (기본 off)
         public bool ScreenCaptureEnabled { get; set; } = false;
 
-        public void Initialize(Sdl2Window? window = null)
+        public void Initialize(IWindow window)
         {
             Console.WriteLine("[Engine] EngineCore initializing...");
 
             _window = window;
 
             _graphicsManager = new GraphicsManager();
-
-            if (_window != null)
-            {
-                Console.WriteLine($"[Engine] Passing window to GraphicsManager: {_window.GetType().Name}");
-                _graphicsManager.Initialize(_window);
-                Console.WriteLine("[Engine] GraphicsManager initialized with existing window");
-            }
-            else
-            {
-                Console.WriteLine("[Engine] No window provided, GraphicsManager will create new one");
-                _graphicsManager.Initialize(null);
-            }
+            Console.WriteLine($"[Engine] Passing window to GraphicsManager: {_window.GetType().Name}");
+            _graphicsManager.Initialize(_window);
+            Console.WriteLine("[Engine] GraphicsManager initialized");
 
             // 플러그인 API 연결
             Screen.SetClearColorImpl = (r, g, b) => _graphicsManager.SetClearColor(r, g, b);
@@ -84,6 +75,7 @@ namespace IronRose.Engine
             _liveCodeWatcher.Changed += OnLiveCodeChanged;
             _liveCodeWatcher.Created += OnLiveCodeChanged;
             _liveCodeWatcher.Deleted += OnLiveCodeChanged;
+            _liveCodeWatcher.Renamed += (s, e) => OnLiveCodeChanged(s, e);
             _liveCodeWatcher.EnableRaisingEvents = true;
 
             Console.WriteLine("[Engine] FileSystemWatcher active on LiveCode/");

@@ -1,6 +1,5 @@
-﻿using Veldrid;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
+using Veldrid;
+using Silk.NET.Windowing;
 using Veldrid.ImageSharp;
 using System;
 using System.IO;
@@ -11,7 +10,7 @@ namespace IronRose.Rendering
     {
         private GraphicsDevice? _graphicsDevice;
         private CommandList? _commandList;
-        private Sdl2Window? _window;
+        private IWindow? _window;
         private string? _pendingScreenshot;
         private RgbaFloat _clearColor = new RgbaFloat(0.902f, 0.863f, 0.824f, 1.0f);
 
@@ -20,32 +19,16 @@ namespace IronRose.Rendering
             _clearColor = new RgbaFloat(r, g, b, 1.0f);
         }
 
-        public void Initialize(object? windowHandle = null)
+        public void Initialize(IWindow window)
         {
             Console.WriteLine("[Renderer] Initializing graphics device...");
 
-            if (windowHandle is Sdl2Window window)
-            {
-                _window = window;
-                Console.WriteLine($"[Renderer] ✅ Using existing window: {_window.Width}x{_window.Height}");
-            }
-            else
-            {
-                // 윈도우가 없으면 새로 생성 (하위 호환성)
-                WindowCreateInfo windowCI = new WindowCreateInfo()
-                {
-                    X = 100,
-                    Y = 100,
-                    WindowWidth = 1280,
-                    WindowHeight = 720,
-                    WindowTitle = "IronRose Engine"
-                };
+            _window = window;
+            Console.WriteLine($"[Renderer] Using window: {_window.Size.X}x{_window.Size.Y}");
 
-                _window = VeldridStartup.CreateWindow(ref windowCI);
-                Console.WriteLine($"[Renderer] Created new window: {_window.Width}x{_window.Height}");
-            }
+            // Silk.NET 네이티브 핸들 → Veldrid SwapchainSource
+            var swapchainSource = GetSwapchainSource(_window);
 
-            // GraphicsDevice 생성
             GraphicsDeviceOptions options = new GraphicsDeviceOptions
             {
                 PreferStandardClipSpaceYDirection = true,
@@ -53,20 +36,53 @@ namespace IronRose.Rendering
                 Debug = false
             };
 
-            _graphicsDevice = VeldridStartup.CreateGraphicsDevice(_window, options, GraphicsBackend.Vulkan);
+            var scDesc = new SwapchainDescription(
+                swapchainSource,
+                (uint)_window.Size.X,
+                (uint)_window.Size.Y,
+                null,   // depthFormat
+                false,  // vsync
+                false   // srgb
+            );
+
+            _graphicsDevice = GraphicsDevice.CreateVulkan(options, scDesc);
             Console.WriteLine($"[Renderer] Graphics Device Created: {_graphicsDevice.BackendType}");
 
             _commandList = _graphicsDevice.ResourceFactory.CreateCommandList();
             Console.WriteLine("[Renderer] Command list created");
+
+            // 윈도우 리사이즈 처리
+            _window.Resize += size =>
+            {
+                if (size.X > 0 && size.Y > 0)
+                    _graphicsDevice.ResizeMainWindow((uint)size.X, (uint)size.Y);
+            };
         }
 
-        public bool ProcessEvents()
+        private static SwapchainSource GetSwapchainSource(IWindow window)
         {
-            if (_window == null)
-                return false;
+            var native = window.Native
+                ?? throw new PlatformNotSupportedException("Cannot get native window handle");
 
-            var snapshot = _window.PumpEvents();
-            return _window.Exists;
+            if (native.Win32.HasValue)
+            {
+                var w = native.Win32.Value;
+                return SwapchainSource.CreateWin32(w.Hwnd, w.HInstance);
+            }
+
+            if (native.X11.HasValue)
+            {
+                var x = native.X11.Value;
+                return SwapchainSource.CreateXlib(x.Display, (nint)x.Window);
+            }
+
+            if (native.Wayland.HasValue)
+            {
+                var w = native.Wayland.Value;
+                return SwapchainSource.CreateWayland(w.Display, w.Surface);
+            }
+
+            throw new PlatformNotSupportedException("Unsupported windowing platform");
         }
 
         public void Render()
@@ -197,9 +213,8 @@ namespace IronRose.Rendering
                 _graphicsDevice?.Dispose();
                 Console.WriteLine("[Renderer] GraphicsDevice disposed");
 
-                // 윈도우는 Program.cs가 관리하므로 닫지 않음
                 _window = null;
-                Console.WriteLine("[Renderer] Window reference cleared (not closed)");
+                Console.WriteLine("[Renderer] Window reference cleared");
             }
             catch (Exception ex)
             {

@@ -12,7 +12,7 @@ namespace IronRose.Scripting
         private readonly List<object> _scriptInstances = new();
         private Func<Type, bool>? _typeFilter;
 
-        public bool IsLoaded => _scriptInstances.Count > 0;
+        public bool IsLoaded => _currentALC != null;
 
         public void SetTypeFilter(Func<Type, bool> filter)
         {
