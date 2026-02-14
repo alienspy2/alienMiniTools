@@ -1,4 +1,5 @@
 using IronRose.API;
+using IronRose.AssetPipeline;
 using IronRose.Rendering;
 using IronRose.Scripting;
 using UnityEngine;
@@ -15,6 +16,7 @@ namespace IronRose.Engine
         private RenderSystem? _renderSystem;
         private IWindow? _window;
         private int _frameCount = 0;
+        private AssetDatabase? _assetDatabase;
 
         // 스크립팅
         private ScriptCompiler? _compiler;
@@ -72,6 +74,15 @@ namespace IronRose.Engine
 
             // 플러그인 API 연결
             IronRose.API.Screen.SetClearColorImpl = (r, g, b) => _graphicsManager.SetClearColor(r, g, b);
+
+            // AssetDatabase 초기화
+            _assetDatabase = new AssetDatabase();
+            string assetsPath = Path.GetFullPath("Assets");
+            if (Directory.Exists(assetsPath))
+            {
+                _assetDatabase.ScanAssets(assetsPath);
+            }
+            UnityEngine.Resources.SetAssetDatabase(_assetDatabase);
 
             // LiveCode 핫 리로드 초기화
             InitializeLiveCode();
@@ -250,6 +261,7 @@ namespace IronRose.Engine
             Application.isPlaying = false;
             Application.QuitAction = null;
             SceneManager.Clear();
+            _assetDatabase?.UnloadAll();
             _liveCodeWatcher?.Dispose();
             _renderSystem?.Dispose();
             _graphicsManager?.Dispose();

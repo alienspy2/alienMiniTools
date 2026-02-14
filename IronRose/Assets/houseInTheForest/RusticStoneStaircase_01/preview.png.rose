@@ -1,0 +1,10 @@
+guid = "769b8103-f97f-4d4d-a6a2-47b6d7cba839"
+version = 1
+[importer]
+type = "TextureImporter"
+max_size = 2048
+compression = "none"
+srgb = true
+filter_mode = "Bilinear"
+wrap_mode = "Repeat"
+generate_mipmaps = true

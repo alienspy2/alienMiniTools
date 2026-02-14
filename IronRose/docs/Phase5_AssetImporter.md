@@ -1,7 +1,14 @@
 # Phase 5: Unity 에셋 임포터
 
 ## 목표
-Unity의 .unity (Scene), .prefab, .fbx, .png 파일을 로드할 수 있게 만듭니다.
+Unity의 .unity (Scene), .prefab, .fbx, .glb, .png 파일을 로드할 수 있게 만듭니다.
+
+## 기본 에셋 폴더
+
+프로젝트 루트의 `./Assets/` 디렉토리를 기본 에셋 폴더로 사용합니다.
+- `AssetDatabase.ScanAssets()`의 기본 탐색 경로: `./Assets/`
+- 모든 에셋 경로는 `Assets/` 상대 경로로 참조 (예: `Assets/houseInTheForest/AntiqueBook/model.glb`)
+- Unity와 동일한 컨벤션 (`Assets/` 루트 기준)
 
 ---
 
@@ -304,7 +311,131 @@ namespace IronRose.AssetPipeline
 
 ---
 
-### 5.5 AssetDatabase (GUID 매핑)
+### 5.5 .rose 메타데이터 파일 (Unity .meta 대응)
+
+Unity가 모든 에셋 옆에 `.meta` (YAML) 파일을 생성하듯, IronRose는 `.rose` (TOML) 파일을 사용합니다.
+
+**규칙:**
+- 모든 에셋 파일(`*.png`, `*.glb`, `*.obj`, `*.fbx` 등) 옆에 **같은 이름 + `.rose`** 확장자 파일 생성
+  - 예: `model.glb` → `model.glb.rose`, `preview.png` → `preview.png.rose`
+- 디렉토리에도 `.rose` 파일 생성 가능 (폴더 GUID 용도)
+- `.rose` 파일이 없으면 에셋 최초 임포트 시 자동 생성
+- `.rose` 파일은 **반드시 버전 관리(Git)에 포함**
+
+**model.glb.rose 예시:**
+```toml
+guid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+version = 1
+
+[importer]
+type = "MeshImporter"
+scale = 1.0
+generate_normals = true
+flip_uvs = true
+triangulate = true
+
+[importer.materials]
+extract = true
+remap = {}
+```
+
+**preview.png.rose 예시:**
+```toml
+guid = "f9e8d7c6-b5a4-3210-fedc-ba9876543210"
+version = 1
+
+[importer]
+type = "TextureImporter"
+max_size = 2048
+compression = "none"
+srgb = true
+filter_mode = "Bilinear"
+wrap_mode = "Repeat"
+generate_mipmaps = true
+```
+
+**디렉토리 .rose 예시 (`houseInTheForest.rose`):**
+```toml
+guid = "00112233-4455-6677-8899-aabbccddeeff"
+version = 1
+labels = ["environment", "interior"]
+```
+
+**RoseMetadata.cs:**
+```csharp
+using Tomlyn;
+using Tomlyn.Model;
+using System;
+using System.IO;
+
+namespace IronRose.AssetPipeline
+{
+    public class RoseMetadata
+    {
+        public string guid { get; set; } = Guid.NewGuid().ToString();
+        public int version { get; set; } = 1;
+        public TomlTable importer { get; set; } = new();
+
+        /// <summary>에셋 경로에서 .rose 메타데이터를 로드. 없으면 자동 생성.</summary>
+        public static RoseMetadata LoadOrCreate(string assetPath)
+        {
+            var rosePath = assetPath + ".rose";
+
+            if (File.Exists(rosePath))
+            {
+                var toml = Toml.ToModel(File.ReadAllText(rosePath));
+                return FromToml(toml);
+            }
+
+            // 자동 생성
+            var meta = new RoseMetadata();
+            meta.importer = InferImporter(assetPath);
+            meta.Save(rosePath);
+            return meta;
+        }
+
+        public void Save(string rosePath)
+        {
+            var toml = ToToml();
+            File.WriteAllText(rosePath, Toml.FromModel(toml));
+        }
+
+        private static TomlTable InferImporter(string assetPath)
+        {
+            var ext = Path.GetExtension(assetPath).ToLowerInvariant();
+            return ext switch
+            {
+                ".glb" or ".fbx" or ".obj" => new TomlTable
+                {
+                    ["type"] = "MeshImporter",
+                    ["scale"] = 1.0,
+                    ["generate_normals"] = true,
+                    ["flip_uvs"] = true,
+                    ["triangulate"] = true,
+                },
+                ".png" or ".jpg" or ".tga" => new TomlTable
+                {
+                    ["type"] = "TextureImporter",
+                    ["max_size"] = 2048,
+                    ["compression"] = "none",
+                    ["srgb"] = true,
+                    ["filter_mode"] = "Bilinear",
+                    ["wrap_mode"] = "Repeat",
+                    ["generate_mipmaps"] = true,
+                },
+                _ => new TomlTable { ["type"] = "DefaultImporter" },
+            };
+        }
+
+        private TomlTable ToToml() { /* serialize */ return new(); }
+        private static RoseMetadata FromToml(TomlTable table) { /* deserialize */ return new(); }
+    }
+}
+```
+
+---
+
+### 5.6 AssetDatabase (GUID 매핑)
 
 **AssetDatabase.cs:**
 ```csharp
@@ -319,35 +450,23 @@ namespace IronRose.AssetPipeline
         private Dictionary<string, string> _guidToPath = new();
         private Dictionary<string, object> _loadedAssets = new();
 
+        /// <summary>프로젝트 내 모든 .rose 파일을 스캔하여 GUID→경로 매핑 구축</summary>
         public void ScanAssets(string projectPath)
         {
-            var metaFiles = Directory.GetFiles(projectPath, "*.meta", SearchOption.AllDirectories);
+            var roseFiles = Directory.GetFiles(projectPath, "*.rose", SearchOption.AllDirectories);
 
-            foreach (var metaFile in metaFiles)
+            foreach (var roseFile in roseFiles)
             {
-                var guid = ExtractGuidFromMeta(metaFile);
-                var assetPath = metaFile.Replace(".meta", "");
+                var meta = RoseMetadata.LoadOrCreate(roseFile.Replace(".rose", ""));
+                var assetPath = roseFile.Replace(".rose", "");
 
-                if (!string.IsNullOrEmpty(guid))
+                if (!string.IsNullOrEmpty(meta.guid))
                 {
-                    _guidToPath[guid] = assetPath;
+                    _guidToPath[meta.guid] = assetPath;
                 }
             }
 
             Debug.Log($"Scanned {_guidToPath.Count} assets");
-        }
-
-        private string ExtractGuidFromMeta(string metaPath)
-        {
-            var lines = File.ReadAllLines(metaPath);
-            foreach (var line in lines)
-            {
-                if (line.StartsWith("guid:"))
-                {
-                    return line.Replace("guid:", "").Trim();
-                }
-            }
-            return string.Empty;
         }
 
         public string GetPathFromGuid(string guid)
@@ -362,20 +481,16 @@ namespace IronRose.AssetPipeline
                 return (T)cached;
             }
 
-            // 타입에 따라 적절한 임포터 사용
-            object asset = null!;
+            // .rose 메타데이터에서 임포터 타입 결정
+            var meta = RoseMetadata.LoadOrCreate(path);
+            var importerType = meta.importer["type"]?.ToString() ?? "";
 
-            if (path.EndsWith(".fbx"))
+            object asset = importerType switch
             {
-                var importer = new MeshImporter();
-                asset = importer.Import(path);
-            }
-            else if (path.EndsWith(".png"))
-            {
-                var importer = new TextureImporter();
-                asset = importer.Import(path);
-            }
-            // ... 다른 타입들
+                "MeshImporter" => new MeshImporter().Import(path),
+                "TextureImporter" => new TextureImporter().Import(path),
+                _ => null!,
+            };
 
             if (asset != null)
             {
@@ -392,18 +507,21 @@ namespace IronRose.AssetPipeline
 
 ## 검증 기준
 
-✅ Unity에서 만든 Cube.prefab을 IronRose에서 로드하여 렌더링
-✅ FBX 모델 + 텍스처 적용 가능
-✅ .meta 파일에서 GUID 추출 및 매핑 정상 작동
+✅ GLB/FBX 모델 로드 + 텍스처 적용 가능
+✅ `.rose` 파일 없는 에셋 최초 임포트 시 자동 생성
+✅ `.rose` 파일에서 GUID 추출 및 AssetDatabase 매핑 정상 작동
+✅ `.rose` 임포터 옵션 변경 시 재임포트 반영
+✅ Unity .prefab 파일 로드하여 렌더링
 
 ---
 
 ## 테스트 시나리오
 
-1. Unity에서 간단한 큐브 Prefab 생성
-2. IronRose로 Prefab 파일 복사
-3. `AssetDatabase.Load<GameObject>("Cube.prefab")` 호출
-4. 로드된 GameObject가 화면에 렌더링됨
+1. `Assets/houseInTheForest/AntiqueBook/model.glb` 로드
+2. `.rose` 파일 자동 생성 확인 (`model.glb.rose`)
+3. `AssetDatabase.Load<Mesh>("Assets/houseInTheForest/AntiqueBook/model.glb")` 호출
+4. 로드된 Mesh가 화면에 렌더링됨
+5. `.rose` 파일의 `scale` 값 변경 후 재임포트 → 크기 반영 확인
 
 ---
 

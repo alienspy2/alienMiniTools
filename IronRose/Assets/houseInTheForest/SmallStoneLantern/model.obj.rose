@@ -1,0 +1,8 @@
+guid = "2e78b175-d407-4d32-a436-517e7201c6e0"
+version = 1
+[importer]
+type = "MeshImporter"
+scale = 1.0
+generate_normals = true
+flip_uvs = true
+triangulate = true

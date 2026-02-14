@@ -44,18 +44,17 @@ namespace IronRose.Demo
             _engine = new EngineCore();
             _engine.Initialize(_window);
 
-            // Demo MonoBehaviour 등록
+            // Demo selector 등록
             RegisterScene();
         }
 
         static void RegisterScene()
         {
-            Console.WriteLine("[Demo] Registering scene...");
+            Console.WriteLine("[Demo] Registering demo selector...");
 
-            Register<AnotherScript>();
             Register<TestScript>();
 
-            Console.WriteLine("[Demo] Scene ready");
+            Console.WriteLine("[Demo] Press 1-5 to select a demo");
         }
 
         static void Register<T>() where T : MonoBehaviour, new()

@@ -539,7 +539,12 @@ src/IronRose.Engine/UnityEngine/InputSystem/
 - [x] `Screen.cs` — Width/Height/DPI/currentResolution (윈도우에서 읽기)
 - [x] `Material.cs` 확장 — color, emission, mainTexture 프로퍼티
 
-#### 4.7 Cornell Box 데모 씬
+#### 4.7 예제 에셋 (Assets/)
+- [x] `Assets/houseInTheForest/` — 58개 3D 모델 에셋 (숲 속 집 테마)
+  - 각 에셋: `model.glb` + `model.obj` + `preview.png` + `description.txt`
+  - 벽, 바닥, 문, 계단, 가구, 소품 등 인테리어/건축 에셋
+
+#### 4.8 Cornell Box 데모 씬
 - [x] `TestScript.cs` — 5개 벽(빨강/초록/흰색) + 2개 블록 + 천장 포인트 라이트
 - [x] WASD 이동 + Space 점프 + F1 와이어프레임 토글 + ESC 종료
 
@@ -604,7 +609,8 @@ src/IronRose.Engine/UnityEngine/InputSystem/
   - **Texture2D**: ImageSharp → GPU 업로드
   - **Screen**: Width/Height/DPI
   - **데모**: Cornell Box 씬 (5벽 + 2블록 + 포인트 라이트)
-  - 커밋: `8a9d809` (53파일, +4838 -643)
+  - **예제 에셋**: `Assets/houseInTheForest/` 58개 3D 모델 (GLB + OBJ + PNG + TXT)
+  - 커밋: `8a9d809`, `8b1c508`
 - **Phase 3.5++ 완료** ✅ (Unity 호환성 대폭 확장)
   - **신규 6파일**:
     - `Mathf.cs`: Sin, Cos, Lerp, Clamp, SmoothDamp, PingPong, Repeat, Approximately 등 ~40개 메서드
