@@ -62,8 +62,16 @@ namespace IronRose.Engine
                 }
             }
 
+            // Screen 치수 설정
+            UnityEngine.Screen.SetSize(_window.Size.X, _window.Size.Y);
+            _window.Resize += size =>
+            {
+                if (size.X > 0 && size.Y > 0)
+                    UnityEngine.Screen.SetSize(size.X, size.Y);
+            };
+
             // 플러그인 API 연결
-            Screen.SetClearColorImpl = (r, g, b) => _graphicsManager.SetClearColor(r, g, b);
+            IronRose.API.Screen.SetClearColorImpl = (r, g, b) => _graphicsManager.SetClearColor(r, g, b);
 
             // LiveCode 핫 리로드 초기화
             InitializeLiveCode();
@@ -74,7 +82,7 @@ namespace IronRose.Engine
             Console.WriteLine("[Engine] Initializing LiveCode hot-reload...");
 
             _compiler = new ScriptCompiler();
-            _compiler.AddReference(typeof(Screen)); // IronRose.Contracts
+            _compiler.AddReference(typeof(IronRose.API.Screen)); // IronRose.Contracts
             _compiler.AddReference(typeof(EngineCore).Assembly.Location); // IronRose.Engine
             _scriptDomain = new ScriptDomain();
 

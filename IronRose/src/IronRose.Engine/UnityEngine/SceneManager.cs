@@ -407,6 +407,9 @@ namespace UnityEngine
                     if (comp is MeshRenderer mr)
                         MeshRenderer._allRenderers.Remove(mr);
 
+                    if (comp is Light light)
+                        Light._allLights.Remove(light);
+
                     if (comp is Camera cam && Camera.main == cam)
                         Camera.ClearMain();
 
@@ -439,6 +442,9 @@ namespace UnityEngine
 
                 if (comp is MeshRenderer mr)
                     MeshRenderer._allRenderers.Remove(mr);
+
+                if (comp is Light light)
+                    Light._allLights.Remove(light);
 
                 comp.gameObject.RemoveComponent(comp);
                 comp._isDestroyed = true;
@@ -473,6 +479,7 @@ namespace UnityEngine
 
             // Clear rendering registries
             MeshRenderer.ClearAll();
+            Light.ClearAll();
             Camera.ClearMain();
         }
 

@@ -7,51 +7,56 @@ public class TestScript : MonoBehaviour
     private InputAction moveAction = null!;
     private InputAction jumpAction = null!;
 
-    private GameObject cube = null!;
-    private GameObject sphere = null!;
-    private GameObject capsule = null!;
-    private GameObject plane = null!;
-    private GameObject quad = null!;
-
     public override void Awake()
     {
-        // Camera setup - pull back to see all primitives
+        // Camera — centered, looking into the box
         var camObj = new GameObject("Main Camera");
         var cam = camObj.AddComponent<Camera>();
-        camObj.transform.position = new Vector3(0, 1.5f, -8f);
-        camObj.transform.Rotate(10, 0, 0);
+        camObj.transform.position = new Vector3(0, 0, -8f);
 
-        // --- Primitives showcase ---
+        // --- Cornell Box Light (ceiling area, white) ---
+        var lightObj = new GameObject("Ceiling Light");
+        var ceilingLight = lightObj.AddComponent<Light>();
+        ceilingLight.type = LightType.Point;
+        ceilingLight.color = Color.white;
+        ceilingLight.intensity = 2.5f;
+        ceilingLight.range = 10f;
+        lightObj.transform.position = new Vector3(0, 2.3f, 0);
 
-        // Sphere (leftmost)
-        sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        sphere.GetComponent<MeshRenderer>()!.material = new Material(Color.cyan);
-        sphere.transform.position = new Vector3(-4f, 0.5f, 0);
+        // --- Cornell Box Walls (5 quads, front open) ---
+        float size = 5f;
+        float h = size / 2f;
 
-        // Cube
-        cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        cube.GetComponent<MeshRenderer>()!.material = new Material(new Color(1f, 0.5f, 0.2f));
-        cube.transform.position = new Vector3(-1.5f, 0.5f, 0);
+        // White walls: floor, ceiling, back
+        CreateWall("Floor",      new Vector3(0, -h, 0), new Vector3(-90, 0, 0),  size, Color.white);
+        CreateWall("Ceiling",    new Vector3(0,  h, 0), new Vector3(90, 0, 0),   size, Color.white);
+        CreateWall("Back Wall",  new Vector3(0, 0, h),  new Vector3(0, 180, 0),  size, Color.white);
 
-        // Capsule (center)
-        capsule = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-        capsule.GetComponent<MeshRenderer>()!.material = new Material(Color.green);
-        capsule.transform.position = new Vector3(1.5f, 1f, 0);
+        // Red left wall
+        CreateWall("Left Wall",  new Vector3(-h, 0, 0), new Vector3(0, 90, 0),   size, new Color(0.75f, 0.05f, 0.05f));
 
-        // Quad
-        quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        quad.GetComponent<MeshRenderer>()!.material = new Material(Color.magenta);
-        quad.transform.position = new Vector3(4f, 0.5f, 0);
+        // Green right wall
+        CreateWall("Right Wall", new Vector3(h, 0, 0),  new Vector3(0, -90, 0),  size, new Color(0.05f, 0.55f, 0.05f));
 
-        // Plane (ground)
-        plane = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        plane.GetComponent<MeshRenderer>()!.material = new Material(new Color(0.3f, 0.3f, 0.35f));
-        plane.transform.position = new Vector3(0, -0.5f, 0);
-        plane.transform.localScale = new Vector3(0.15f, 1f, 0.15f); // 10x10 → 1.5x1.5
+        // --- Tall white block (left-back, slightly rotated) ---
+        var tallBlock = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        tallBlock.name = "Tall Block";
+        tallBlock.GetComponent<MeshRenderer>()!.material = new Material(Color.white);
+        tallBlock.transform.localScale = new Vector3(1.3f, 3.0f, 1.3f);
+        tallBlock.transform.position = new Vector3(-0.9f, -h + 1.5f, 0.8f);
+        tallBlock.transform.Rotate(0, 17, 0);
 
-        Debug.Log("[TestScript] All primitives created: Sphere, Cube, Capsule, Quad, Plane");
+        // --- Short white block (right-front, slightly rotated) ---
+        var shortBlock = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        shortBlock.name = "Short Block";
+        shortBlock.GetComponent<MeshRenderer>()!.material = new Material(Color.white);
+        shortBlock.transform.localScale = new Vector3(1.3f, 1.5f, 1.3f);
+        shortBlock.transform.position = new Vector3(0.9f, -h + 0.75f, -0.7f);
+        shortBlock.transform.Rotate(0, -17, 0);
 
-        // InputSystem action setup
+        Debug.Log($"[TestScript] Cornell Box - Screen: {UnityEngine.Screen.width}x{UnityEngine.Screen.height}");
+
+        // InputSystem
         moveAction = new InputAction("Move", InputActionType.Value);
         moveAction.AddCompositeBinding("2DVector")
             .With("Up", "<Keyboard>/w")
@@ -66,24 +71,22 @@ public class TestScript : MonoBehaviour
         jumpAction.Enable();
     }
 
+    private static void CreateWall(string name, Vector3 position, Vector3 euler, float size, Color color)
+    {
+        var wall = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        wall.name = name;
+        wall.GetComponent<MeshRenderer>()!.material = new Material(color);
+        wall.transform.position = position;
+        wall.transform.Rotate(euler.x, euler.y, euler.z);
+        wall.transform.localScale = new Vector3(size, size, 1f);
+    }
+
     public override void Update()
     {
-        float t = Time.deltaTime;
-
-        // Rotate objects
-        if (cube != null)
-            cube.transform.Rotate(0, t * 45, 0);
-        if (sphere != null)
-            sphere.transform.Rotate(0, t * 30, t * 15);
-        if (capsule != null)
-            capsule.transform.Rotate(0, t * 60, 0);
-        if (quad != null)
-            quad.transform.Rotate(0, t * 40, 0);
-
         if (Time.frameCount % 60 == 0)
             Debug.Log($"[TestScript] Frame: {Time.frameCount}");
 
-        // InputSystem demo
+        // InputSystem
         Vector2 move = moveAction.ReadValue<Vector2>();
         if (move.x != 0 || move.y != 0)
             Debug.Log($"[InputSystem] Move: {move}");
@@ -95,13 +98,10 @@ public class TestScript : MonoBehaviour
             Debug.Log($"[Debug] Wireframe: {(Debug.wireframe ? "ON" : "OFF")}");
         }
 
-        // Legacy input demo
         if (Input.GetKeyDown(KeyCode.Escape))
             Application.Quit();
 
         if (Input.GetMouseButtonDown(0))
             Debug.Log($"[Input] Mouse0 click at {Input.mousePosition}");
-        if (Input.GetMouseButtonDown(1))
-            Debug.Log($"[Input] Mouse1 click at {Input.mousePosition}");
     }
 }

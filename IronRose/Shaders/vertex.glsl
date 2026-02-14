@@ -6,6 +6,7 @@ layout(location = 2) in vec2 UV;
 
 layout(location = 0) out vec3 frag_Normal;
 layout(location = 1) out vec2 frag_UV;
+layout(location = 2) out vec3 frag_WorldPos;
 
 layout(set = 0, binding = 0) uniform Transforms
 {
@@ -21,4 +22,5 @@ void main()
     // Transform normal to world space (ignoring non-uniform scale for simplicity)
     frag_Normal = mat3(World) * Normal;
     frag_UV = UV;
+    frag_WorldPos = worldPos.xyz;
 }

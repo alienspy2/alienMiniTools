@@ -1,6 +1,6 @@
 # IronRose 개발 진행 상황
 
-**최종 업데이트**: 2026-02-14 (Phase 3.5+ Unity InputSystem 구현)
+**최종 업데이트**: 2026-02-14 (Phase 4 완료 - 3D 렌더링 파이프라인)
 
 ---
 
@@ -15,11 +15,11 @@
 - [x] Phase 3.5: 입력 시스템 (Silk.NET 마이그레이션) ✅
 - [x] Phase 3.5+: Unity InputSystem (액션 기반 입력) ✅
 - [x] Phase 3.5++: Unity 호환성 확장 (Mathf, Random, Object, Destroy, Coroutine, Transform 계층 등) ✅
-- [ ] Phase 4: 고급 렌더링 파이프라인
-- [ ] Phase 5: 스크립팅 시스템
-- [ ] Phase 6: 에셋 파이프라인
-- [ ] Phase 7: 핫 리로드
-- [ ] Phase 8: 최적화 및 안정화
+- [x] Phase 4: 3D 렌더링 파이프라인 (Mesh, Shader, Camera, Primitive, Light, Material) ✅
+- [ ] Phase 5: Unity 에셋 임포터
+- [ ] Phase 6: 물리 엔진
+- [ ] Phase 7: Deferred PBR 렌더링
+- [ ] Phase 8: AI 통합
 
 ---
 
@@ -504,9 +504,58 @@ src/IronRose.Engine/UnityEngine/InputSystem/
 
 ---
 
-## 다음 단계: Phase 4
+## Phase 4: 3D 렌더링 파이프라인 ✅
 
-**목표**: 고급 렌더링 파이프라인
+**시작 날짜**: 2026-02-14
+**완료 날짜**: 2026-02-14
+**커밋**: `8a9d809`
+
+### 완료된 작업
+
+#### 4.1 메시 렌더링 시스템
+- [x] `Mesh.cs` — GPU 업로드 (Vertex: Position+Normal+UV), dirty-flag 최적화
+- [x] `MeshFilter.cs` — mesh 데이터 보유 컴포넌트
+- [x] `MeshRenderer.cs` — 전역 렌더러 목록 자동 등록, Material 보유
+
+#### 4.2 셰이더 (GLSL → SPIR-V)
+- [x] `vertex.glsl` — Transforms uniform (World + ViewProjection), WorldPos/Normal/UV 출력
+- [x] `fragment.glsl` — 멀티라이트 8개 지원 (Directional + Point), Lambert diffuse + Blinn-Phong specular, Material (Color/Emission/HasTexture)
+
+#### 4.3 카메라 시스템
+- [x] `Camera.cs` — Camera.main 자동 등록, LookAt/Perspective (왼손 좌표계, depth [0,1])
+
+#### 4.4 프리미티브 생성
+- [x] `PrimitiveGenerator.cs` — Cube(24v/36i), Sphere(UV 24×16), Capsule, Plane(10×10), Quad(1×1)
+- [x] `GameObject.CreatePrimitive()` — MeshFilter + MeshRenderer 자동 구성
+
+#### 4.5 렌더링 파이프라인 통합
+- [x] `RenderSystem.cs` — Solid + Wireframe 듀얼 파이프라인, ResourceSet 캐싱
+- [x] EngineCore 렌더 루프: BeginFrame → ClearColor+ClearDepth → Render → EndFrame → SwapBuffers
+- [x] 윈도우 리사이즈 자동 종횡비 보정
+
+#### 4.6 추가 Unity 호환성 (Phase 4 범위 확장)
+- [x] `Light.cs` — Directional/Point 라이트, 전역 레지스트리 (`Light._allLights`), color/intensity/range
+- [x] `Texture2D.cs` — ImageSharp 이미지 로드 → GPU 업로드, TextureView 관리
+- [x] `Screen.cs` — Width/Height/DPI/currentResolution (윈도우에서 읽기)
+- [x] `Material.cs` 확장 — color, emission, mainTexture 프로퍼티
+
+#### 4.7 Cornell Box 데모 씬
+- [x] `TestScript.cs` — 5개 벽(빨강/초록/흰색) + 2개 블록 + 천장 포인트 라이트
+- [x] WASD 이동 + Space 점프 + F1 와이어프레임 토글 + ESC 종료
+
+### 검증 기준 — 전항목 통과
+- ✅ 3D 프리미티브(Cube, Sphere, Capsule, Plane, Quad) 화면 렌더링
+- ✅ Lambert + Specular 조명 음영 구분
+- ✅ 카메라 위치/방향 변경 시 시점 반영
+- ✅ Wireframe 디버그 오버레이
+- ✅ 윈도우 리사이즈 종횡비 자동 보정
+- ✅ LiveCode에서 프리미티브 생성/회전 스크립트 동작
+
+---
+
+## 다음 단계: Phase 5
+
+→ [Phase 5: Unity 에셋 임포터](Phase5_AssetImporter.md)
 
 ---
 
@@ -514,11 +563,11 @@ src/IronRose.Engine/UnityEngine/InputSystem/
 
 ### 코드 통계
 - **프로젝트 수**: 7개 (Engine, Demo, Contracts, Scripting, Rendering, AssetPipeline, Physics)
-- **총 라인 수**: ~5400줄 (Phase 3.5++)
+- **총 라인 수**: ~5800줄 (Phase 4)
   - Engine/Program.cs: ~120줄
-  - Engine/EngineCore.cs: ~250줄
-  - Engine/RenderSystem.cs: ~180줄
-  - Engine/UnityEngine/*.cs: ~3300줄 (27파일)
+  - Engine/EngineCore.cs: ~260줄
+  - Engine/RenderSystem.cs: ~212줄
+  - Engine/UnityEngine/*.cs: ~3600줄 (30파일)
   - Engine/UnityEngine/InputSystem/*.cs: ~500줄 (7파일)
   - Rendering/GraphicsManager.cs: ~85줄
   - Rendering/ShaderCompiler.cs: ~50줄
@@ -526,6 +575,7 @@ src/IronRose.Engine/UnityEngine/InputSystem/
   - Scripting/ScriptDomain.cs: ~165줄
   - Scripting/StateManager.cs: ~50줄
   - Demo/*.cs: ~215줄
+  - Shaders/*.glsl: ~137줄
 - **NuGet 패키지**: 18개
 
 ### 빌드 통계
@@ -542,7 +592,19 @@ src/IronRose.Engine/UnityEngine/InputSystem/
 
 ## 변경 이력
 
-### 2026-02-14 (Phase 3.5++ Unity 호환성 확장)
+### 2026-02-14 (Phase 4 완료)
+- **Phase 4 완료** ✅ (3D 렌더링 파이프라인 및 Unity 호환성 대폭 확장)
+  - **렌더링 파이프라인**: Forward Rendering (Solid + Wireframe 듀얼)
+  - **메시 시스템**: Mesh (GPU dirty-flag), MeshFilter, MeshRenderer
+  - **셰이더**: vertex.glsl + fragment.glsl (Lambert + Blinn-Phong + 멀티라이트 8개)
+  - **카메라**: Camera.main, LookAt/Perspective (왼손 좌표계)
+  - **프리미티브**: Cube, Sphere, Capsule, Plane, Quad (5종)
+  - **라이팅**: Light (Directional/Point), 최대 8개 동시
+  - **Material**: color, emission, mainTexture
+  - **Texture2D**: ImageSharp → GPU 업로드
+  - **Screen**: Width/Height/DPI
+  - **데모**: Cornell Box 씬 (5벽 + 2블록 + 포인트 라이트)
+  - 커밋: `8a9d809` (53파일, +4838 -643)
 - **Phase 3.5++ 완료** ✅ (Unity 호환성 대폭 확장)
   - **신규 6파일**:
     - `Mathf.cs`: Sin, Cos, Lerp, Clamp, SmoothDamp, PingPong, Repeat, Approximately 등 ~40개 메서드

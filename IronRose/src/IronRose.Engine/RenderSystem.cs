@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -18,6 +19,38 @@ namespace IronRose.Rendering
     internal struct MaterialUniforms
     {
         public Vector4 Color;
+        public Vector4 Emission;
+        public float HasTexture;
+        public float _pad1;
+        public float _pad2;
+        public float _pad3;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LightInfoGPU
+    {
+        public Vector4 PositionOrDirection; // xyz = pos/dir, w = type (0=dir, 1=point)
+        public Vector4 ColorIntensity;      // rgb = color, a = intensity
+        public Vector4 Params;              // x = range
+        public Vector4 _padding;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LightUniforms
+    {
+        public Vector4 CameraPos;   // xyz = camera pos, w = unused
+        public int LightCount;
+        public int _pad1;
+        public int _pad2;
+        public int _pad3;
+        public LightInfoGPU Light0;
+        public LightInfoGPU Light1;
+        public LightInfoGPU Light2;
+        public LightInfoGPU Light3;
+        public LightInfoGPU Light4;
+        public LightInfoGPU Light5;
+        public LightInfoGPU Light6;
+        public LightInfoGPU Light7;
     }
 
     public class RenderSystem : IDisposable
@@ -27,9 +60,19 @@ namespace IronRose.Rendering
         private Pipeline? _wireframePipeline;
         private DeviceBuffer? _transformBuffer;
         private DeviceBuffer? _materialBuffer;
-        private ResourceSet? _resourceSet;
-        private ResourceLayout? _resourceLayout;
+        private DeviceBuffer? _lightBuffer;
+        private ResourceLayout? _perObjectLayout;
+        private ResourceLayout? _perFrameLayout;
+        private ResourceSet? _perFrameResourceSet;
         private Shader[]? _shaders;
+
+        // Texture resources
+        private Sampler? _defaultSampler;
+        private Texture2D? _whiteTexture;
+
+        // Per-material ResourceSet cache (keyed by TextureView or null)
+        private readonly Dictionary<TextureView, ResourceSet> _resourceSetCache = new();
+        private ResourceSet? _defaultResourceSet; // for materials without texture
 
         public void Initialize(GraphicsDevice device)
         {
@@ -53,14 +96,38 @@ namespace IronRose.Rendering
                 (uint)Marshal.SizeOf<MaterialUniforms>(),
                 BufferUsage.UniformBuffer | BufferUsage.Dynamic));
 
-            // Resource layout (set 0: transforms + material)
-            _resourceLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("Transforms", ResourceKind.UniformBuffer, ShaderStages.Vertex),
-                new ResourceLayoutElementDescription("MaterialData", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+            _lightBuffer = factory.CreateBuffer(new BufferDescription(
+                (uint)Marshal.SizeOf<LightUniforms>(),
+                BufferUsage.UniformBuffer | BufferUsage.Dynamic));
 
-            // Resource set
-            _resourceSet = factory.CreateResourceSet(new ResourceSetDescription(
-                _resourceLayout, _transformBuffer, _materialBuffer));
+            // Default sampler
+            _defaultSampler = factory.CreateSampler(new SamplerDescription(
+                SamplerAddressMode.Wrap, SamplerAddressMode.Wrap, SamplerAddressMode.Wrap,
+                SamplerFilter.MinLinear_MagLinear_MipLinear,
+                null, 0, 0, 0, 0, SamplerBorderColor.TransparentBlack));
+
+            // White fallback texture (1x1)
+            _whiteTexture = Texture2D.CreateWhitePixel();
+            _whiteTexture.UploadToGPU(device);
+
+            // Per-object layout (set 0): transforms + material + texture + sampler
+            _perObjectLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("Transforms", ResourceKind.UniformBuffer, ShaderStages.Vertex),
+                new ResourceLayoutElementDescription("MaterialData", ResourceKind.UniformBuffer, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("MainTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("MainSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+            // Per-frame layout (set 1): lights
+            _perFrameLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("LightData", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+
+            // Per-frame resource set
+            _perFrameResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+                _perFrameLayout, _lightBuffer));
+
+            // Default per-object resource set (white texture)
+            _defaultResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+                _perObjectLayout, _transformBuffer, _materialBuffer, _whiteTexture.TextureView!, _defaultSampler));
 
             // Vertex layout matching our Vertex struct
             var vertexLayout = new VertexLayoutDescription(
@@ -83,7 +150,7 @@ namespace IronRose.Rendering
                     depthClipEnabled: true,
                     scissorTestEnabled: false),
                 PrimitiveTopology = PrimitiveTopology.TriangleList,
-                ResourceLayouts = new[] { _resourceLayout },
+                ResourceLayouts = new[] { _perObjectLayout, _perFrameLayout },
                 ShaderSet = new ShaderSetDescription(
                     vertexLayouts: new[] { vertexLayout },
                     shaders: _shaders),
@@ -106,7 +173,7 @@ namespace IronRose.Rendering
                 comparisonKind: ComparisonKind.LessEqual);
 
             _wireframePipeline = factory.CreateGraphicsPipeline(wireframeDesc);
-            Console.WriteLine("[RenderSystem] Pipeline created successfully");
+            Console.WriteLine("[RenderSystem] Pipeline created successfully (texture + lighting)");
         }
 
         public void Render(CommandList cl, Camera? camera, float aspectRatio)
@@ -117,6 +184,9 @@ namespace IronRose.Rendering
             var viewMatrix = camera.GetViewMatrix().ToNumerics();
             var projMatrix = camera.GetProjectionMatrix(aspectRatio).ToNumerics();
             var viewProj = viewMatrix * projMatrix;
+
+            // Upload light data once per frame
+            UploadLightData(cl, camera);
 
             // --- Solid pass ---
             cl.SetPipeline(_pipeline);
@@ -130,10 +200,82 @@ namespace IronRose.Rendering
             }
         }
 
+        private void UploadLightData(CommandList cl, Camera camera)
+        {
+            var camPos = camera.transform.position;
+            var lightData = new LightUniforms
+            {
+                CameraPos = new Vector4(camPos.x, camPos.y, camPos.z, 0),
+                LightCount = 0,
+            };
+
+            int count = 0;
+            foreach (var light in Light._allLights)
+            {
+                if (count >= 8) break;
+                if (!light.enabled) continue;
+                if (!light.gameObject.activeInHierarchy) continue;
+
+                var info = new LightInfoGPU();
+
+                if (light.type == LightType.Directional)
+                {
+                    var forward = light.transform.forward;
+                    info.PositionOrDirection = new Vector4(forward.x, forward.y, forward.z, 0f);
+                }
+                else
+                {
+                    var pos = light.transform.position;
+                    info.PositionOrDirection = new Vector4(pos.x, pos.y, pos.z, 1f);
+                }
+
+                info.ColorIntensity = new Vector4(light.color.r, light.color.g, light.color.b, light.intensity);
+                info.Params = new Vector4(light.range, 0, 0, 0);
+
+                SetLightInfo(ref lightData, count, info);
+                count++;
+            }
+
+            lightData.LightCount = count;
+            cl.UpdateBuffer(_lightBuffer, 0, lightData);
+        }
+
+        private static void SetLightInfo(ref LightUniforms data, int index, LightInfoGPU info)
+        {
+            switch (index)
+            {
+                case 0: data.Light0 = info; break;
+                case 1: data.Light1 = info; break;
+                case 2: data.Light2 = info; break;
+                case 3: data.Light3 = info; break;
+                case 4: data.Light4 = info; break;
+                case 5: data.Light5 = info; break;
+                case 6: data.Light6 = info; break;
+                case 7: data.Light7 = info; break;
+            }
+        }
+
+        private ResourceSet GetOrCreateResourceSet(TextureView? textureView)
+        {
+            if (textureView == null)
+                return _defaultResourceSet!;
+
+            if (_resourceSetCache.TryGetValue(textureView, out var cached))
+                return cached;
+
+            var resourceSet = _device!.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _perObjectLayout!, _transformBuffer!, _materialBuffer!, textureView, _defaultSampler!));
+            _resourceSetCache[textureView] = resourceSet;
+            return resourceSet;
+        }
+
         private void DrawAllRenderers(CommandList cl, System.Numerics.Matrix4x4 viewProj, bool useWireframeColor)
         {
             foreach (var renderer in MeshRenderer._allRenderers)
             {
+                if (!renderer.enabled) continue;
+                if (!renderer.gameObject.activeInHierarchy) continue;
+
                 var filter = renderer.GetComponent<MeshFilter>();
                 if (filter?.mesh == null) continue;
 
@@ -156,17 +298,40 @@ namespace IronRose.Rendering
                 cl.UpdateBuffer(_transformBuffer, 0, transforms);
 
                 // Update material uniform
+                var material = renderer.material;
                 var color = useWireframeColor
                     ? Debug.wireframeColor
-                    : (renderer.material?.color ?? Color.white);
+                    : (material?.color ?? Color.white);
+                var emission = useWireframeColor
+                    ? Color.black
+                    : (material?.emission ?? Color.black);
+
+                // Determine texture
+                TextureView? texView = null;
+                float hasTexture = 0f;
+                if (!useWireframeColor && material?.mainTexture != null)
+                {
+                    material.mainTexture.UploadToGPU(_device!);
+                    if (material.mainTexture.TextureView != null)
+                    {
+                        texView = material.mainTexture.TextureView;
+                        hasTexture = 1f;
+                    }
+                }
+
                 var materialData = new MaterialUniforms
                 {
                     Color = new Vector4(color.r, color.g, color.b, color.a),
+                    Emission = new Vector4(emission.r, emission.g, emission.b, emission.a),
+                    HasTexture = hasTexture,
                 };
                 cl.UpdateBuffer(_materialBuffer, 0, materialData);
 
-                // Bind and draw
-                cl.SetGraphicsResourceSet(0, _resourceSet);
+                // Bind resource sets
+                var perObjectSet = GetOrCreateResourceSet(texView);
+                cl.SetGraphicsResourceSet(0, perObjectSet);
+                cl.SetGraphicsResourceSet(1, _perFrameResourceSet);
+
                 cl.SetVertexBuffer(0, mesh.VertexBuffer);
                 cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
                 cl.DrawIndexed((uint)mesh.indices.Length);
@@ -197,8 +362,17 @@ namespace IronRose.Rendering
             _wireframePipeline?.Dispose();
             _transformBuffer?.Dispose();
             _materialBuffer?.Dispose();
-            _resourceSet?.Dispose();
-            _resourceLayout?.Dispose();
+            _lightBuffer?.Dispose();
+            _defaultSampler?.Dispose();
+            _whiteTexture?.Dispose();
+            _defaultResourceSet?.Dispose();
+            _perFrameResourceSet?.Dispose();
+            _perObjectLayout?.Dispose();
+            _perFrameLayout?.Dispose();
+
+            foreach (var rs in _resourceSetCache.Values)
+                rs.Dispose();
+            _resourceSetCache.Clear();
 
             if (_shaders != null)
             {
