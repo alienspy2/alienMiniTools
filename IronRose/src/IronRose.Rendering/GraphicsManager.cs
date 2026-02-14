@@ -142,18 +142,21 @@ namespace IronRose.Rendering
                 // ImageSharp 이미지 생성
                 using var image = new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Bgra32>(width, height);
 
-                for (int y = 0; y < height; y++)
+                image.ProcessPixelRows(accessor =>
                 {
-                    var rowSpan = image.GetPixelRowSpan(y);
-                    unsafe
+                    for (int y = 0; y < height; y++)
                     {
-                        var sourcePtr = (byte*)map.Data.ToPointer() + (y * rowPitch);
-                        fixed (SixLabors.ImageSharp.PixelFormats.Bgra32* destPtr = rowSpan)
+                        var rowSpan = accessor.GetRowSpan(y);
+                        unsafe
                         {
-                            Buffer.MemoryCopy(sourcePtr, destPtr, rowPitch, width * pixelSizeInBytes);
+                            var sourcePtr = (byte*)map.Data.ToPointer() + (y * rowPitch);
+                            fixed (SixLabors.ImageSharp.PixelFormats.Bgra32* destPtr = rowSpan)
+                            {
+                                Buffer.MemoryCopy(sourcePtr, destPtr, rowPitch, width * pixelSizeInBytes);
+                            }
                         }
                     }
-                }
+                });
 
                 _graphicsDevice.Unmap(stagingTexture);
 

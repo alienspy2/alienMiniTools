@@ -78,9 +78,7 @@
   - 용도: 배경, UI 기본 색상, 엔진 로고
 
 ### 알려진 이슈
-- ⚠️ SixLabors.ImageSharp 1.0.4 보안 취약성 경고 (Veldrid.ImageSharp 의존성)
-  - 실행에는 문제 없음
-  - 향후 업데이트 예정
+- ~~⚠️ SixLabors.ImageSharp 1.0.4 보안 취약성 경고~~ → ✅ 3.1.12로 해결 (2026-02-14)
 
 ---
 
@@ -351,7 +349,7 @@
    ```
 
 ### 테스트 결과
-- ✅ `dotnet build` 성공 (오류 0개, 경고는 기존 ImageSharp 취약성만)
+- ✅ `dotnet build` 성공 (오류 0개)
 - ✅ 총 11개 신규 파일 생성 + 4개 기존 파일 수정
 - ✅ Unity 스타일 스크립팅 패턴 동작 확인
 
@@ -401,7 +399,7 @@ src/IronRose.Engine/UnityEngine/
 
 ### 빌드 통계
 - **마지막 빌드 시간**: ~1.8초
-- **빌드 결과**: 성공 (경고 14개, 오류 0개)
+- **빌드 결과**: 성공 (경고 0개, 오류 0개)
 
 ### 실행 통계
 - **윈도우**: 1280x720
@@ -414,6 +412,12 @@ src/IronRose.Engine/UnityEngine/
 ## 변경 이력
 
 ### 2026-02-14
+- **Debug 토글 & ImageSharp 취약성 수정**
+  - `Debug.Enabled` 프로퍼티 추가 (로그 출력 ON/OFF 토글)
+  - `ScreenCaptureEnabled` ON/OFF 토글 테스트 통과
+  - SixLabors.ImageSharp 1.0.4 → 3.1.12 업그레이드 (보안 취약성 해결)
+  - ImageSharp 3.x API 마이그레이션: `GetPixelRowSpan` → `ProcessPixelRows`
+  - NU 취약성 경고 28개 → 0개
 - **Phase 3 완료** ✅ (Unity Architecture)
   - UnityEngine 네임스페이스 구현 (Vector3, Vector2, Quaternion, Color, Time, Debug)
   - GameObject/Component/Transform/MonoBehaviour 아키텍처

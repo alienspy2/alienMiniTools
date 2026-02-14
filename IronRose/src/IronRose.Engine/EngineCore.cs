@@ -22,6 +22,9 @@ namespace IronRose.Engine
         private bool _reloadRequested = false;
         private DateTime _lastReloadTime = DateTime.MinValue;
 
+        // 디버깅 스크린캡처 (기본 off)
+        public bool ScreenCaptureEnabled { get; set; } = false;
+
         public void Initialize(Sdl2Window? window = null)
         {
             Console.WriteLine("[Engine] EngineCore initializing...");
@@ -179,7 +182,7 @@ namespace IronRose.Engine
 
             // 스크린샷 자동 캡처 (첫 프레임, 60프레임, 그리고 매 300프레임)
             _frameCount++;
-            if (_frameCount == 1 || _frameCount == 60 || _frameCount % 300 == 0)
+            if (ScreenCaptureEnabled && (_frameCount == 1 || _frameCount == 60 || _frameCount % 300 == 0))
             {
                 var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
                 var filename = Path.Combine("logs", $"screenshot_frame{_frameCount}_{timestamp}.png");
