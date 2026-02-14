@@ -53,8 +53,6 @@ namespace IronRose.Demo
             Console.WriteLine("[Demo] Registering demo selector...");
 
             Register<TestScript>();
-
-            Console.WriteLine("[Demo] Press 1-5 to select a demo");
         }
 
         static void Register<T>() where T : MonoBehaviour, new()

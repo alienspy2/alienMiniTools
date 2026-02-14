@@ -29,8 +29,8 @@ public class TestScript : MonoBehaviour
         Debug.Log("[3] Sprite Renderer");
         Debug.Log("[4] Text Renderer");
         Debug.Log("[5] 3D Physics");
-        Debug.Log("[6] 2D Physics");
-        Debug.Log("[F1] Wireframe toggle | [ESC] Quit");
+        Debug.Log("[6] PBR Demo");
+        Debug.Log("[F1] Wireframe | [F12] Screenshot | [ESC] Quit");
         Debug.Log("==============================");
 
         // Default camera + HUD when no demo is loaded
@@ -119,9 +119,9 @@ public class TestScript : MonoBehaviour
                 break;
 
             case 6:
-                var go6 = new GameObject("PhysicsDemo2D");
-                go6.AddComponent<PhysicsDemo2D>();
-                Debug.Log("[Demo] >> 2D Physics");
+                var go6 = new GameObject("PBRDemo");
+                go6.AddComponent<PBRDemo>();
+                Debug.Log("[Demo] >> PBR Demo");
                 break;
         }
 
@@ -150,8 +150,9 @@ public class TestScript : MonoBehaviour
                  + "[3] Sprite Renderer\n"
                  + "[4] Text Renderer\n"
                  + "[5] 3D Physics\n"
-                 + "[6] 2D Physics\n"
-                 + "[F1] Wireframe | [ESC] Quit";
+                 + "[6] PBR\n"
+                 + "[F1] Wireframe | [F12] Screenshot\n"
+                 + "[ESC] Quit";
         tr.color = Color.black;
         tr.alignment = TextAlignment.Left;
         tr.sortingOrder = 100;

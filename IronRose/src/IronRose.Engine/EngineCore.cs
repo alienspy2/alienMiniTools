@@ -60,6 +60,9 @@ namespace IronRose.Engine
                     _renderSystem = new RenderSystem();
                     _renderSystem.Initialize(_graphicsManager.Device);
                     Console.WriteLine("[Engine] RenderSystem initialized");
+
+                    // 리사이즈 이벤트 → RenderSystem (GBuffer, HDR, PostProcessing 재생성)
+                    _graphicsManager.Resized += (w, h) => _renderSystem?.Resize(w, h);
                 }
                 catch (Exception ex)
                 {
@@ -245,6 +248,16 @@ namespace IronRose.Engine
                     Application.Resume();
                 else
                     Application.Pause();
+            }
+
+            // F12: Screenshot
+            if (Input.GetKeyDown(KeyCode.F12) && _graphicsManager != null)
+            {
+                var dir = Path.Combine("Screenshots");
+                Directory.CreateDirectory(dir);
+                var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+                var filename = Path.Combine(dir, $"screenshot_{timestamp}.png");
+                _graphicsManager.RequestScreenshot(filename);
             }
         }
 

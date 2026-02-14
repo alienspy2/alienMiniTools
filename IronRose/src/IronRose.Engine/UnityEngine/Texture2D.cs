@@ -15,6 +15,7 @@ namespace UnityEngine
         internal Veldrid.Texture? VeldridTexture { get; private set; }
         internal TextureView? TextureView { get; private set; }
         private bool _isDirty = true;
+        private bool _hasMipmaps;
 
         public Texture2D(int width, int height)
         {
@@ -72,9 +73,10 @@ namespace UnityEngine
             _isDirty = true;
         }
 
-        public void UploadToGPU(GraphicsDevice device)
+        public void UploadToGPU(GraphicsDevice device, bool generateMipmaps = false)
         {
-            if (!_isDirty || _pixelData == null)
+            bool needsMipmapUpgrade = generateMipmaps && !_hasMipmaps && VeldridTexture != null;
+            if ((!_isDirty && !needsMipmapUpgrade) || _pixelData == null)
                 return;
 
             var factory = device.ResourceFactory;
@@ -83,10 +85,18 @@ namespace UnityEngine
             TextureView?.Dispose();
             VeldridTexture?.Dispose();
 
+            uint mipLevels = 1;
+            var usage = TextureUsage.Sampled;
+            if (generateMipmaps)
+            {
+                mipLevels = (uint)Math.Floor(Math.Log2(Math.Max(width, height))) + 1;
+                usage = TextureUsage.Sampled | TextureUsage.GenerateMipmaps;
+            }
+
             VeldridTexture = factory.CreateTexture(new TextureDescription(
-                (uint)width, (uint)height, 1, 1, 1,
+                (uint)width, (uint)height, 1, mipLevels, 1,
                 PixelFormat.R8_G8_B8_A8_UNorm,
-                TextureUsage.Sampled,
+                usage,
                 TextureType.Texture2D));
 
             device.UpdateTexture(VeldridTexture, _pixelData,
@@ -94,8 +104,45 @@ namespace UnityEngine
                 (uint)width, (uint)height, 1,
                 0, 0);
 
+            if (generateMipmaps && mipLevels > 1)
+            {
+                using var cl = factory.CreateCommandList();
+                cl.Begin();
+                cl.GenerateMipmaps(VeldridTexture);
+                cl.End();
+                device.SubmitCommands(cl);
+            }
+
             TextureView = factory.CreateTextureView(VeldridTexture);
             _isDirty = false;
+            _hasMipmaps = generateMipmaps && mipLevels > 1;
+        }
+
+        /// <summary>
+        /// Computes the average color of the texture (downsampled).
+        /// Useful for IBL ambient approximation from environment maps.
+        /// </summary>
+        public Color GetAverageColor()
+        {
+            if (_pixelData == null || _pixelData.Length < 4)
+                return Color.gray;
+
+            int pixelCount = _pixelData.Length / 4;
+            // Sample every Nth pixel for performance on large textures
+            int step = Math.Max(1, pixelCount / 1024);
+            double r = 0, g = 0, b = 0;
+            int samples = 0;
+
+            for (int i = 0; i < pixelCount; i += step)
+            {
+                int offset = i * 4;
+                r += _pixelData[offset] / 255.0;
+                g += _pixelData[offset + 1] / 255.0;
+                b += _pixelData[offset + 2] / 255.0;
+                samples++;
+            }
+
+            return new Color((float)(r / samples), (float)(g / samples), (float)(b / samples), 1f);
         }
 
         public void Dispose()

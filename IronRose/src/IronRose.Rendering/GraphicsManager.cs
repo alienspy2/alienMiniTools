@@ -17,6 +17,8 @@ namespace IronRose.Rendering
         public GraphicsDevice? Device => _graphicsDevice;
         public CommandList? CommandList => _commandList;
 
+        public event Action<uint, uint>? Resized;
+
         public float AspectRatio
         {
             get
@@ -67,7 +69,10 @@ namespace IronRose.Rendering
             _window.Resize += size =>
             {
                 if (size.X > 0 && size.Y > 0)
+                {
                     _graphicsDevice.ResizeMainWindow((uint)size.X, (uint)size.Y);
+                    Resized?.Invoke((uint)size.X, (uint)size.Y);
+                }
             };
         }
 
