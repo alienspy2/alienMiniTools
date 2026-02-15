@@ -3,34 +3,23 @@
 layout(location = 0) in vec2 fsin_UV;
 layout(location = 0) out vec4 fsout_Color;
 
-// G-Buffer textures
+// Set 0 — GBuffer
 layout(set = 0, binding = 0) uniform texture2D gAlbedo;
 layout(set = 0, binding = 1) uniform texture2D gNormal;
 layout(set = 0, binding = 2) uniform texture2D gMaterial;
 layout(set = 0, binding = 3) uniform texture2D gWorldPos;
 layout(set = 0, binding = 4) uniform sampler gSampler;
 
-// Light structure (same as LightInfoGPU)
-struct LightInfo
-{
-    vec4 PositionOrDirection;   // xyz = pos/dir, w = type (0=dir, 1=point)
-    vec4 ColorIntensity;        // rgb = color, a = intensity
-    vec4 Params;                // x = range
-    vec4 _padding;
-};
-
-layout(set = 0, binding = 5) uniform LightingBuffer
+// Set 1 — Ambient data
+layout(set = 1, binding = 0) uniform AmbientData
 {
     vec4 CameraPos;
-    int LightCount;
-    int _lpad1, _lpad2, _lpad3;
-    vec4 SkyAmbient;   // rgb = sky ambient color for IBL, a = unused
-    LightInfo Lights[64];
+    vec4 SkyAmbient;
 };
 
-// Environment map (cubemap)
-layout(set = 0, binding = 6) uniform textureCube envMap;
-layout(set = 0, binding = 7) uniform EnvMapParams
+layout(set = 1, binding = 1) uniform textureCube envMap;
+
+layout(set = 1, binding = 2) uniform EnvMapParams
 {
     vec4 EnvTextureParams;   // x=hasTexture, y=exposure, z=rotation(rad), w=unused
     vec4 EnvSunDirection;    // xyz = direction toward sun
@@ -43,7 +32,6 @@ const float PI = 3.14159265359;
 
 // === Environment Map Sampling ===
 
-// Apply Y-axis rotation to direction vector
 vec3 rotateY(vec3 dir, float rad)
 {
     float cosR = cos(rad);
@@ -72,7 +60,6 @@ vec3 proceduralSky(vec3 dir)
         skyColor = mix(horizon, groundColor, pow(downFactor, 0.5));
     }
 
-    // Sun disk
     vec3 sunDir = normalize(EnvSunDirection.xyz);
     float sunAngularRadius = EnvSkyParams.z;
     float sunIntensity = EnvSkyParams.w;
@@ -89,20 +76,7 @@ vec3 proceduralSky(vec3 dir)
     return skyColor + sunColor + glowColor;
 }
 
-vec3 sampleEnvMap(vec3 dir)
-{
-    if (EnvTextureParams.x > 0.5)
-    {
-        vec3 rotDir = rotateY(dir, EnvTextureParams.z);
-        return textureLod(samplerCube(envMap, gSampler), rotDir, 0.0).rgb * EnvTextureParams.y;
-    }
-    else
-    {
-        return proceduralSky(dir);
-    }
-}
-
-// === PBR Functions (needed before IBL sampling) ===
+// === PBR Helper (needed before IBL) ===
 
 float distributionGGX(vec3 N, vec3 H, float roughness)
 {
@@ -117,7 +91,7 @@ float distributionGGX(vec3 N, vec3 H, float roughness)
     return a2 / denom;
 }
 
-// === Roughness-based Environment Blur (GGX Importance Sampling) ===
+// === Importance Sampling ===
 
 float radicalInverse_VdC(uint bits)
 {
@@ -141,10 +115,8 @@ vec3 importanceSampleGGX(vec2 Xi, vec3 N, float roughness)
     float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (a * a - 1.0) * Xi.y));
     float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
 
-    // Spherical to cartesian (tangent space)
     vec3 H = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
 
-    // Tangent space to world space
     vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
     vec3 tangent = normalize(cross(up, N));
     vec3 bitangent = cross(N, tangent);
@@ -176,7 +148,6 @@ vec3 sampleEnvMapRough(vec3 N, vec3 V, float roughness)
 
     if (EnvTextureParams.x > 0.5)
     {
-        // Unity's UnityImageBasedLighting.cginc: perceptualRoughness → LOD
         float perceptualRoughness = roughness * (1.7 - 0.7 * roughness);
         int envSize = textureSize(samplerCube(envMap, gSampler), 0).x;
         float maxLod = log2(float(envSize));
@@ -187,7 +158,6 @@ vec3 sampleEnvMapRough(vec3 N, vec3 V, float roughness)
     }
     else
     {
-        // Procedural sky: importance sampling for roughness blur
         if (roughness < 0.05)
             return proceduralSky(R);
 
@@ -212,7 +182,6 @@ vec3 sampleEnvMapRough(vec3 N, vec3 V, float roughness)
     }
 }
 
-// Diffuse IBL: cosine-weighted hemisphere irradiance
 vec3 sampleEnvMapDiffuse(vec3 N)
 {
     if (EnvTextureParams.x > 0.5)
@@ -224,7 +193,6 @@ vec3 sampleEnvMapDiffuse(vec3 N)
     }
     else
     {
-        // Cosine-weighted hemisphere sampling for proper diffuse irradiance
         vec3 result = vec3(0.0);
 
         for (uint i = 0u; i < DIFFUSE_SAMPLE_COUNT; i++)
@@ -238,29 +206,6 @@ vec3 sampleEnvMapDiffuse(vec3 N)
     }
 }
 
-// === PBR Functions ===
-
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-float geometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-    return NdotV / (NdotV * (1.0 - k) + k);
-}
-
-float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    return geometrySchlickGGX(NdotV, roughness) * geometrySchlickGGX(NdotL, roughness);
-}
-
-// Analytical approximation of split-sum BRDF integration LUT
-// Reference: Lazarov 2013, "Getting More Physical in Call of Duty: Black Ops II"
 vec2 envBRDFApprox(float NdotV, float roughness)
 {
     vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
@@ -272,20 +217,17 @@ vec2 envBRDFApprox(float NdotV, float roughness)
 
 void main()
 {
-    // G-Buffer sampling
     vec4 albedoData = texture(sampler2D(gAlbedo, gSampler), fsin_UV);
     vec4 normalData = texture(sampler2D(gNormal, gSampler), fsin_UV);
     vec4 materialData = texture(sampler2D(gMaterial, gSampler), fsin_UV);
     vec4 worldPosData = texture(sampler2D(gWorldPos, gSampler), fsin_UV);
 
-    // Background pixel (no geometry written) -> skip
     if (worldPosData.a < 0.5)
     {
         fsout_Color = vec4(0.0, 0.0, 0.0, 0.0);
         return;
     }
 
-    // Decode
     vec3 albedo = albedoData.rgb;
     vec3 N = normalize(normalData.rgb);
     float roughness = normalData.a;
@@ -293,57 +235,13 @@ void main()
     float occlusion = materialData.g;
     float emissionIntensity = materialData.b;
 
-    // World Position (direct from G-Buffer)
     vec3 worldPos = worldPosData.xyz;
     vec3 V = normalize(CameraPos.xyz - worldPos);
     float NdotV = max(dot(N, V), 0.0);
 
-    // F0 (Fresnel reflectance at normal incidence)
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // Multi-light accumulation
-    vec3 Lo = vec3(0.0);
-
-    for (int i = 0; i < LightCount && i < 64; i++)
-    {
-        float lightType = Lights[i].PositionOrDirection.w;
-        vec3 lightColor = Lights[i].ColorIntensity.rgb * Lights[i].ColorIntensity.a;
-        float attenuation = 1.0;
-        vec3 L;
-
-        if (lightType < 0.5)
-        {
-            // Directional light
-            L = normalize(-Lights[i].PositionOrDirection.xyz);
-        }
-        else
-        {
-            // Point light
-            vec3 toLight = Lights[i].PositionOrDirection.xyz - worldPos;
-            float dist = length(toLight);
-            L = toLight / max(dist, 0.001);
-            float lightRange = Lights[i].Params.x;
-            attenuation = max(1.0 - (dist / lightRange), 0.0);
-            attenuation *= attenuation;
-        }
-
-        vec3 H = normalize(V + L);
-        float NdotL = max(dot(N, L), 0.0);
-
-        // Cook-Torrance BRDF
-        float NDF = distributionGGX(N, H, roughness);
-        float G = geometrySmith(N, V, L, roughness);
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-        vec3 specular = (NDF * G * F) /
-            (4.0 * max(dot(N, V), 0.0) * NdotL + 0.0001);
-
-        vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
-
-        Lo += (kD * albedo / PI + specular) * lightColor * NdotL * attenuation;
-    }
-
-    // IBL Ambient — split-sum approximation with BRDF integration
+    // IBL Ambient — split-sum approximation
     vec3 envSpecular = sampleEnvMapRough(N, V, roughness);
     vec3 envDiffuse = sampleEnvMapDiffuse(N);
 
@@ -354,8 +252,7 @@ void main()
     vec3 ambient_diffuse = kD_ambient * albedo * envDiffuse * occlusion;
     vec3 ambient_specular = specularScale * envSpecular * occlusion;
     vec3 ambient = ambient_diffuse + ambient_specular;
-    vec3 color = ambient + Lo + emissionIntensity * albedo;
 
-    // HDR linear output — tone mapping in Post-Processing
+    vec3 color = ambient + emissionIntensity * albedo;
     fsout_Color = vec4(color, 1.0);
 }

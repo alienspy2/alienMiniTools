@@ -55,13 +55,19 @@ namespace IronRose.Rendering
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    internal struct DeferredLightHeader
+    internal struct AmbientUniforms
     {
-        public Vector4 CameraPos;                                 // 16 bytes
-        public int LightCount;                                    // 4 bytes
-        public int _pad1, _pad2, _pad3;                          // 12 bytes
-        public Vector4 SkyAmbientColor;                           // 16 bytes
-        // Total: 48 bytes — followed by LightInfoGPU[64] in the buffer
+        public Vector4 CameraPos;       // 16 bytes
+        public Vector4 SkyAmbientColor; // 16 bytes
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct LightVolumeUniforms
+    {
+        public System.Numerics.Matrix4x4 WorldViewProjection;  // 64 bytes
+        public Vector4 CameraPos;                               // 16 bytes
+        public Vector4 ScreenParams;                            // 16 bytes (x=width, y=height)
+        public LightInfoGPU Light;                              // 64 bytes
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -90,6 +96,10 @@ namespace IronRose.Rendering
         private GraphicsDevice? _device;
         private string _shaderDir = "";
 
+        // Debug: 첫 N 프레임 동안 상세 로그 출력 (0 = off)
+        private int _debugFrameCount = 0;
+        private const int DebugLogFrames = 0;
+
         // --- Shared resources ---
         private DeviceBuffer? _transformBuffer;
         private DeviceBuffer? _materialBuffer;
@@ -113,14 +123,30 @@ namespace IronRose.Rendering
         private GBuffer? _gBuffer;
         private Veldrid.Shader[]? _geometryShaders;
         private Pipeline? _geometryPipeline;
-        private Veldrid.Shader[]? _lightingShaders;
-        private Pipeline? _lightingPipeline;
-        private DeviceBuffer? _deferredLightBuffer;
-        private ResourceLayout? _deferredLightingLayout;
-        private ResourceSet? _deferredLightingSet;
-        private readonly LightInfoGPU[] _deferredLights = new LightInfoGPU[64];
+
+        // --- Light volume rendering ---
+        private Veldrid.Shader[]? _ambientShaders;
+        private Veldrid.Shader[]? _directionalLightShaders;
+        private Veldrid.Shader[]? _pointLightShaders;
+
+        private Pipeline? _ambientPipeline;
+        private Pipeline? _directionalLightPipeline;
+        private Pipeline? _pointLightPipeline;
+
+        private ResourceLayout? _gBufferLayout;
+        private ResourceLayout? _ambientLayout;
+        private ResourceLayout? _lightVolumeLayout;
+
+        private ResourceSet? _gBufferResourceSet;
+        private ResourceSet? _ambientResourceSet;
+        private ResourceSet? _lightVolumeResourceSet;
+
+        private DeviceBuffer? _ambientBuffer;
+        private DeviceBuffer? _lightVolumeBuffer;
         private DeviceBuffer? _envMapBuffer;
-        private TextureView? _currentEnvMapTextureView;
+
+        private Mesh? _lightSphereMesh;
+        private TextureView? _currentAmbientEnvMapView;
 
         // --- Skybox ---
         private Veldrid.Shader[]? _skyboxShaders;
@@ -139,10 +165,6 @@ namespace IronRose.Rendering
         private PostProcessStack? _postProcessStack;
         public PostProcessStack? PostProcessing => _postProcessStack;
 
-        private const int MaxDeferredLights = 64;
-        private static readonly uint DeferredLightHeaderSize = (uint)Marshal.SizeOf<DeferredLightHeader>();
-        private static readonly uint LightInfoSize = (uint)Marshal.SizeOf<LightInfoGPU>();
-        private static readonly uint DeferredLightBufferSize = DeferredLightHeaderSize + LightInfoSize * MaxDeferredLights;
 
         public void Initialize(GraphicsDevice device)
         {
@@ -161,9 +183,17 @@ namespace IronRose.Rendering
                 Path.Combine(_shaderDir, "deferred_geometry.vert"),
                 Path.Combine(_shaderDir, "deferred_geometry.frag"));
 
-            _lightingShaders = ShaderCompiler.CompileGLSL(device,
+            _ambientShaders = ShaderCompiler.CompileGLSL(device,
                 Path.Combine(_shaderDir, "deferred_lighting.vert"),
-                Path.Combine(_shaderDir, "deferred_lighting.frag"));
+                Path.Combine(_shaderDir, "deferred_ambient.frag"));
+
+            _directionalLightShaders = ShaderCompiler.CompileGLSL(device,
+                Path.Combine(_shaderDir, "deferred_lighting.vert"),
+                Path.Combine(_shaderDir, "deferred_directlight.frag"));
+
+            _pointLightShaders = ShaderCompiler.CompileGLSL(device,
+                Path.Combine(_shaderDir, "deferred_pointlight.vert"),
+                Path.Combine(_shaderDir, "deferred_pointlight.frag"));
 
             _skyboxShaders = ShaderCompiler.CompileGLSL(device,
                 Path.Combine(_shaderDir, "skybox.vert"),
@@ -182,8 +212,12 @@ namespace IronRose.Rendering
                 (uint)Marshal.SizeOf<LightUniforms>(),
                 BufferUsage.UniformBuffer | BufferUsage.Dynamic));
 
-            _deferredLightBuffer = factory.CreateBuffer(new BufferDescription(
-                DeferredLightBufferSize,
+            _ambientBuffer = factory.CreateBuffer(new BufferDescription(
+                (uint)Marshal.SizeOf<AmbientUniforms>(),
+                BufferUsage.UniformBuffer | BufferUsage.Dynamic));
+
+            _lightVolumeBuffer = factory.CreateBuffer(new BufferDescription(
+                (uint)Marshal.SizeOf<LightVolumeUniforms>(),
                 BufferUsage.UniformBuffer | BufferUsage.Dynamic));
 
             _skyboxUniformBuffer = factory.CreateBuffer(new BufferDescription(
@@ -220,16 +254,23 @@ namespace IronRose.Rendering
             _perFrameLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("LightData", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
 
-            // Deferred lighting (set 0): G-Buffer textures + sampler + light buffer + envmap
-            _deferredLightingLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+            // GBuffer layout (set 0, shared by all lighting passes)
+            _gBufferLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
                 new ResourceLayoutElementDescription("gAlbedo", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("gNormal", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("gMaterial", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("gWorldPos", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("gSampler", ResourceKind.Sampler, ShaderStages.Fragment),
-                new ResourceLayoutElementDescription("LightingBuffer", ResourceKind.UniformBuffer, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("gSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+            // Ambient layout (set 1)
+            _ambientLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("AmbientData", ResourceKind.UniformBuffer, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("EnvMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("EnvMapParams", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+
+            // Light volume layout (set 1, shared by directional + point)
+            _lightVolumeLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("LightVolumeData", ResourceKind.UniformBuffer, ShaderStages.Vertex | ShaderStages.Fragment)));
 
             // Skybox (set 0): uniform buffer + texture + sampler
             _skyboxLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
@@ -248,6 +289,14 @@ namespace IronRose.Rendering
                 _skyboxLayout, _skyboxUniformBuffer, _whiteCubemap!.TextureView!, _defaultSampler));
             _currentSkyboxTextureView = null;
 
+            // --- Light volume resource set (buffer doesn't change, content does) ---
+            _lightVolumeResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+                _lightVolumeLayout, _lightVolumeBuffer));
+
+            // --- Light sphere mesh for point light volumes ---
+            _lightSphereMesh = PrimitiveGenerator.CreateSphere(12, 8);
+            _lightSphereMesh.UploadToGPU(device);
+
             // --- Create size-dependent resources (GBuffer, HDR, pipelines) ---
             CreateSizeDependentResources(width, height);
 
@@ -257,7 +306,7 @@ namespace IronRose.Rendering
             _postProcessStack.AddEffect(new BloomEffect());
             _postProcessStack.AddEffect(new TonemapEffect());
 
-            Console.WriteLine("[RenderSystem] Deferred PBR pipeline initialized");
+            Console.WriteLine("[RenderSystem] Light volume PBR pipeline initialized");
         }
 
         private void CreateSizeDependentResources(uint width, uint height)
@@ -265,12 +314,15 @@ namespace IronRose.Rendering
             var factory = _device!.ResourceFactory;
 
             // Dispose old size-dependent resources
-            _deferredLightingSet?.Dispose();
+            _gBufferResourceSet?.Dispose();
+            _ambientResourceSet?.Dispose();
             _hdrView?.Dispose();
             _hdrFramebuffer?.Dispose();
             _hdrTexture?.Dispose();
             _geometryPipeline?.Dispose();
-            _lightingPipeline?.Dispose();
+            _ambientPipeline?.Dispose();
+            _directionalLightPipeline?.Dispose();
+            _pointLightPipeline?.Dispose();
             _skyboxPipeline?.Dispose();
             _forwardPipeline?.Dispose();
             _wireframePipeline?.Dispose();
@@ -326,8 +378,20 @@ namespace IronRose.Rendering
                 Outputs = _gBuffer.Framebuffer.OutputDescription,
             });
 
-            // --- Lighting Pipeline (→ HDR, fullscreen triangle, no depth) ---
-            _lightingPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            // --- Additive blend state (shared by directional + point light passes) ---
+            var additiveBlend = new BlendStateDescription(
+                RgbaFloat.Black,
+                new BlendAttachmentDescription(
+                    blendEnabled: true,
+                    sourceColorFactor: BlendFactor.One,
+                    destinationColorFactor: BlendFactor.One,
+                    colorFunction: BlendFunction.Add,
+                    sourceAlphaFactor: BlendFactor.One,
+                    destinationAlphaFactor: BlendFactor.One,
+                    alphaFunction: BlendFunction.Add));
+
+            // --- Ambient Pipeline (→ HDR, fullscreen, overwrite) ---
+            _ambientPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
             {
                 BlendState = BlendStateDescription.SingleOverrideBlend,
                 DepthStencilState = DepthStencilStateDescription.Disabled,
@@ -335,10 +399,45 @@ namespace IronRose.Rendering
                     cullMode: FaceCullMode.None, fillMode: PolygonFillMode.Solid,
                     frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
                 PrimitiveTopology = PrimitiveTopology.TriangleList,
-                ResourceLayouts = new[] { _deferredLightingLayout! },
+                ResourceLayouts = new[] { _gBufferLayout!, _ambientLayout! },
                 ShaderSet = new ShaderSetDescription(
                     vertexLayouts: Array.Empty<VertexLayoutDescription>(),
-                    shaders: _lightingShaders!),
+                    shaders: _ambientShaders!),
+                Outputs = _hdrFramebuffer.OutputDescription,
+            });
+
+            // --- Directional Light Pipeline (→ HDR, fullscreen, additive) ---
+            _directionalLightPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = additiveBlend,
+                DepthStencilState = DepthStencilStateDescription.Disabled,
+                RasterizerState = new RasterizerStateDescription(
+                    cullMode: FaceCullMode.None, fillMode: PolygonFillMode.Solid,
+                    frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
+                PrimitiveTopology = PrimitiveTopology.TriangleList,
+                ResourceLayouts = new[] { _gBufferLayout!, _lightVolumeLayout! },
+                ShaderSet = new ShaderSetDescription(
+                    vertexLayouts: Array.Empty<VertexLayoutDescription>(),
+                    shaders: _directionalLightShaders!),
+                Outputs = _hdrFramebuffer.OutputDescription,
+            });
+
+            // --- Point Light Pipeline (→ HDR, sphere mesh, additive) ---
+            // CullMode.Back + GreaterEqual: keep front faces (engine's winding convention),
+            // which are the far hemisphere from inside the sphere → depth > scene = pixel inside volume
+            _pointLightPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = additiveBlend,
+                DepthStencilState = new DepthStencilStateDescription(
+                    depthTestEnabled: true, depthWriteEnabled: false, comparisonKind: ComparisonKind.GreaterEqual),
+                RasterizerState = new RasterizerStateDescription(
+                    cullMode: FaceCullMode.Back, fillMode: PolygonFillMode.Solid,
+                    frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
+                PrimitiveTopology = PrimitiveTopology.TriangleList,
+                ResourceLayouts = new[] { _gBufferLayout!, _lightVolumeLayout! },
+                ShaderSet = new ShaderSetDescription(
+                    vertexLayouts: new[] { vertexLayout },
+                    shaders: _pointLightShaders!),
                 Outputs = _hdrFramebuffer.OutputDescription,
             });
 
@@ -419,18 +518,22 @@ namespace IronRose.Rendering
                 Outputs = _hdrFramebuffer.OutputDescription,
             });
 
-            // --- Deferred lighting resource set ---
-            _deferredLightingSet = factory.CreateResourceSet(new ResourceSetDescription(
-                _deferredLightingLayout!,
+            // --- GBuffer resource set (shared by all lighting passes) ---
+            _gBufferResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+                _gBufferLayout!,
                 _gBuffer.AlbedoView,
                 _gBuffer.NormalView,
                 _gBuffer.MaterialView,
                 _gBuffer.WorldPosView,
-                _defaultSampler!,
-                _deferredLightBuffer!,
+                _defaultSampler!));
+
+            // --- Ambient resource set ---
+            _ambientResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+                _ambientLayout!,
+                _ambientBuffer!,
                 _whiteCubemap!.TextureView!,
                 _envMapBuffer!));
-            _currentEnvMapTextureView = null;
+            _currentAmbientEnvMapView = null;
         }
 
         public void Resize(uint width, uint height)
@@ -455,6 +558,17 @@ namespace IronRose.Rendering
             if (_device == null || _gBuffer == null || camera == null)
                 return;
 
+            bool debugLog = _debugFrameCount < DebugLogFrames;
+            _debugFrameCount++;
+
+            if (debugLog)
+            {
+                Console.WriteLine($"[Render] === Frame {_debugFrameCount} ===");
+                Console.WriteLine($"[Render] Camera: pos=({camera.transform.position.x:F2},{camera.transform.position.y:F2},{camera.transform.position.z:F2}) fov={camera.fieldOfView} clearFlags={camera.clearFlags}");
+                Console.WriteLine($"[Render] GBuffer: {_gBuffer.Width}x{_gBuffer.Height}");
+                Console.WriteLine($"[Render] MeshRenderers: {MeshRenderer._allRenderers.Count}, Lights: {Light._allLights.Count}");
+            }
+
             var viewMatrix = camera.GetViewMatrix().ToNumerics();
             var projMatrix = camera.GetProjectionMatrix(aspectRatio).ToNumerics();
             var viewProj = viewMatrix * projMatrix;
@@ -467,32 +581,94 @@ namespace IronRose.Rendering
             cl.ClearColorTarget(3, RgbaFloat.Clear);               // WorldPos (alpha=0 → no geometry)
             cl.ClearDepthStencil(1f);
             cl.SetPipeline(_geometryPipeline);
-            DrawOpaqueRenderers(cl, viewProj);
+            int opaqueCount = DrawOpaqueRenderersDebug(cl, viewProj, debugLog);
+            if (debugLog)
+                Console.WriteLine($"[Render] GeometryPass: drew {opaqueCount} opaque objects");
 
-            // === 2. Lighting Pass → HDR ===
+            // === 2. Ambient/IBL Pass → HDR (Overwrite) ===
             cl.SetFramebuffer(_hdrFramebuffer);
             if (camera.clearFlags == CameraClearFlags.SolidColor)
             {
                 var bg = camera.backgroundColor;
                 cl.ClearColorTarget(0, new RgbaFloat(bg.r, bg.g, bg.b, bg.a));
+                if (debugLog)
+                    Console.WriteLine($"[Render] HDR clear: SolidColor ({bg.r:F2},{bg.g:F2},{bg.b:F2})");
             }
             else
             {
                 cl.ClearColorTarget(0, RgbaFloat.Clear);
+                if (debugLog)
+                    Console.WriteLine($"[Render] HDR clear: Transparent (Skybox mode)");
             }
             // (depth is shared with GBuffer — do NOT clear it)
-            cl.SetPipeline(_lightingPipeline);
-            UpdateEnvMapForLighting();
-            UploadDeferredLightData(cl, camera);
+
+            UpdateEnvMapForAmbient();
+            UploadAmbientData(cl, camera);
             UploadEnvMapData(cl);
-            cl.SetGraphicsResourceSet(0, _deferredLightingSet);
-            cl.Draw(3, 1, 0, 0); // Fullscreen triangle
 
-            // === 3. Skybox Pass → HDR (depth test LessEqual, only empty pixels) ===
+            cl.SetPipeline(_ambientPipeline);
+            cl.SetGraphicsResourceSet(0, _gBufferResourceSet);
+            cl.SetGraphicsResourceSet(1, _ambientResourceSet);
+            cl.Draw(3, 1, 0, 0);
+            if (debugLog)
+                Console.WriteLine($"[Render] AmbientPass: fullscreen draw");
+
+            // === 3. Direct Lights → HDR (Additive) ===
+            int dirCount = 0, pointCount = 0;
+            foreach (var light in Light._allLights)
+            {
+                if (!light.enabled || !light.gameObject.activeInHierarchy) continue;
+
+                UploadSingleLightUniforms(cl, light, camera, viewProj);
+
+                if (light.type == LightType.Directional)
+                {
+                    cl.SetPipeline(_directionalLightPipeline);
+                    cl.SetGraphicsResourceSet(0, _gBufferResourceSet);
+                    cl.SetGraphicsResourceSet(1, _lightVolumeResourceSet);
+                    cl.Draw(3, 1, 0, 0);
+                    dirCount++;
+
+                    if (debugLog)
+                    {
+                        var fwd = light.transform.forward;
+                        Console.WriteLine($"[Render] DirectionalLight: dir=({fwd.x:F2},{fwd.y:F2},{fwd.z:F2}) color=({light.color.r:F2},{light.color.g:F2},{light.color.b:F2}) intensity={light.intensity:F2}");
+                    }
+                }
+                else // Point
+                {
+                    cl.SetPipeline(_pointLightPipeline);
+                    cl.SetGraphicsResourceSet(0, _gBufferResourceSet);
+                    cl.SetGraphicsResourceSet(1, _lightVolumeResourceSet);
+                    cl.SetVertexBuffer(0, _lightSphereMesh!.VertexBuffer);
+                    cl.SetIndexBuffer(_lightSphereMesh.IndexBuffer!, IndexFormat.UInt32);
+                    cl.DrawIndexed((uint)_lightSphereMesh.indices.Length);
+                    pointCount++;
+
+                    if (debugLog)
+                    {
+                        var pos = light.transform.position;
+                        float scale = light.range * 2.0f;
+                        Console.WriteLine($"[Render] PointLight: pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) range={light.range:F1} sphereScale={scale:F1} color=({light.color.r:F2},{light.color.g:F2},{light.color.b:F2}) intensity={light.intensity:F2} indices={_lightSphereMesh.indices.Length}");
+                    }
+                }
+            }
+            if (debugLog)
+                Console.WriteLine($"[Render] LightPass: {dirCount} directional, {pointCount} point lights");
+
+            // === 4. Skybox Pass → HDR (depth test LessEqual, only empty pixels) ===
             if (camera.clearFlags == CameraClearFlags.Skybox)
+            {
                 RenderSkybox(cl, camera, viewProj);
+                if (debugLog)
+                    Console.WriteLine($"[Render] SkyboxPass: rendered");
+            }
+            else if (debugLog)
+            {
+                Console.WriteLine($"[Render] SkyboxPass: skipped (clearFlags={camera.clearFlags})");
+            }
 
-            // === 4. Forward Pass → HDR (sprites, text, wireframe) ===
+            // === 5. Forward Pass → HDR (sprites, text, wireframe) ===
             if (Debug.wireframe && _wireframePipeline != null)
             {
                 UploadForwardLightData(cl, camera);
@@ -508,10 +684,14 @@ namespace IronRose.Rendering
             if (_spritePipeline != null && TextRenderer._allTextRenderers.Count > 0)
             {
                 DrawAllTexts(cl, viewProj, camera);
+                if (debugLog)
+                    Console.WriteLine($"[Render] ForwardPass: sprites={SpriteRenderer._allSpriteRenderers.Count} texts={TextRenderer._allTextRenderers.Count}");
             }
 
-            // === 5. Post-Processing → Swapchain ===
+            // === 6. Post-Processing → Swapchain ===
             _postProcessStack?.Execute(cl, _hdrView!, _device.SwapchainFramebuffer);
+            if (debugLog)
+                Console.WriteLine($"[Render] PostProcess: done → swapchain");
         }
 
         // ==============================
@@ -536,35 +716,55 @@ namespace IronRose.Rendering
             return info;
         }
 
-        private void UploadDeferredLightData(CommandList cl, Camera camera)
+        private void UploadAmbientData(CommandList cl, Camera camera)
         {
             var camPos = camera.transform.position;
-            int count = 0;
-            Array.Clear(_deferredLights);
-
-            foreach (var light in Light._allLights)
-            {
-                if (count >= MaxDeferredLights) break;
-                if (!light.enabled || !light.gameObject.activeInHierarchy) continue;
-                _deferredLights[count++] = CollectLightInfo(light);
-            }
-
-            var header = new DeferredLightHeader
+            var uniforms = new AmbientUniforms
             {
                 CameraPos = new Vector4(camPos.x, camPos.y, camPos.z, 0),
-                LightCount = count,
                 SkyAmbientColor = ComputeSkyAmbientColor(),
             };
+            cl.UpdateBuffer(_ambientBuffer, 0, uniforms);
+        }
 
-            cl.UpdateBuffer(_deferredLightBuffer, 0, header);
-            cl.UpdateBuffer(_deferredLightBuffer, DeferredLightHeaderSize, _deferredLights);
+        private void UploadSingleLightUniforms(CommandList cl, Light light, Camera camera,
+            System.Numerics.Matrix4x4 viewProj)
+        {
+            var camPos = camera.transform.position;
+            var lightInfo = CollectLightInfo(light);
+
+            System.Numerics.Matrix4x4 mvp;
+            if (light.type == LightType.Point)
+            {
+                var pos = light.transform.position;
+                float scale = light.range * 2.0f;
+                var world = RoseEngine.Matrix4x4.TRS(
+                    new RoseEngine.Vector3(pos.x, pos.y, pos.z),
+                    RoseEngine.Quaternion.identity,
+                    new RoseEngine.Vector3(scale, scale, scale)).ToNumerics();
+                mvp = world * viewProj;
+            }
+            else
+            {
+                mvp = System.Numerics.Matrix4x4.Identity;
+            }
+
+            var uniforms = new LightVolumeUniforms
+            {
+                WorldViewProjection = mvp,
+                CameraPos = new Vector4(camPos.x, camPos.y, camPos.z, 0),
+                ScreenParams = new Vector4(_gBuffer!.Width, _gBuffer.Height, 0, 0),
+                Light = lightInfo,
+            };
+
+            cl.UpdateBuffer(_lightVolumeBuffer, 0, uniforms);
         }
 
         // ==============================
         // Environment map for deferred lighting
         // ==============================
 
-        private void UpdateEnvMapForLighting()
+        private void UpdateEnvMapForAmbient()
         {
             TextureView? envMapView = null;
             var skyboxMat = RenderSettings.skybox;
@@ -581,16 +781,16 @@ namespace IronRose.Rendering
                 envMapView = skyboxMat._cachedCubemap.TextureView;
             }
 
-            if (envMapView != _currentEnvMapTextureView)
+            if (envMapView != _currentAmbientEnvMapView)
             {
-                _deferredLightingSet?.Dispose();
+                _ambientResourceSet?.Dispose();
                 var texView = envMapView ?? _whiteCubemap!.TextureView!;
-                _deferredLightingSet = _device!.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                    _deferredLightingLayout!,
-                    _gBuffer!.AlbedoView, _gBuffer.NormalView, _gBuffer.MaterialView, _gBuffer.WorldPosView,
-                    _defaultSampler!, _deferredLightBuffer!,
-                    texView, _envMapBuffer!));
-                _currentEnvMapTextureView = envMapView;
+                _ambientResourceSet = _device!.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                    _ambientLayout!,
+                    _ambientBuffer!,
+                    texView,
+                    _envMapBuffer!));
+                _currentAmbientEnvMapView = envMapView;
             }
         }
 
@@ -837,6 +1037,12 @@ namespace IronRose.Rendering
 
         private void DrawOpaqueRenderers(CommandList cl, System.Numerics.Matrix4x4 viewProj)
         {
+            DrawOpaqueRenderersDebug(cl, viewProj, false);
+        }
+
+        private int DrawOpaqueRenderersDebug(CommandList cl, System.Numerics.Matrix4x4 viewProj, bool debugLog)
+        {
+            int drawn = 0;
             foreach (var renderer in MeshRenderer._allRenderers)
             {
                 if (!renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
@@ -848,7 +1054,16 @@ namespace IronRose.Rendering
 
                 var (matUniforms, texView) = PrepareMaterial(renderer.material);
                 DrawMesh(cl, viewProj, mesh, renderer.transform, matUniforms, texView, bindPerFrame: false);
+                drawn++;
+
+                if (debugLog)
+                {
+                    var pos = renderer.transform.position;
+                    var scale = renderer.transform.localScale;
+                    Console.WriteLine($"[Render]   Object '{renderer.gameObject.name}': pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) scale=({scale.x:F2},{scale.y:F2},{scale.z:F2}) color=({matUniforms.Color.X:F2},{matUniforms.Color.Y:F2},{matUniforms.Color.Z:F2}) metallic={matUniforms.Metallic:F2} roughness={matUniforms.Roughness:F2} verts={mesh.vertices.Length} indices={mesh.indices.Length}");
+                }
             }
+            return drawn;
         }
 
         private void DrawAllRenderers(CommandList cl, System.Numerics.Matrix4x4 viewProj, bool useWireframeColor)
@@ -1004,7 +1219,9 @@ namespace IronRose.Rendering
             _postProcessStack?.Dispose();
 
             _geometryPipeline?.Dispose();
-            _lightingPipeline?.Dispose();
+            _ambientPipeline?.Dispose();
+            _directionalLightPipeline?.Dispose();
+            _pointLightPipeline?.Dispose();
             _skyboxPipeline?.Dispose();
             _forwardPipeline?.Dispose();
             _wireframePipeline?.Dispose();
@@ -1014,9 +1231,16 @@ namespace IronRose.Rendering
             _skyboxLayout?.Dispose();
             _skyboxUniformBuffer?.Dispose();
 
-            _deferredLightingSet?.Dispose();
-            _deferredLightingLayout?.Dispose();
-            _deferredLightBuffer?.Dispose();
+            _gBufferResourceSet?.Dispose();
+            _ambientResourceSet?.Dispose();
+            _lightVolumeResourceSet?.Dispose();
+
+            _gBufferLayout?.Dispose();
+            _ambientLayout?.Dispose();
+            _lightVolumeLayout?.Dispose();
+
+            _ambientBuffer?.Dispose();
+            _lightVolumeBuffer?.Dispose();
             _envMapBuffer?.Dispose();
 
             _hdrView?.Dispose();
@@ -1044,8 +1268,12 @@ namespace IronRose.Rendering
                 foreach (var s in _forwardShaders) s.Dispose();
             if (_geometryShaders != null)
                 foreach (var s in _geometryShaders) s.Dispose();
-            if (_lightingShaders != null)
-                foreach (var s in _lightingShaders) s.Dispose();
+            if (_ambientShaders != null)
+                foreach (var s in _ambientShaders) s.Dispose();
+            if (_directionalLightShaders != null)
+                foreach (var s in _directionalLightShaders) s.Dispose();
+            if (_pointLightShaders != null)
+                foreach (var s in _pointLightShaders) s.Dispose();
             if (_skyboxShaders != null)
                 foreach (var s in _skyboxShaders) s.Dispose();
 

@@ -24,12 +24,15 @@ public class CornellBoxDemo : MonoBehaviour
             clearFlags: CameraClearFlags.SolidColor,
             backgroundColor: Color.black);
 
+        // Indoor scene: minimal sky ambient (enclosed room)
+        RenderSettings.ambientIntensity = 0.08f;
+
         // --- Cornell Box Light (ceiling area, white) ---
         var lightObj = new GameObject("Ceiling Light");
         var ceilingLight = lightObj.AddComponent<Light>();
         ceilingLight.type = LightType.Point;
         ceilingLight.color = Color.white;
-        ceilingLight.intensity = 1f;
+        ceilingLight.intensity = 10f;
         ceilingLight.range = 10f;
         lightObj.transform.position = new Vector3(0, 2.3f, 0);
 

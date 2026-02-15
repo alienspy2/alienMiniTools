@@ -12,6 +12,7 @@ public class DemoLauncher : MonoBehaviour
         ("Asset Import",    typeof(AssetImportDemo)),
         ("3D Physics",      typeof(PhysicsDemo3D)),
         ("PBR",             typeof(PBRDemo)),
+        ("Many Lights",     typeof(ManyLightsDemo)),
     };
 
     private static readonly KeyCode[] _numKeys =
@@ -30,7 +31,8 @@ public class DemoLauncher : MonoBehaviour
     private int _lastLiveCodeCount = -1;
 
     // 핫 리로드 후 활성 데모 자동 복원용 (static → SceneManager.Clear 후에도 유지)
-    private static int _activeBuiltinDemo = -1;
+    // 0 = Cornell Box 자동 시작 (디버깅), -1 = 메뉴만 표시
+    private static int _activeBuiltinDemo = 0;
     private static string _activeLiveCodeDemo = "";
 
     public override void Awake()
@@ -68,7 +70,7 @@ public class DemoLauncher : MonoBehaviour
                 var (label, type) = _builtinDemos[_activeBuiltinDemo];
                 var go = new GameObject(type.Name);
                 go.AddComponent(type);
-                Debug.Log($"[Demo] >> {label} (hot-reloaded)");
+                Debug.Log($"[Demo] >> {label} (auto-start)");
             }
             else
             {

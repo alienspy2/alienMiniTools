@@ -42,6 +42,7 @@ namespace IronRose.Demo
             Console.WriteLine($"[IronRose] Window created: {_window!.Size.X}x{_window.Size.Y}");
 
             _engine = new EngineCore();
+            // _engine.ScreenCaptureEnabled = true;  // 디버깅: 자동 스크린캡처
             _engine.Initialize(_window);
 
             // 핫 리로드 후 씬 복원 콜백 등록
