@@ -111,14 +111,22 @@ void main()
     float shadow = 1.0;
     if (ShadowParams.x > 0.5)
     {
-        vec4 lightSpacePos = LightViewProjection * vec4(worldPos, 1.0);
+        // Normal offset bias: shift sample along surface normal
+        float normalOffset = ShadowParams.z * (1.0 - NdotL);
+        vec3 offsetPos = worldPos + N * normalOffset;
+
+        vec4 lightSpacePos = LightViewProjection * vec4(offsetPos, 1.0);
         vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
-        projCoords = projCoords * 0.5 + 0.5;
+        projCoords.xy = projCoords.xy * 0.5 + 0.5;
+        projCoords.y = 1.0 - projCoords.y;  // Veldrid/Vulkan flips viewport Y
 
         if (projCoords.z <= 1.0 && projCoords.x >= 0.0 && projCoords.x <= 1.0
             && projCoords.y >= 0.0 && projCoords.y <= 1.0)
         {
             vec2 atlasUV = projCoords.xy * ShadowAtlasParams.zw + ShadowAtlasParams.xy;
+
+            // Slope-scale depth bias
+            float bias = ShadowParams.y + ShadowParams.y * 5.0 * (1.0 - NdotL);
 
             shadow = 0.0;
             vec2 texelSize = 1.0 / textureSize(sampler2D(ShadowMap, ShadowSampler), 0);
@@ -126,7 +134,7 @@ void main()
                 for (int y = -1; y <= 1; y++) {
                     float closestDepth = texture(sampler2D(ShadowMap, ShadowSampler),
                         atlasUV + vec2(x, y) * texelSize).r;
-                    shadow += projCoords.z - ShadowParams.y > closestDepth ? 0.0 : 1.0;
+                    shadow += projCoords.z - bias > closestDepth ? 0.0 : 1.0;
                 }
             }
             shadow /= 9.0;

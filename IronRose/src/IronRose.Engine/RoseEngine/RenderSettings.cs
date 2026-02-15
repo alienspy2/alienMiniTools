@@ -29,5 +29,25 @@ namespace RoseEngine
         /// Ambient intensity multiplier for IBL.
         /// </summary>
         public static float ambientIntensity { get; set; } = 1.0f;
+
+        /// <summary>
+        /// Procedural sky zenith (top) color.
+        /// </summary>
+        public static Color skyZenithColor { get; set; } = new Color(0.15f, 0.3f, 0.65f);
+
+        /// <summary>
+        /// Procedural sky horizon color.
+        /// </summary>
+        public static Color skyHorizonColor { get; set; } = new Color(0.6f, 0.7f, 0.85f);
+
+        /// <summary>
+        /// Procedural sky zenith intensity.
+        /// </summary>
+        public static float skyZenithIntensity { get; set; } = 0.8f;
+
+        /// <summary>
+        /// Procedural sky horizon intensity.
+        /// </summary>
+        public static float skyHorizonIntensity { get; set; } = 1.0f;
     }
 }

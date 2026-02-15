@@ -29,6 +29,47 @@ namespace RoseEngine
         internal DeviceBuffer? IndexBuffer;
         internal bool isDirty = true;
 
+        private Bounds _bounds;
+        private bool _boundsDirty = true;
+
+        public Bounds bounds
+        {
+            get
+            {
+                if (_boundsDirty)
+                    RecalculateBounds();
+                return _bounds;
+            }
+            set
+            {
+                _bounds = value;
+                _boundsDirty = false;
+            }
+        }
+
+        public void RecalculateBounds()
+        {
+            if (vertices.Length == 0)
+            {
+                _bounds = new Bounds(Vector3.zero, Vector3.zero);
+                _boundsDirty = false;
+                return;
+            }
+
+            var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
+
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                var p = vertices[i].Position;
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
+            }
+
+            _bounds = new Bounds((min + max) / 2f, max - min);
+            _boundsDirty = false;
+        }
+
         public void UploadToGPU(GraphicsDevice device)
         {
             if (!isDirty || vertices.Length == 0 || indices.Length == 0)

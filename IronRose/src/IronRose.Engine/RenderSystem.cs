@@ -93,6 +93,15 @@ namespace IronRose.Rendering
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal struct DebugOverlayParamsGPU
+    {
+        public float Mode;
+        public float _pad1;
+        public float _pad2;
+        public float _pad3;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct SkyboxUniforms
     {
         public System.Numerics.Matrix4x4 InverseViewProjection;  // 64 bytes
@@ -173,6 +182,7 @@ namespace IronRose.Rendering
         private const int AtlasSize = 4096;
         private Veldrid.Shader[]? _shadowAtlasShaders;
         private Pipeline? _shadowAtlasPipeline;
+        private Pipeline? _shadowAtlasFrontCullPipeline;
         private ResourceLayout? _shadowLayout;
         private DeviceBuffer? _shadowTransformBuffer;
         private Sampler? _shadowSampler;
@@ -214,6 +224,13 @@ namespace IronRose.Rendering
         // --- Post-processing ---
         private PostProcessStack? _postProcessStack;
         public PostProcessStack? PostProcessing => _postProcessStack;
+
+        // --- Debug overlay ---
+        private Veldrid.Shader[]? _debugOverlayShaders;
+        private Pipeline? _debugOverlayPipeline;
+        private ResourceLayout? _debugOverlayLayout;
+        private DeviceBuffer? _debugOverlayParamsBuffer;
+        private Sampler? _debugOverlaySampler;
 
 
         public void Initialize(GraphicsDevice device)
@@ -395,6 +412,24 @@ namespace IronRose.Rendering
             _postProcessStack.AddEffect(new BloomEffect());
             _postProcessStack.AddEffect(new TonemapEffect());
 
+            // --- Debug Overlay ---
+            _debugOverlayShaders = ShaderCompiler.CompileGLSL(device,
+                Path.Combine(_shaderDir, "fullscreen.vert"),
+                Path.Combine(_shaderDir, "debug_overlay.frag"));
+
+            _debugOverlayParamsBuffer = factory.CreateBuffer(new BufferDescription(
+                (uint)Marshal.SizeOf<DebugOverlayParamsGPU>(), BufferUsage.UniformBuffer | BufferUsage.Dynamic));
+
+            _debugOverlayLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("SourceTexture", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("SourceSampler", ResourceKind.Sampler, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("DebugParams", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
+
+            _debugOverlaySampler = factory.CreateSampler(new SamplerDescription(
+                SamplerAddressMode.Clamp, SamplerAddressMode.Clamp, SamplerAddressMode.Clamp,
+                SamplerFilter.MinLinear_MagLinear_MipLinear,
+                null, 0, 0, 0, 0, SamplerBorderColor.TransparentBlack));
+
             Console.WriteLine("[RenderSystem] Light volume PBR pipeline initialized");
         }
 
@@ -505,6 +540,24 @@ namespace IronRose.Rendering
                     depthTestEnabled: true, depthWriteEnabled: true, comparisonKind: ComparisonKind.LessEqual),
                 RasterizerState = new RasterizerStateDescription(
                     cullMode: FaceCullMode.Back, fillMode: PolygonFillMode.Solid,
+                    frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
+                PrimitiveTopology = PrimitiveTopology.TriangleList,
+                ResourceLayouts = new[] { _shadowLayout! },
+                ShaderSet = new ShaderSetDescription(
+                    vertexLayouts: new[] { vertexLayout },
+                    shaders: _shadowAtlasShaders!),
+                Outputs = _atlasFramebuffer!.OutputDescription,
+            });
+
+            // --- Shadow Atlas Pipeline (front-face cull variant — renders back faces for natural bias) ---
+            _shadowAtlasFrontCullPipeline?.Dispose();
+            _shadowAtlasFrontCullPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = BlendStateDescription.SingleOverrideBlend,
+                DepthStencilState = new DepthStencilStateDescription(
+                    depthTestEnabled: true, depthWriteEnabled: true, comparisonKind: ComparisonKind.LessEqual),
+                RasterizerState = new RasterizerStateDescription(
+                    cullMode: FaceCullMode.Front, fillMode: PolygonFillMode.Solid,
                     frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
                 PrimitiveTopology = PrimitiveTopology.TriangleList,
                 ResourceLayouts = new[] { _shadowLayout! },
@@ -642,6 +695,26 @@ namespace IronRose.Rendering
                     shaders: _forwardShaders!),
                 Outputs = _hdrFramebuffer.OutputDescription,
             });
+
+            // --- Debug Overlay Pipeline (→ Swapchain, overwrite) ---
+            _debugOverlayPipeline?.Dispose();
+            if (_debugOverlayShaders != null && _debugOverlayLayout != null)
+            {
+                _debugOverlayPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+                {
+                    BlendState = BlendStateDescription.SingleOverrideBlend,
+                    DepthStencilState = DepthStencilStateDescription.Disabled,
+                    RasterizerState = new RasterizerStateDescription(
+                        cullMode: FaceCullMode.None, fillMode: PolygonFillMode.Solid,
+                        frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: true),
+                    PrimitiveTopology = PrimitiveTopology.TriangleList,
+                    ResourceLayouts = new[] { _debugOverlayLayout },
+                    ShaderSet = new ShaderSetDescription(
+                        vertexLayouts: Array.Empty<VertexLayoutDescription>(),
+                        shaders: _debugOverlayShaders),
+                    Outputs = _device.SwapchainFramebuffer.OutputDescription,
+                });
+            }
 
             // --- GBuffer resource set (shared by all lighting passes) ---
             _gBufferResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
@@ -841,6 +914,80 @@ namespace IronRose.Rendering
             _postProcessStack?.Execute(cl, _hdrView!, _device.SwapchainFramebuffer);
             if (debugLog)
                 Console.WriteLine($"[Render] PostProcess: done → swapchain");
+
+            // === 7. Debug Overlay → Swapchain ===
+            if (Debug.overlay != DebugOverlay.None)
+                RenderDebugOverlay(cl);
+        }
+
+        // ==============================
+        // Debug Overlay
+        // ==============================
+
+        private void RenderDebugOverlay(CommandList cl)
+        {
+            if (_debugOverlayPipeline == null || _debugOverlayLayout == null ||
+                _debugOverlayParamsBuffer == null || _debugOverlaySampler == null ||
+                _device == null || _gBuffer == null)
+                return;
+
+            var factory = _device.ResourceFactory;
+            var swapFB = _device.SwapchainFramebuffer;
+            uint screenW = swapFB.Width;
+            uint screenH = swapFB.Height;
+
+            cl.SetFramebuffer(swapFB);
+            cl.SetPipeline(_debugOverlayPipeline);
+
+            if (Debug.overlay == DebugOverlay.GBuffer)
+            {
+                // 4 thumbnails at screen bottom, each 25% width x 25% height
+                uint thumbH = screenH / 4;
+                uint thumbW = screenW / 4;
+                uint thumbY = screenH - thumbH;
+
+                var textures = new (TextureView view, float mode)[]
+                {
+                    (_gBuffer.AlbedoView, 0f),
+                    (_gBuffer.NormalView, 1f),
+                    (_gBuffer.MaterialView, 2f),
+                    (_gBuffer.WorldPosView, 3f),
+                };
+
+                for (int i = 0; i < textures.Length; i++)
+                {
+                    uint thumbX = (uint)i * thumbW;
+
+                    using var resourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+                        _debugOverlayLayout, textures[i].view, _debugOverlaySampler, _debugOverlayParamsBuffer));
+
+                    cl.UpdateBuffer(_debugOverlayParamsBuffer, 0, new DebugOverlayParamsGPU { Mode = textures[i].mode });
+                    cl.SetViewport(0, new Viewport(thumbX, thumbY, thumbW, thumbH, 0f, 1f));
+                    cl.SetScissorRect(0, thumbX, thumbY, thumbW, thumbH);
+                    cl.SetGraphicsResourceSet(0, resourceSet);
+                    cl.Draw(3, 1, 0, 0);
+                }
+            }
+            else if (Debug.overlay == DebugOverlay.ShadowMap)
+            {
+                // Shadow atlas thumbnail at bottom-left, 30% screen height (square)
+                if (_atlasView == null) return;
+
+                uint thumbSize = (uint)(screenH * 0.3f);
+
+                using var resourceSet = factory.CreateResourceSet(new ResourceSetDescription(
+                    _debugOverlayLayout, _atlasView, _debugOverlaySampler, _debugOverlayParamsBuffer));
+
+                cl.UpdateBuffer(_debugOverlayParamsBuffer, 0, new DebugOverlayParamsGPU { Mode = 4f });
+                cl.SetViewport(0, new Viewport(0, screenH - thumbSize, thumbSize, thumbSize, 0f, 1f));
+                cl.SetScissorRect(0, 0, screenH - thumbSize, thumbSize, thumbSize);
+                cl.SetGraphicsResourceSet(0, resourceSet);
+                cl.Draw(3, 1, 0, 0);
+            }
+
+            // Restore full viewport
+            cl.SetFullViewports();
+            cl.SetFullScissorRects();
         }
 
         // ==============================
@@ -1049,14 +1196,15 @@ namespace IronRose.Rendering
             cl.SetFramebuffer(_atlasFramebuffer);
             cl.ClearColorTarget(0, new RgbaFloat(1f, 1f, 1f, 1f)); // white = max depth = no shadow
             cl.ClearDepthStencil(1f);
-            cl.SetPipeline(_shadowAtlasPipeline);
-
             var shadowResourceSet = _device!.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
                 _shadowLayout, _shadowTransformBuffer));
 
             foreach (var light in Light._allLights)
             {
                 if (!light.enabled || !light.shadows) continue;
+
+                // Per-light cull mode: front-face cull renders back faces for natural shadow bias
+                cl.SetPipeline(light.shadowCullFront ? _shadowAtlasFrontCullPipeline! : _shadowAtlasPipeline);
 
                 if (light.type == LightType.Point)
                 {
@@ -1266,9 +1414,9 @@ namespace IronRose.Rendering
             {
                 TextureParams = new Vector4(usePanoramic ? 1f : 0f, exposure, rotationRad, 0f),
                 SunDirection = sunDir,
-                SkyParams = new Vector4(DefaultZenithIntensity, DefaultHorizonIntensity, DefaultSunAngularRadius, DefaultSunIntensity),
-                ZenithColor = DefaultZenithColor,
-                HorizonColor = DefaultHorizonColor,
+                SkyParams = new Vector4(SkyZenithIntensity, SkyHorizonIntensity, DefaultSunAngularRadius, DefaultSunIntensity),
+                ZenithColor = SkyZenithColor,
+                HorizonColor = SkyHorizonColor,
             };
 
             cl.UpdateBuffer(_envMapBuffer, 0, envUniforms);
@@ -1278,11 +1426,17 @@ namespace IronRose.Rendering
         // Skybox rendering
         // ==============================
 
-        // Default procedural sky parameters
-        private static readonly Vector4 DefaultZenithColor = new Vector4(0.15f, 0.3f, 0.65f, 1f);
-        private static readonly Vector4 DefaultHorizonColor = new Vector4(0.6f, 0.7f, 0.85f, 1f);
-        private const float DefaultZenithIntensity = 0.8f;
-        private const float DefaultHorizonIntensity = 1.0f;
+        // Procedural sky parameters (read from RenderSettings)
+        private static Vector4 SkyZenithColor
+        {
+            get { var c = RenderSettings.skyZenithColor; return new Vector4(c.r, c.g, c.b, 1f); }
+        }
+        private static Vector4 SkyHorizonColor
+        {
+            get { var c = RenderSettings.skyHorizonColor; return new Vector4(c.r, c.g, c.b, 1f); }
+        }
+        private static float SkyZenithIntensity => RenderSettings.skyZenithIntensity;
+        private static float SkyHorizonIntensity => RenderSettings.skyHorizonIntensity;
         private const float DefaultSunAngularRadius = 0.02f;
         private const float DefaultSunIntensity = 20.0f;
 
@@ -1347,9 +1501,9 @@ namespace IronRose.Rendering
             {
                 InverseViewProjection = invViewProj,
                 SunDirection = sunDir,
-                SkyParams = new Vector4(DefaultZenithIntensity, DefaultHorizonIntensity, DefaultSunAngularRadius, DefaultSunIntensity),
-                ZenithColor = DefaultZenithColor,
-                HorizonColor = DefaultHorizonColor,
+                SkyParams = new Vector4(SkyZenithIntensity, SkyHorizonIntensity, DefaultSunAngularRadius, DefaultSunIntensity),
+                ZenithColor = SkyZenithColor,
+                HorizonColor = SkyHorizonColor,
                 TextureParams = new Vector4(usePanoramic ? 1f : 0f, exposure, rotationRad, 0f),
             };
 
@@ -1381,9 +1535,9 @@ namespace IronRose.Rendering
             }
 
             // Default procedural sky ambient (average of zenith + horizon)
-            var skyR = (DefaultZenithColor.X * DefaultZenithIntensity + DefaultHorizonColor.X * DefaultHorizonIntensity) * 0.5f;
-            var skyG = (DefaultZenithColor.Y * DefaultZenithIntensity + DefaultHorizonColor.Y * DefaultHorizonIntensity) * 0.5f;
-            var skyB = (DefaultZenithColor.Z * DefaultZenithIntensity + DefaultHorizonColor.Z * DefaultHorizonIntensity) * 0.5f;
+            var skyR = (SkyZenithColor.X * SkyZenithIntensity + SkyHorizonColor.X * SkyHorizonIntensity) * 0.5f;
+            var skyG = (SkyZenithColor.Y * SkyZenithIntensity + SkyHorizonColor.Y * SkyHorizonIntensity) * 0.5f;
+            var skyB = (SkyZenithColor.Z * SkyZenithIntensity + SkyHorizonColor.Z * SkyHorizonIntensity) * 0.5f;
             return new Vector4(skyR * intensity, skyG * intensity, skyB * intensity, 1f);
         }
 
@@ -1670,6 +1824,7 @@ namespace IronRose.Rendering
             _pointLightPipeline?.Dispose();
             _spotLightPipeline?.Dispose();
             _shadowAtlasPipeline?.Dispose();
+            _shadowAtlasFrontCullPipeline?.Dispose();
             _skyboxPipeline?.Dispose();
             _forwardPipeline?.Dispose();
             _wireframePipeline?.Dispose();
@@ -1720,6 +1875,13 @@ namespace IronRose.Rendering
             foreach (var rs in _resourceSetCache.Values)
                 rs.Dispose();
             _resourceSetCache.Clear();
+
+            _debugOverlayPipeline?.Dispose();
+            _debugOverlayParamsBuffer?.Dispose();
+            _debugOverlayLayout?.Dispose();
+            _debugOverlaySampler?.Dispose();
+            if (_debugOverlayShaders != null)
+                foreach (var s in _debugOverlayShaders) s.Dispose();
 
             if (_forwardShaders != null)
                 foreach (var s in _forwardShaders) s.Dispose();

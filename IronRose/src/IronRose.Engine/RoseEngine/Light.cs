@@ -22,11 +22,12 @@ namespace RoseEngine
         public float spotOuterAngle { get; set; } = 45f;    // outer cone angle (degrees, full)
 
         // Shadow
-        public bool shadows { get; set; } = false;
+        public bool shadows { get; set; } = true;
         public int shadowResolution { get; set; } = 1024;
-        public float shadowBias { get; set; } = 0.005f;
-        public float shadowNormalBias { get; set; } = 0.02f;
-        public float shadowNearPlane { get; set; } = 0.1f;
+        public float shadowBias { get; set; } = 0.0001f;
+        public float shadowNormalBias { get; set; } = 0.0001f;
+        public float shadowNearPlane { get; set; } = 0.5f;
+        public bool shadowCullFront { get; set; } = true;
 
         internal static readonly List<Light> _allLights = new();
 

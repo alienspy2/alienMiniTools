@@ -8,6 +8,7 @@ public class AssetImportDemo : MonoBehaviour
     private GameObject? _spriteObj;
     private TextRenderer? _nameLabel;
     private GameObject? _labelObj;
+    private GameObject? _floorObj;
     private Font? _font;
 
     // Orbit camera
@@ -33,7 +34,7 @@ public class AssetImportDemo : MonoBehaviour
         light.color = Color.white;
         light.intensity = 2.0f;
         light.range = 15f;
-        lightObj.transform.position = new Vector3(2f, 3f, -2f);
+        lightObj.transform.position = new Vector3(2f, 5f, -2f);
 
         // Fill light
         var fillObj = new GameObject("Fill Light");
@@ -56,6 +57,15 @@ public class AssetImportDemo : MonoBehaviour
         _nameLabel.alignment = TextAlignment.Right;
         _nameLabel.sortingOrder = 100;
         _labelObj.transform.position = new Vector3(4.9f, 2.6f, 0f);
+
+        // Floor plane (repositioned per asset in LoadCurrentAsset)
+        _floorObj = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        _floorObj.name = "Floor";
+        _floorObj.GetComponent<MeshRenderer>()!.material = new Material(new Color(0.25f, 0.25f, 0.25f))
+        {
+            roughness = 0.85f,
+            metallic = 0.0f,
+        };
 
         // Scan asset folders
         var assetsDir = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "Assets");
@@ -209,7 +219,7 @@ public class AssetImportDemo : MonoBehaviour
         var renderer = _meshObj.AddComponent<MeshRenderer>();
         filter.mesh = mesh;
         renderer.material = material ?? new Material(new Color(0.85f, 0.65f, 0.4f));
-        _meshObj.transform.position = new Vector3(0, 0, 0);
+        _meshObj.transform.position = new Vector3(0, -mesh.bounds.min.y, 0);
 
         // Load preview sprite
         var pngPath = System.IO.Path.Combine(dir, "preview.png");

@@ -3,6 +3,13 @@ using System.IO;
 
 namespace RoseEngine
 {
+    public enum DebugOverlay
+    {
+        None,
+        GBuffer,
+        ShadowMap,
+    }
+
     public static class Debug
     {
         private static readonly string _logPath;
@@ -16,6 +23,9 @@ namespace RoseEngine
 
         /// <summary>와이어프레임 색상 (기본 검정)</summary>
         public static Color wireframeColor { get; set; } = Color.black;
+
+        /// <summary>디버그 오버레이 모드 (기본 None)</summary>
+        public static DebugOverlay overlay { get; set; } = DebugOverlay.None;
 
         static Debug()
         {

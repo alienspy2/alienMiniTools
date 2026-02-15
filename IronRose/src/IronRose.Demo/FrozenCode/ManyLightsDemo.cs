@@ -54,9 +54,7 @@ public class ManyLightsDemo : MonoBehaviour
             light.color = c;
             light.intensity = 1.5f;
             light.range = 8f;
-
-            light.shadows = true;
-            light.shadowResolution = 256;
+            light.shadowResolution = 1024;
 
             // Vary orbit parameters per light
             float radius = 4f + (i % 4) * 1.2f;

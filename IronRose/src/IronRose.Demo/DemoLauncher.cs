@@ -95,7 +95,7 @@ public class DemoLauncher : MonoBehaviour
         for (int i = 0; i < liveTypes.Length && liveStart + i < _numKeys.Length; i++)
             Debug.Log($"[{KeyLabel(liveStart + i)}] {liveTypes[i].Name} (LiveCode)");
 
-        Debug.Log("[F1] Wireframe | [F12] Screenshot | [ESC] Quit");
+        Debug.Log("[F1] Wireframe | [F2] Debug Overlay | [F12] Screenshot | [ESC] Quit");
         Debug.Log("==============================");
     }
 
@@ -131,6 +131,18 @@ public class DemoLauncher : MonoBehaviour
         {
             Debug.wireframe = !Debug.wireframe;
             Debug.Log($"[Debug] Wireframe: {(Debug.wireframe ? "ON" : "OFF")}");
+        }
+
+        // Debug overlay cycle: None → GBuffer → ShadowMap → None
+        if (Input.GetKeyDown(KeyCode.F2))
+        {
+            Debug.overlay = Debug.overlay switch
+            {
+                DebugOverlay.None => DebugOverlay.GBuffer,
+                DebugOverlay.GBuffer => DebugOverlay.ShadowMap,
+                _ => DebugOverlay.None,
+            };
+            Debug.Log($"[Debug] Overlay: {Debug.overlay}");
         }
 
         if (Input.GetKeyDown(KeyCode.Escape))
@@ -248,8 +260,8 @@ public class DemoLauncher : MonoBehaviour
         for (int i = 0; i < liveTypes.Length && liveStart + i < _numKeys.Length; i++)
             hudText += $"[{KeyLabel(liveStart + i)}] {liveTypes[i].Name} *\n";
 
-        hudText += "[F1] Wireframe | [F12] Screenshot\n"
-                 + "[ESC] Quit";
+        hudText += "[F1] Wireframe | [F2] Debug Overlay\n"
+                 + "[F12] Screenshot | [ESC] Quit";
 
         tr.text = hudText;
         tr.color = Color.black;

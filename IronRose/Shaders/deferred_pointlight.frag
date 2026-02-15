@@ -137,13 +137,21 @@ void main()
         vec3 lightToFrag = worldPos - lightPos;
         int face = getDominantFace(lightToFrag);
 
-        vec4 lightSpacePos = FaceVPs[face] * vec4(worldPos, 1.0);
+        // Normal offset bias: shift sample along surface normal (reduces acne at grazing angles)
+        float normalOffset = ShadowParams.z * (1.0 - NdotL);
+        vec3 offsetPos = worldPos + N * normalOffset;
+
+        vec4 lightSpacePos = FaceVPs[face] * vec4(offsetPos, 1.0);
         vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
         projCoords.xy = projCoords.xy * 0.5 + 0.5;
+        projCoords.y = 1.0 - projCoords.y;  // Veldrid/Vulkan flips viewport Y
 
         if (projCoords.z <= 1.0)
         {
             vec2 atlasUV = projCoords.xy * FaceAtlasParams[face].zw + FaceAtlasParams[face].xy;
+
+            // Slope-scale depth bias: increase bias at grazing angles
+            float bias = ShadowParams.y + ShadowParams.y * 5.0 * (1.0 - NdotL);
 
             // PCF 3x3
             shadow = 0.0;
@@ -152,7 +160,7 @@ void main()
                 for (int y = -1; y <= 1; y++) {
                     float closestDepth = texture(sampler2D(ShadowMap, ShadowSampler),
                         atlasUV + vec2(x, y) * texelSize).r;
-                    shadow += projCoords.z - ShadowParams.y > closestDepth ? 0.0 : 1.0;
+                    shadow += projCoords.z - bias > closestDepth ? 0.0 : 1.0;
                 }
             }
             shadow /= 9.0;
