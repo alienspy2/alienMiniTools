@@ -1,6 +1,6 @@
 # IronRose 개발 진행 상황
 
-**최종 업데이트**: 2026-02-15 (Phase 7+ 완료 - Deferred PBR + IBL + 네임스페이스 마이그레이션)
+**최종 업데이트**: 2026-02-15 (Phase 8 완료 - KISS 리팩토링)
 
 ---
 
@@ -21,7 +21,7 @@
 - [x] Phase 5B: TextRenderer (Font 아틀라스 기반 3D 텍스트 렌더링) ✅
 - [x] Phase 6: 물리 엔진 (BepuPhysics 3D + Aether.Physics2D, FixedUpdate 50Hz) ✅
 - [x] Phase 7: Deferred PBR 렌더링 (G-Buffer, Cook-Torrance BRDF, IBL, Post-Processing) ✅
-- [ ] Phase 8: AI 통합
+- [x] Phase 8: 중간정리 (KISS 리팩토링, 코드 검증) ✅
 
 ---
 
@@ -800,7 +800,53 @@ src/IronRose.Engine/AssetPipeline/
 
 ---
 
-## 다음 단계: Phase 8 (AI 통합)
+## Phase 8: 중간정리 (KISS 리팩토링) ✅
+
+**완료 날짜**: 2026-02-15
+
+### 완료된 작업
+
+#### 8.1 데모 보일러플레이트 제거
+- [x] `DemoUtils.cs` 신규 — CreateCamera(), LoadFont() 공용 헬퍼 추출
+- [x] 7개 데모 파일에서 카메라/폰트 중복 코드 DemoUtils로 교체
+  - CornellBoxDemo, PBRDemo, AssetImportDemo, PhysicsDemo3D, SpriteDemo, TextDemo, ColorPulseDemo
+
+#### 8.2 SceneManager.ExecuteDestroy() 단순화
+- [x] `Component.cs` — `OnComponentDestroy()` 가상 메서드 추가
+- [x] 8개 컴포넌트에 override 구현 (MeshRenderer, SpriteRenderer, TextRenderer, Light, Camera, Rigidbody, Rigidbody2D)
+- [x] SceneManager에서 7-type if 분기 (~56줄) → `comp.OnComponentDestroy()` 단일 호출로 축소
+- [x] `DestroyComponent()` 헬퍼 메서드 추출
+
+#### 8.3 RenderSystem 라이트 데이터 중복 제거
+- [x] `CollectLightInfo()` 정적 헬퍼 추출
+- [x] `SetLightInfo` switch(0-7) → unsafe 포인터 인덱싱으로 교체
+- [x] `MaxForwardLights = 8` 상수 추출
+- [x] UploadDeferredLightData / UploadForwardLightData 공통화
+
+#### 8.4 RenderSystem Draw 메서드 중복 축소
+- [x] `DrawMesh()` 공용 드로우콜 헬퍼 추출
+- [x] `PrepareMaterial()` 머티리얼→GPU 유니폼 변환 헬퍼 추출
+- [x] `SetUnlitLightData()` 스프라이트/텍스트 unlit 모드 헬퍼 추출
+- [x] 4개 Draw 메서드 (Opaque, All, Sprites, Texts) 단순화
+
+#### 8.5 데드코드 정리
+- [x] PBRDemo 주석 처리된 바닥 코드 삭제
+- [x] ScriptDomain TODO 스텁 (SaveState/RestoreState) 삭제
+
+#### 8.6 DemoLauncher 핫리로드 로직 정리
+- [x] `SwitchDemo()` 공통 메서드 추출 (Scene Clear → 재등록 → 인스턴스화)
+- [x] LoadDemo / LoadLiveCodeDemo → SwitchDemo 위임
+- [x] Awake 빌트인 데모 복원 인라인화
+
+### 주요 설계 결정
+- **OnComponentDestroy 가상 메서드**: 타입 디스패치를 다형성으로 교체 (OCP 준수)
+- **unsafe 포인터 인덱싱**: GPU uniform struct 필드 접근을 switch 없이 연속 메모리 접근으로 최적화
+- **DemoUtils 정적 클래스**: 데모 간 공통 패턴을 단일 헬퍼로 통합
+
+### 빌드 결과
+- ✅ `dotnet build` 성공 (경고 1개 — 기존 Collider.isRegistered CS0649, 오류 0개)
+
+> 상세 계획: [Phase8_Cleanup.md](Phase8_Cleanup.md)
 
 ---
 

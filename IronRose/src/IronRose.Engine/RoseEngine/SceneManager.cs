@@ -392,6 +392,29 @@ namespace RoseEngine
             }
         }
 
+        private static void DestroyComponent(Component comp)
+        {
+            if (comp is MonoBehaviour mb && !mb._isDestroyed)
+            {
+                try
+                {
+                    if (mb._hasAwoken && mb.enabled) mb.OnDisable();
+                    mb.OnDestroy();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"Exception in OnDestroy() of {mb.GetType().Name}: {ex.Message}");
+                }
+                StopAllCoroutines(mb);
+                CancelAllInvokes(mb);
+                _behaviours.Remove(mb);
+                _pendingStart.Remove(mb);
+            }
+
+            comp.OnComponentDestroy();
+            comp._isDestroyed = true;
+        }
+
         private static void ExecuteDestroy(Object obj)
         {
             if (obj._isDestroyed) return;
@@ -402,55 +425,8 @@ namespace RoseEngine
                 for (int i = go.transform.childCount - 1; i >= 0; i--)
                     ExecuteDestroy(go.transform.GetChild(i).gameObject);
 
-                // OnDisable + OnDestroy for all MonoBehaviours
                 foreach (var comp in go._components)
-                {
-                    if (comp is MonoBehaviour mb && !mb._isDestroyed)
-                    {
-                        try
-                        {
-                            if (mb._hasAwoken && mb.enabled) mb.OnDisable();
-                            mb.OnDestroy();
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.LogError($"Exception in OnDestroy() of {mb.GetType().Name}: {ex.Message}");
-                        }
-                        StopAllCoroutines(mb);
-                        CancelAllInvokes(mb);
-                        _behaviours.Remove(mb);
-                        _pendingStart.Remove(mb);
-                    }
-
-                    if (comp is MeshRenderer mr)
-                        MeshRenderer._allRenderers.Remove(mr);
-
-                    if (comp is SpriteRenderer spr)
-                        SpriteRenderer._allSpriteRenderers.Remove(spr);
-
-                    if (comp is TextRenderer txr)
-                        TextRenderer._allTextRenderers.Remove(txr);
-
-                    if (comp is Light light)
-                        Light._allLights.Remove(light);
-
-                    if (comp is Rigidbody rb3)
-                    {
-                        rb3.RemoveFromPhysics();
-                        Rigidbody._allRigidbodies.Remove(rb3);
-                    }
-
-                    if (comp is Rigidbody2D rb2d3)
-                    {
-                        rb2d3.RemoveFromPhysics();
-                        Rigidbody2D._allRigidbodies2D.Remove(rb2d3);
-                    }
-
-                    if (comp is Camera cam && Camera.main == cam)
-                        Camera.ClearMain();
-
-                    comp._isDestroyed = true;
-                }
+                    DestroyComponent(comp);
 
                 // Remove from parent
                 go.transform.SetParent(null, false);
@@ -459,49 +435,8 @@ namespace RoseEngine
             }
             else if (obj is Component comp)
             {
-                if (comp is MonoBehaviour mb)
-                {
-                    try
-                    {
-                        if (mb._hasAwoken && mb.enabled) mb.OnDisable();
-                        mb.OnDestroy();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"Exception in OnDestroy() of {mb.GetType().Name}: {ex.Message}");
-                    }
-                    StopAllCoroutines(mb);
-                    CancelAllInvokes(mb);
-                    _behaviours.Remove(mb);
-                    _pendingStart.Remove(mb);
-                }
-
-                if (comp is MeshRenderer mr)
-                    MeshRenderer._allRenderers.Remove(mr);
-
-                if (comp is SpriteRenderer spr)
-                    SpriteRenderer._allSpriteRenderers.Remove(spr);
-
-                if (comp is TextRenderer txr)
-                    TextRenderer._allTextRenderers.Remove(txr);
-
-                if (comp is Light light)
-                    Light._allLights.Remove(light);
-
-                if (comp is Rigidbody rb)
-                {
-                    rb.RemoveFromPhysics();
-                    Rigidbody._allRigidbodies.Remove(rb);
-                }
-
-                if (comp is Rigidbody2D rb2d)
-                {
-                    rb2d.RemoveFromPhysics();
-                    Rigidbody2D._allRigidbodies2D.Remove(rb2d);
-                }
-
+                DestroyComponent(comp);
                 comp.gameObject.RemoveComponent(comp);
-                comp._isDestroyed = true;
             }
         }
 

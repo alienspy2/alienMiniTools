@@ -22,9 +22,8 @@ public class AssetImportDemo : MonoBehaviour
         Debug.Log("[AssetImportDemo] Loading asset from pipeline...");
 
         // Camera
-        var camObj = new GameObject("Main Camera");
-        var cam = camObj.AddComponent<Camera>();
-        _camTransform = camObj.transform;
+        var (_, camTransform) = DemoUtils.CreateCamera(Vector3.zero);
+        _camTransform = camTransform;
         UpdateOrbitCamera();
 
         // Light
@@ -46,12 +45,7 @@ public class AssetImportDemo : MonoBehaviour
         fillObj.transform.position = new Vector3(-3f, 1f, -3f);
 
         // Font for mesh name label
-        var fontPath = System.IO.Path.Combine(
-            System.IO.Directory.GetCurrentDirectory(), "Assets", "Fonts", "NotoSans_eng.ttf");
-        if (System.IO.File.Exists(fontPath))
-            _font = Font.CreateFromFile(fontPath, 32);
-        else
-            _font = Font.CreateDefault(32);
+        _font = DemoUtils.LoadFont(32);
 
         // Name label (positioned in front of camera each frame)
         _labelObj = new GameObject("MeshNameLabel");

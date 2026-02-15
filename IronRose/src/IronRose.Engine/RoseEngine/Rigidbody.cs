@@ -143,6 +143,12 @@ namespace RoseEngine
             // Deferred: 첫 FixedUpdate 시점에 등록 (isKinematic 등 프로퍼티 설정 이후)
         }
 
+        internal override void OnComponentDestroy()
+        {
+            RemoveFromPhysics();
+            _allRigidbodies.Remove(this);
+        }
+
         private void RegisterWithPhysics()
         {
             var mgr = IronRose.Engine.PhysicsManager.Instance;

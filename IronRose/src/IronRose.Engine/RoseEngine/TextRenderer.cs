@@ -21,6 +21,7 @@ namespace RoseEngine
         internal static readonly List<TextRenderer> _allTextRenderers = new();
 
         internal override void OnAddedToGameObject() => _allTextRenderers.Add(this);
+        internal override void OnComponentDestroy() => _allTextRenderers.Remove(this);
         internal static void ClearAll() => _allTextRenderers.Clear();
 
         /// <summary>Detect text/font/alignment changes and rebuild mesh</summary>

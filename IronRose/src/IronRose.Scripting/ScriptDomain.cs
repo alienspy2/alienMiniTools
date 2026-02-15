@@ -57,17 +57,8 @@ namespace IronRose.Scripting
         {
             Console.WriteLine("[ScriptDomain] Hot reloading scripts...");
 
-            // 기존 상태 저장 (TODO: Phase 2.3에서 구현)
-            // SaveState();
-
-            // 기존 ALC 언로드
             UnloadPreviousContext();
-
-            // 새 어셈블리 로드
             LoadScripts(newAssemblyBytes);
-
-            // 상태 복원 (TODO: Phase 2.3에서 구현)
-            // RestoreState();
 
             Console.WriteLine("[ScriptDomain] Hot reload completed!");
         }

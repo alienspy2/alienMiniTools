@@ -62,10 +62,13 @@ public class DemoLauncher : MonoBehaviour
             {
                 AutoRestoreLiveCodeDemo();
             }
-            else if (_activeBuiltinDemo >= 0)
+            else if (_activeBuiltinDemo >= 0 && _activeBuiltinDemo < _builtinDemos.Length)
             {
                 _currentDemo = _activeBuiltinDemo;
-                LaunchBuiltinDemo(_activeBuiltinDemo);
+                var (label, type) = _builtinDemos[_activeBuiltinDemo];
+                var go = new GameObject(type.Name);
+                go.AddComponent(type);
+                Debug.Log($"[Demo] >> {label} (hot-reloaded)");
             }
             else
             {
@@ -134,6 +137,39 @@ public class DemoLauncher : MonoBehaviour
         UpdateHudLayout();
     }
 
+    /// <summary>공통 데모 전환: Scene Clear → DemoLauncher 재등록 → 데모 인스턴스화.</summary>
+    private void SwitchDemo(int builtinIndex, System.Type? liveCodeType)
+    {
+        _isLoading = true;
+        _activeBuiltinDemo = builtinIndex;
+        _activeLiveCodeDemo = liveCodeType?.Name ?? "";
+
+        SceneManager.Clear();
+
+        var selectorGo = new GameObject("DemoSelector");
+        var selector = selectorGo.AddComponent<DemoLauncher>();
+        selector._currentDemo = builtinIndex;
+        selector._currentLiveCodeDemo = _activeLiveCodeDemo;
+
+        _isLoading = false;
+
+        if (liveCodeType != null)
+        {
+            var go = new GameObject(liveCodeType.Name);
+            go.AddComponent(liveCodeType);
+            Debug.Log($"[Demo] >> {liveCodeType.Name}");
+        }
+        else if (builtinIndex >= 0 && builtinIndex < _builtinDemos.Length)
+        {
+            var (label, type) = _builtinDemos[builtinIndex];
+            var go = new GameObject(type.Name);
+            go.AddComponent(type);
+            Debug.Log($"[Demo] >> {label}");
+        }
+
+        CreateHud();
+    }
+
     private void AutoRestoreLiveCodeDemo()
     {
         var liveTypes = EngineCore.LiveCodeDemoTypes;
@@ -151,9 +187,9 @@ public class DemoLauncher : MonoBehaviour
             return;
         }
 
+        // 핫리로드 복원은 Scene Clear 없이 직접 인스턴스화
         _currentDemo = -1;
         _currentLiveCodeDemo = _activeLiveCodeDemo;
-
         var go = new GameObject(type.Name);
         go.AddComponent(type);
         Debug.Log($"[Demo] >> {type.Name} (hot-reloaded)");
@@ -166,29 +202,7 @@ public class DemoLauncher : MonoBehaviour
             Debug.Log($"[Demo] LiveCode demo {demoType.Name} already active");
             return;
         }
-
-        Debug.Log($"[Demo] Loading LiveCode demo: {demoType.Name}...");
-        _isLoading = true;
-
-        // static 기억 (핫 리로드 시 복원용)
-        _activeBuiltinDemo = -1;
-        _activeLiveCodeDemo = demoType.Name;
-
-        SceneManager.Clear();
-
-        var selectorGo = new GameObject("DemoSelector");
-        var selector = selectorGo.AddComponent<DemoLauncher>();
-        selector._currentDemo = -1;
-        selector._currentLiveCodeDemo = demoType.Name;
-
-        _isLoading = false;
-
-        // LiveCode MonoBehaviour를 Type 기반으로 인스턴스화
-        var go = new GameObject(demoType.Name);
-        go.AddComponent(demoType);
-        Debug.Log($"[Demo] >> {demoType.Name} (LiveCode)");
-
-        CreateHud();
+        SwitchDemo(-1, demoType);
     }
 
     private void LoadDemo(int demoIndex)
@@ -198,38 +212,7 @@ public class DemoLauncher : MonoBehaviour
             Debug.Log($"[Demo] Demo {demoIndex} already active");
             return;
         }
-
-        Debug.Log($"[Demo] Loading demo {demoIndex}...");
-        _isLoading = true;
-
-        // static 기억 (핫 리로드 시 복원용)
-        _activeBuiltinDemo = demoIndex;
-        _activeLiveCodeDemo = "";
-
-        // Clear current scene (except this selector)
-        SceneManager.Clear();
-
-        // Re-register self (Awake runs immediately, _isLoading prevents re-entrant LoadDemo)
-        var selectorGo = new GameObject("DemoSelector");
-        var selector = selectorGo.AddComponent<DemoLauncher>();
-        selector._currentDemo = demoIndex;
-        selector._currentLiveCodeDemo = "";
-
-        _isLoading = false;
-
-        LaunchBuiltinDemo(demoIndex);
-
-        // HUD: demo menu overlay (parented to camera)
-        CreateHud();
-    }
-
-    private static void LaunchBuiltinDemo(int demoIndex)
-    {
-        if (demoIndex < 0 || demoIndex >= _builtinDemos.Length) return;
-        var (label, type) = _builtinDemos[demoIndex];
-        var go = new GameObject(type.Name);
-        go.AddComponent(type);
-        Debug.Log($"[Demo] >> {label}");
+        SwitchDemo(demoIndex, null);
     }
 
     private void EnsureCamera()

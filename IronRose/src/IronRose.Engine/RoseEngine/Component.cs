@@ -89,5 +89,8 @@ namespace RoseEngine
         }
 
         internal virtual void OnAddedToGameObject() { }
+
+        /// <summary>컴포넌트 파괴 시 자신의 전역 레지스트리에서 제거.</summary>
+        internal virtual void OnComponentDestroy() { }
     }
 }

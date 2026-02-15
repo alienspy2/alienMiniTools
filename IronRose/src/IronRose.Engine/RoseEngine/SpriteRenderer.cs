@@ -18,15 +18,9 @@ namespace RoseEngine
 
         internal static readonly List<SpriteRenderer> _allSpriteRenderers = new();
 
-        internal override void OnAddedToGameObject()
-        {
-            _allSpriteRenderers.Add(this);
-        }
-
-        internal static void ClearAll()
-        {
-            _allSpriteRenderers.Clear();
-        }
+        internal override void OnAddedToGameObject() => _allSpriteRenderers.Add(this);
+        internal override void OnComponentDestroy() => _allSpriteRenderers.Remove(this);
+        internal static void ClearAll() => _allSpriteRenderers.Clear();
 
         internal void EnsureMesh()
         {

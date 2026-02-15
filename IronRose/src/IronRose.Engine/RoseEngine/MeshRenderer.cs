@@ -14,9 +14,8 @@ namespace RoseEngine
             _allRenderers.Add(this);
         }
 
-        internal static void ClearAll()
-        {
-            _allRenderers.Clear();
-        }
+        internal override void OnComponentDestroy() => _allRenderers.Remove(this);
+
+        internal static void ClearAll() => _allRenderers.Clear();
     }
 }

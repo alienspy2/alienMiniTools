@@ -18,14 +18,8 @@ namespace RoseEngine
 
         internal static readonly List<Light> _allLights = new();
 
-        internal override void OnAddedToGameObject()
-        {
-            _allLights.Add(this);
-        }
-
-        internal static void ClearAll()
-        {
-            _allLights.Clear();
-        }
+        internal override void OnAddedToGameObject() => _allLights.Add(this);
+        internal override void OnComponentDestroy() => _allLights.Remove(this);
+        internal static void ClearAll() => _allLights.Clear();
     }
 }

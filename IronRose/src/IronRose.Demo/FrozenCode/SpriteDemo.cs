@@ -10,9 +10,7 @@ public class SpriteDemo : MonoBehaviour
         Debug.Log("[SpriteDemo] Setting up Sprite Renderer demo...");
 
         // Camera
-        var camObj = new GameObject("Main Camera");
-        var cam = camObj.AddComponent<Camera>();
-        camObj.transform.position = new Vector3(0, 0, -8f);
+        DemoUtils.CreateCamera(new Vector3(0, 0, -8f));
 
         // 1. Checkerboard sprite (basic rendering)
         var checkerTex = CreateCheckerboardTexture(64, 64, 8);

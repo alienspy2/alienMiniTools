@@ -23,6 +23,12 @@ namespace RoseEngine
                 main = this;
         }
 
+        internal override void OnComponentDestroy()
+        {
+            if (main == this)
+                main = null;
+        }
+
         public Matrix4x4 GetViewMatrix()
         {
             return Matrix4x4.LookAt(

@@ -14,12 +14,11 @@ public class PhysicsDemo3D : MonoBehaviour
         Debug.Log("[PhysicsDemo3D] Setting up 3D Physics scene...");
 
         // Camera
-        var camObj = new GameObject("Main Camera");
-        var cam = camObj.AddComponent<Camera>();
-        cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = new Color(0.1f, 0.1f, 0.12f, 1f);
-        camObj.transform.position = new Vector3(0, 3f, -12f);
-        camObj.transform.Rotate(10, 0, 0);
+        var (_, camTransform) = DemoUtils.CreateCamera(
+            new Vector3(0, 3f, -12f),
+            clearFlags: CameraClearFlags.SolidColor,
+            backgroundColor: new Color(0.1f, 0.1f, 0.12f, 1f));
+        camTransform.Rotate(10, 0, 0);
 
         // Light
         var lightObj = new GameObject("Scene Light");

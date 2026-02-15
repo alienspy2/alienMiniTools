@@ -5,15 +5,11 @@ public class TextDemo : MonoBehaviour
     public override void Start()
     {
         // Camera setup
-        var camGo = new GameObject("Camera");
-        var cam = camGo.AddComponent<Camera>();
-        camGo.transform.position = new Vector3(0, 0, -5);
+        DemoUtils.CreateCamera(new Vector3(0, 0, -5));
 
-        // Load font from Assets
-        var fontPath = System.IO.Path.Combine(
-            System.IO.Directory.GetCurrentDirectory(), "Assets", "Fonts", "NotoSans_eng.ttf");
-        var fontLarge = Font.CreateFromFile(fontPath, 48);
-        var fontSmall = Font.CreateFromFile(fontPath, 24);
+        // Load fonts
+        var fontLarge = DemoUtils.LoadFont(48);
+        var fontSmall = DemoUtils.LoadFont(24);
 
         // --- HUD: top-left info overlay ---
         // FOV=60, distance=5 -> halfH=2.887, halfW=5.132

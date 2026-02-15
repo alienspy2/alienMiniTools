@@ -17,9 +17,10 @@ public class ColorPulseDemo : MonoBehaviour, IHotReloadable
         Debug.Log("[ColorPulseDemo] LiveCode demo starting...");
 
         // Camera
-        var camGo = new GameObject("Camera");
-        var cam = camGo.AddComponent<Camera>();
-        camGo.transform.position = new Vector3(0, 1.5f, -5f);
+        var camObj = new GameObject("Main Camera");
+        var cam = camObj.AddComponent<Camera>();
+        cam.clearFlags = CameraClearFlags.Skybox;
+        camObj.transform.position = new Vector3(0, 1.5f, -5f);
 
         // Light
         var lightGo = new GameObject("Light");

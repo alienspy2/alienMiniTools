@@ -518,6 +518,24 @@ namespace IronRose.Rendering
         // Deferred light upload
         // ==============================
 
+        private static LightInfoGPU CollectLightInfo(Light light)
+        {
+            var info = new LightInfoGPU();
+            if (light.type == LightType.Directional)
+            {
+                var forward = light.transform.forward;
+                info.PositionOrDirection = new Vector4(forward.x, forward.y, forward.z, 0f);
+            }
+            else
+            {
+                var pos = light.transform.position;
+                info.PositionOrDirection = new Vector4(pos.x, pos.y, pos.z, 1f);
+            }
+            info.ColorIntensity = new Vector4(light.color.r, light.color.g, light.color.b, light.intensity);
+            info.Params = new Vector4(light.range, 0, 0, 0);
+            return info;
+        }
+
         private void UploadDeferredLightData(CommandList cl, Camera camera)
         {
             var camPos = camera.transform.position;
@@ -527,37 +545,15 @@ namespace IronRose.Rendering
             foreach (var light in Light._allLights)
             {
                 if (count >= MaxDeferredLights) break;
-                if (!light.enabled) continue;
-                if (!light.gameObject.activeInHierarchy) continue;
-
-                var info = new LightInfoGPU();
-
-                if (light.type == LightType.Directional)
-                {
-                    var forward = light.transform.forward;
-                    info.PositionOrDirection = new Vector4(forward.x, forward.y, forward.z, 0f);
-                }
-                else
-                {
-                    var pos = light.transform.position;
-                    info.PositionOrDirection = new Vector4(pos.x, pos.y, pos.z, 1f);
-                }
-
-                info.ColorIntensity = new Vector4(light.color.r, light.color.g, light.color.b, light.intensity);
-                info.Params = new Vector4(light.range, 0, 0, 0);
-
-                _deferredLights[count] = info;
-                count++;
+                if (!light.enabled || !light.gameObject.activeInHierarchy) continue;
+                _deferredLights[count++] = CollectLightInfo(light);
             }
-
-            // Compute sky ambient color for IBL
-            var skyAmbient = ComputeSkyAmbientColor();
 
             var header = new DeferredLightHeader
             {
                 CameraPos = new Vector4(camPos.x, camPos.y, camPos.z, 0),
                 LightCount = count,
-                SkyAmbientColor = skyAmbient,
+                SkyAmbientColor = ComputeSkyAmbientColor(),
             };
 
             cl.UpdateBuffer(_deferredLightBuffer, 0, header);
@@ -749,59 +745,32 @@ namespace IronRose.Rendering
         // Forward light upload (for sprites/text)
         // ==============================
 
+        private const int MaxForwardLights = 8;
+
         private void UploadForwardLightData(CommandList cl, Camera camera)
         {
             var camPos = camera.transform.position;
             var lightData = new LightUniforms
             {
                 CameraPos = new Vector4(camPos.x, camPos.y, camPos.z, 0),
-                LightCount = 0,
             };
 
             int count = 0;
             foreach (var light in Light._allLights)
             {
-                if (count >= 8) break;
-                if (!light.enabled) continue;
-                if (!light.gameObject.activeInHierarchy) continue;
-
-                var info = new LightInfoGPU();
-
-                if (light.type == LightType.Directional)
-                {
-                    var forward = light.transform.forward;
-                    info.PositionOrDirection = new Vector4(forward.x, forward.y, forward.z, 0f);
-                }
-                else
-                {
-                    var pos = light.transform.position;
-                    info.PositionOrDirection = new Vector4(pos.x, pos.y, pos.z, 1f);
-                }
-
-                info.ColorIntensity = new Vector4(light.color.r, light.color.g, light.color.b, light.intensity);
-                info.Params = new Vector4(light.range, 0, 0, 0);
-
-                SetLightInfo(ref lightData, count, info);
-                count++;
+                if (count >= MaxForwardLights) break;
+                if (!light.enabled || !light.gameObject.activeInHierarchy) continue;
+                SetLightInfo(ref lightData, count++, CollectLightInfo(light));
             }
 
             lightData.LightCount = count;
             cl.UpdateBuffer(_lightBuffer, 0, lightData);
         }
 
-        private static void SetLightInfo(ref LightUniforms data, int index, LightInfoGPU info)
+        private static unsafe void SetLightInfo(ref LightUniforms data, int index, LightInfoGPU info)
         {
-            switch (index)
-            {
-                case 0: data.Light0 = info; break;
-                case 1: data.Light1 = info; break;
-                case 2: data.Light2 = info; break;
-                case 3: data.Light3 = info; break;
-                case 4: data.Light4 = info; break;
-                case 5: data.Light5 = info; break;
-                case 6: data.Light6 = info; break;
-                case 7: data.Light7 = info; break;
-            }
+            fixed (LightInfoGPU* ptr = &data.Light0)
+                ptr[index] = info;
         }
 
         // ==============================
@@ -822,61 +791,63 @@ namespace IronRose.Rendering
             return resourceSet;
         }
 
+        /// <summary>공통 draw call — Transform/Material 업로드 + ResourceSet 바인딩 + DrawIndexed.</summary>
+        private void DrawMesh(CommandList cl, System.Numerics.Matrix4x4 viewProj,
+            Mesh mesh, Transform t, MaterialUniforms matUniforms, TextureView? texView,
+            bool bindPerFrame)
+        {
+            cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
+            {
+                World = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics(),
+                ViewProjection = viewProj,
+            });
+            cl.UpdateBuffer(_materialBuffer, 0, matUniforms);
+
+            cl.SetGraphicsResourceSet(0, GetOrCreateResourceSet(texView));
+            if (bindPerFrame)
+                cl.SetGraphicsResourceSet(1, _perFrameResourceSet);
+
+            cl.SetVertexBuffer(0, mesh.VertexBuffer);
+            cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
+            cl.DrawIndexed((uint)mesh.indices.Length);
+        }
+
+        private (MaterialUniforms mat, TextureView? tex) PrepareMaterial(Material? material)
+        {
+            var color = material?.color ?? Color.white;
+            var emission = material?.emission ?? Color.black;
+            TextureView? texView = null;
+            float hasTexture = 0f;
+            if (material?.mainTexture != null)
+            {
+                material.mainTexture.UploadToGPU(_device!);
+                if (material.mainTexture.TextureView != null)
+                { texView = material.mainTexture.TextureView; hasTexture = 1f; }
+            }
+            return (new MaterialUniforms
+            {
+                Color = new Vector4(color.r, color.g, color.b, color.a),
+                Emission = new Vector4(emission.r, emission.g, emission.b, emission.a),
+                HasTexture = hasTexture,
+                Metallic = material?.metallic ?? 0f,
+                Roughness = material?.roughness ?? 0.5f,
+                Occlusion = material?.occlusion ?? 1f,
+            }, texView);
+        }
+
         private void DrawOpaqueRenderers(CommandList cl, System.Numerics.Matrix4x4 viewProj)
         {
             foreach (var renderer in MeshRenderer._allRenderers)
             {
-                if (!renderer.enabled) continue;
-                if (!renderer.gameObject.activeInHierarchy) continue;
-
+                if (!renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
                 var filter = renderer.GetComponent<MeshFilter>();
                 if (filter?.mesh == null) continue;
-
                 var mesh = filter.mesh;
                 mesh.UploadToGPU(_device!);
                 if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
 
-                var t = renderer.transform;
-                var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
-
-                cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
-                {
-                    World = worldMatrix,
-                    ViewProjection = viewProj,
-                });
-
-                var material = renderer.material;
-                var color = material?.color ?? Color.white;
-                var emission = material?.emission ?? Color.black;
-
-                TextureView? texView = null;
-                float hasTexture = 0f;
-                if (material?.mainTexture != null)
-                {
-                    material.mainTexture.UploadToGPU(_device!);
-                    if (material.mainTexture.TextureView != null)
-                    {
-                        texView = material.mainTexture.TextureView;
-                        hasTexture = 1f;
-                    }
-                }
-
-                cl.UpdateBuffer(_materialBuffer, 0, new MaterialUniforms
-                {
-                    Color = new Vector4(color.r, color.g, color.b, color.a),
-                    Emission = new Vector4(emission.r, emission.g, emission.b, emission.a),
-                    HasTexture = hasTexture,
-                    Metallic = material?.metallic ?? 0f,
-                    Roughness = material?.roughness ?? 0.5f,
-                    Occlusion = material?.occlusion ?? 1f,
-                });
-
-                var perObjectSet = GetOrCreateResourceSet(texView);
-                cl.SetGraphicsResourceSet(0, perObjectSet);
-
-                cl.SetVertexBuffer(0, mesh.VertexBuffer);
-                cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
-                cl.DrawIndexed((uint)mesh.indices.Length);
+                var (matUniforms, texView) = PrepareMaterial(renderer.material);
+                DrawMesh(cl, viewProj, mesh, renderer.transform, matUniforms, texView, bindPerFrame: false);
             }
         }
 
@@ -884,77 +855,52 @@ namespace IronRose.Rendering
         {
             foreach (var renderer in MeshRenderer._allRenderers)
             {
-                if (!renderer.enabled) continue;
-                if (!renderer.gameObject.activeInHierarchy) continue;
-
+                if (!renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
                 var filter = renderer.GetComponent<MeshFilter>();
                 if (filter?.mesh == null) continue;
-
                 var mesh = filter.mesh;
                 mesh.UploadToGPU(_device!);
                 if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
 
-                var t = renderer.transform;
-                var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
-
-                cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
+                MaterialUniforms matUniforms;
+                TextureView? texView;
+                if (useWireframeColor)
                 {
-                    World = worldMatrix,
-                    ViewProjection = viewProj,
-                });
-
-                var material = renderer.material;
-                var color = useWireframeColor ? Debug.wireframeColor : (material?.color ?? Color.white);
-                var emission = useWireframeColor ? Color.black : (material?.emission ?? Color.black);
-
-                TextureView? texView = null;
-                float hasTexture = 0f;
-                if (!useWireframeColor && material?.mainTexture != null)
-                {
-                    material.mainTexture.UploadToGPU(_device!);
-                    if (material.mainTexture.TextureView != null)
+                    var wc = Debug.wireframeColor;
+                    matUniforms = new MaterialUniforms
                     {
-                        texView = material.mainTexture.TextureView;
-                        hasTexture = 1f;
-                    }
+                        Color = new Vector4(wc.r, wc.g, wc.b, wc.a),
+                        Roughness = 0.5f, Occlusion = 1f,
+                    };
+                    texView = null;
+                }
+                else
+                {
+                    (matUniforms, texView) = PrepareMaterial(renderer.material);
                 }
 
-                cl.UpdateBuffer(_materialBuffer, 0, new MaterialUniforms
-                {
-                    Color = new Vector4(color.r, color.g, color.b, color.a),
-                    Emission = new Vector4(emission.r, emission.g, emission.b, emission.a),
-                    HasTexture = hasTexture,
-                    Metallic = useWireframeColor ? 0f : (material?.metallic ?? 0f),
-                    Roughness = useWireframeColor ? 0.5f : (material?.roughness ?? 0.5f),
-                    Occlusion = useWireframeColor ? 1f : (material?.occlusion ?? 1f),
-                });
-
-                var perObjectSet = GetOrCreateResourceSet(texView);
-                cl.SetGraphicsResourceSet(0, perObjectSet);
-                cl.SetGraphicsResourceSet(1, _perFrameResourceSet);
-
-                cl.SetVertexBuffer(0, mesh.VertexBuffer);
-                cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
-                cl.DrawIndexed((uint)mesh.indices.Length);
+                DrawMesh(cl, viewProj, mesh, renderer.transform, matUniforms, texView, bindPerFrame: true);
             }
+        }
+
+        private void SetUnlitLightData(CommandList cl, Camera camera)
+        {
+            cl.UpdateBuffer(_lightBuffer, 0, new LightUniforms
+            {
+                CameraPos = new Vector4(camera.transform.position.x, camera.transform.position.y, camera.transform.position.z, 0),
+                LightCount = -1,
+            });
         }
 
         private void DrawAllSprites(CommandList cl, System.Numerics.Matrix4x4 viewProj, Camera camera)
         {
-            var unlitLightData = new LightUniforms
-            {
-                CameraPos = new Vector4(camera.transform.position.x, camera.transform.position.y, camera.transform.position.z, 0),
-                LightCount = -1,
-            };
-            cl.UpdateBuffer(_lightBuffer, 0, unlitLightData);
-
+            SetUnlitLightData(cl, camera);
             cl.SetPipeline(_spritePipeline);
 
             var active = SpriteRenderer._allSpriteRenderers
                 .Where(sr => sr.enabled && sr.sprite != null &&
                              sr.gameObject.activeInHierarchy && !sr._isDestroyed)
                 .ToList();
-
             if (active.Count == 0) return;
 
             var camPos = camera.transform.position;
@@ -962,66 +908,36 @@ namespace IronRose.Rendering
             {
                 int orderCmp = a.sortingOrder.CompareTo(b.sortingOrder);
                 if (orderCmp != 0) return orderCmp;
-                float distA = (a.transform.position - camPos).sqrMagnitude;
-                float distB = (b.transform.position - camPos).sqrMagnitude;
-                return distB.CompareTo(distA);
+                return (b.transform.position - camPos).sqrMagnitude
+                    .CompareTo((a.transform.position - camPos).sqrMagnitude);
             });
 
             foreach (var sr in active)
             {
                 sr.EnsureMesh();
                 if (sr._cachedMesh == null) continue;
-
                 var mesh = sr._cachedMesh;
                 mesh.UploadToGPU(_device!);
                 if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
 
-                var t = sr.transform;
-                var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
-
-                cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
-                {
-                    World = worldMatrix,
-                    ViewProjection = viewProj,
-                });
-
-                var color = sr.color;
                 TextureView? texView = null;
                 float hasTexture = 0f;
-
                 sr.sprite!.texture.UploadToGPU(_device!);
                 if (sr.sprite.texture.TextureView != null)
-                {
-                    texView = sr.sprite.texture.TextureView;
-                    hasTexture = 1f;
-                }
+                { texView = sr.sprite.texture.TextureView; hasTexture = 1f; }
 
-                cl.UpdateBuffer(_materialBuffer, 0, new MaterialUniforms
+                var c = sr.color;
+                DrawMesh(cl, viewProj, mesh, sr.transform, new MaterialUniforms
                 {
-                    Color = new Vector4(color.r, color.g, color.b, color.a),
-                    Emission = Vector4.Zero,
+                    Color = new Vector4(c.r, c.g, c.b, c.a),
                     HasTexture = hasTexture,
-                });
-
-                var perObjectSet = GetOrCreateResourceSet(texView);
-                cl.SetGraphicsResourceSet(0, perObjectSet);
-                cl.SetGraphicsResourceSet(1, _perFrameResourceSet);
-
-                cl.SetVertexBuffer(0, mesh.VertexBuffer);
-                cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
-                cl.DrawIndexed((uint)mesh.indices.Length);
+                }, texView, bindPerFrame: true);
             }
         }
 
         private void DrawAllTexts(CommandList cl, System.Numerics.Matrix4x4 viewProj, Camera camera)
         {
-            var unlitLightData = new LightUniforms
-            {
-                CameraPos = new Vector4(camera.transform.position.x, camera.transform.position.y, camera.transform.position.z, 0),
-                LightCount = -1,
-            };
-            cl.UpdateBuffer(_lightBuffer, 0, unlitLightData);
-
+            SetUnlitLightData(cl, camera);
             cl.SetPipeline(_spritePipeline);
 
             var active = TextRenderer._allTextRenderers
@@ -1029,7 +945,6 @@ namespace IronRose.Rendering
                              !string.IsNullOrEmpty(tr.text) &&
                              tr.gameObject.activeInHierarchy && !tr._isDestroyed)
                 .ToList();
-
             if (active.Count == 0) return;
 
             var camPos = camera.transform.position;
@@ -1037,52 +952,29 @@ namespace IronRose.Rendering
             {
                 int orderCmp = a.sortingOrder.CompareTo(b.sortingOrder);
                 if (orderCmp != 0) return orderCmp;
-                float distA = (a.transform.position - camPos).sqrMagnitude;
-                float distB = (b.transform.position - camPos).sqrMagnitude;
-                return distB.CompareTo(distA);
+                return (b.transform.position - camPos).sqrMagnitude
+                    .CompareTo((a.transform.position - camPos).sqrMagnitude);
             });
 
             foreach (var tr in active)
             {
                 tr.EnsureMesh();
                 if (tr._cachedMesh == null) continue;
-
                 var mesh = tr._cachedMesh;
                 mesh.UploadToGPU(_device!);
                 if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
-
-                var t = tr.transform;
-                var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
-
-                cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
-                {
-                    World = worldMatrix,
-                    ViewProjection = viewProj,
-                });
 
                 TextureView? texView = null;
                 float hasTexture = 0f;
                 tr.font!.atlasTexture!.UploadToGPU(_device!);
                 if (tr.font.atlasTexture.TextureView != null)
-                {
-                    texView = tr.font.atlasTexture.TextureView;
-                    hasTexture = 1f;
-                }
+                { texView = tr.font.atlasTexture.TextureView; hasTexture = 1f; }
 
-                cl.UpdateBuffer(_materialBuffer, 0, new MaterialUniforms
+                DrawMesh(cl, viewProj, mesh, tr.transform, new MaterialUniforms
                 {
                     Color = new Vector4(tr.color.r, tr.color.g, tr.color.b, tr.color.a),
-                    Emission = Vector4.Zero,
                     HasTexture = hasTexture,
-                });
-
-                var perObjectSet = GetOrCreateResourceSet(texView);
-                cl.SetGraphicsResourceSet(0, perObjectSet);
-                cl.SetGraphicsResourceSet(1, _perFrameResourceSet);
-
-                cl.SetVertexBuffer(0, mesh.VertexBuffer);
-                cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
-                cl.DrawIndexed((uint)mesh.indices.Length);
+                }, texView, bindPerFrame: true);
             }
         }
 

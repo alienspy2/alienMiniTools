@@ -7,9 +7,7 @@ public class PBRDemo : MonoBehaviour
         Debug.Log("[PBRDemo] Setting up PBR sphere grid...");
 
         // Camera
-        var camObj = new GameObject("Main Camera");
-        var cam = camObj.AddComponent<Camera>();
-        camObj.transform.position = new Vector3(0, 0, -14f);
+        DemoUtils.CreateCamera(new Vector3(0, 0, -14f));
 
         // Skybox — load panoramic environment map
         try
@@ -34,18 +32,8 @@ public class PBRDemo : MonoBehaviour
 
         // Load font for labels
         Font? font = null;
-        try
-        {
-            var fontPath = System.IO.Path.Combine(
-                System.IO.Directory.GetCurrentDirectory(), "Assets", "Fonts", "NotoSans_eng.ttf");
-            font = Font.CreateFromFile(fontPath, 32);
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogWarning($"[PBRDemo] Font load failed: {ex.Message}");
-            try { font = Font.CreateDefault(32); }
-            catch { /* no font available */ }
-        }
+        try { font = DemoUtils.LoadFont(32); }
+        catch { /* no font available */ }
 
         // Main directional light — from upper-left, facing the sphere grid
         var dirLightObj = new GameObject("Directional Light");
@@ -92,16 +80,6 @@ public class PBRDemo : MonoBehaviour
                 sphere.GetComponent<MeshRenderer>()!.material = mat;
             }
         }
-
-        // Floor plane (non-metallic, rough)
-        // var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        // floor.name = "Floor";
-        // floor.transform.position = new Vector3(0, -6.5f, 0);
-        // var floorMat = new Material();
-        // floorMat.color = new Color(0.5f, 0.5f, 0.5f);
-        // floorMat.metallic = 0f;
-        // floorMat.roughness = 0.7f;
-        // floor.GetComponent<MeshRenderer>()!.material = floorMat;
 
         // === Labels ===
         if (font != null)
