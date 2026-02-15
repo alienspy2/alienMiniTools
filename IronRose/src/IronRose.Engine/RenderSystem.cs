@@ -1414,7 +1414,7 @@ namespace IronRose.Rendering
             {
                 TextureParams = new Vector4(usePanoramic ? 1f : 0f, exposure, rotationRad, 0f),
                 SunDirection = sunDir,
-                SkyParams = new Vector4(SkyZenithIntensity, SkyHorizonIntensity, DefaultSunAngularRadius, DefaultSunIntensity),
+                SkyParams = new Vector4(SkyZenithIntensity, SkyHorizonIntensity, DefaultSunAngularRadius, RenderSettings.sunIntensity),
                 ZenithColor = SkyZenithColor,
                 HorizonColor = SkyHorizonColor,
             };
@@ -1438,7 +1438,6 @@ namespace IronRose.Rendering
         private static float SkyZenithIntensity => RenderSettings.skyZenithIntensity;
         private static float SkyHorizonIntensity => RenderSettings.skyHorizonIntensity;
         private const float DefaultSunAngularRadius = 0.02f;
-        private const float DefaultSunIntensity = 20.0f;
 
         private void RenderSkybox(CommandList cl, Camera camera, System.Numerics.Matrix4x4 viewProj)
         {
@@ -1501,7 +1500,7 @@ namespace IronRose.Rendering
             {
                 InverseViewProjection = invViewProj,
                 SunDirection = sunDir,
-                SkyParams = new Vector4(SkyZenithIntensity, SkyHorizonIntensity, DefaultSunAngularRadius, DefaultSunIntensity),
+                SkyParams = new Vector4(SkyZenithIntensity, SkyHorizonIntensity, DefaultSunAngularRadius, RenderSettings.sunIntensity),
                 ZenithColor = SkyZenithColor,
                 HorizonColor = SkyHorizonColor,
                 TextureParams = new Vector4(usePanoramic ? 1f : 0f, exposure, rotationRad, 0f),
@@ -1524,21 +1523,21 @@ namespace IronRose.Rendering
             {
                 var avg = skyboxMat._cachedCubemap?.GetAverageColor() ?? skyboxMat.mainTexture.GetAverageColor();
                 float exposure = skyboxMat.exposure;
-                return new Vector4(avg.r * exposure * intensity, avg.g * exposure * intensity, avg.b * exposure * intensity, 1f);
+                return new Vector4(avg.r * exposure * intensity, avg.g * exposure * intensity, avg.b * exposure * intensity, intensity);
             }
 
             // If any skybox material set with custom ambient color
             if (skyboxMat != null)
             {
                 var c = RenderSettings.ambientLight;
-                return new Vector4(c.r * intensity, c.g * intensity, c.b * intensity, 1f);
+                return new Vector4(c.r * intensity, c.g * intensity, c.b * intensity, intensity);
             }
 
             // Default procedural sky ambient (average of zenith + horizon)
             var skyR = (SkyZenithColor.X * SkyZenithIntensity + SkyHorizonColor.X * SkyHorizonIntensity) * 0.5f;
             var skyG = (SkyZenithColor.Y * SkyZenithIntensity + SkyHorizonColor.Y * SkyHorizonIntensity) * 0.5f;
             var skyB = (SkyZenithColor.Z * SkyZenithIntensity + SkyHorizonColor.Z * SkyHorizonIntensity) * 0.5f;
-            return new Vector4(skyR * intensity, skyG * intensity, skyB * intensity, 1f);
+            return new Vector4(skyR * intensity, skyG * intensity, skyB * intensity, intensity);
         }
 
         // ==============================

@@ -3,8 +3,13 @@ using RoseEngine;
 
 public class ManyLightsDemo : MonoBehaviour
 {
-    private const int LightCount = 64;
-    private readonly List<(GameObject go, float radius, float speed, float height, float phase)> _lights = new();
+    private const float OrbitRadius = 6f;
+    private const float OrbitHeight = 6f;
+    private const float OrbitSpeed = 0.4f;
+    private int _spotLightCount = 6;
+    private readonly List<(GameObject go, float phase)> _spots = new();
+    private TextRenderer _hudText;
+    private float _keyRepeatTimer;
 
     public override void Awake()
     {
@@ -42,81 +47,82 @@ public class ManyLightsDemo : MonoBehaviour
         sphereMat.roughness = 0.15f;
         sphere.GetComponent<MeshRenderer>()!.material = sphereMat;
 
-        // --- Many orbiting point lights (rainbow colors) ---
-        for (int i = 0; i < LightCount; i++)
-        {
-            float t = i / (float)LightCount;
-            Color c = Color.HSVToRGB(t, 0.85f, 1f);
+RenderSettings.ambientLight = Color.black;
+RenderSettings.skyHorizonColor = Color.black;
+RenderSettings.skyZenithColor = Color.black;
+RenderSettings.sunIntensity = 0;
+RenderSettings.ambientIntensity = 0;
 
-            var lightObj = new GameObject($"Light_{i}");
-            var light = lightObj.AddComponent<Light>();
-            light.type = LightType.Point;
-            light.color = c;
-            light.intensity = 1.5f;
-            light.range = 8f;
-            light.shadowResolution = 1024;
+        // --- HUD (오른쪽 위) ---
+        var hudObj = new GameObject("SpotLight HUD");
+        _hudText = hudObj.AddComponent<TextRenderer>();
+        _hudText.font = Font.CreateDefault(24);
+        _hudText.color = Color.white;
+        _hudText.alignment = TextAlignment.Right;
+        _hudText.sortingOrder = 100;
+        _hudText.pixelsPerUnit = 200f;
+        hudObj.transform.position = new Vector3(3.5f, 1.8f, -4f);
 
-            // Vary orbit parameters per light
-            float radius = 4f + (i % 4) * 1.2f;
-            float speed  = 0.4f + (i % 5) * 0.12f;
-            float height = 1.5f + (i % 3) * 1.0f;
-            float phase  = t * Mathf.PI * 2f;
-
-            _lights.Add((lightObj, radius, speed, height, phase));
-        }
-
-        // --- Directional light with shadow ---
-        var dirLightObj = new GameObject("DirLight_Shadow");
-        var dirLight = dirLightObj.AddComponent<Light>();
-        dirLight.type = LightType.Directional;
-        dirLight.color = new Color(1f, 0.95f, 0.9f);
-        dirLight.intensity = 1.5f;
-        dirLight.shadows = true;
-        dirLight.shadowResolution = 2048;
-        dirLight.shadowBias = 0.005f;
-        dirLightObj.transform.Rotate(50, -30, 0);
-
-        // --- Spot lights pointing down at corners ---
-        var spotColors = new[] { Color.red, Color.green, Color.blue, Color.yellow };
-        var spotPositions = new[]
-        {
-            new Vector3(-6, 6, -6), new Vector3(6, 6, -6),
-            new Vector3(-6, 6, 6),  new Vector3(6, 6, 6),
-        };
-        for (int i = 0; i < 4; i++)
-        {
-            var spotObj = new GameObject($"SpotLight_{i}");
-            var spot = spotObj.AddComponent<Light>();
-            spot.type = LightType.Spot;
-            spot.color = spotColors[i];
-            spot.intensity = 8f;
-            spot.range = 15f;
-            spot.spotAngle = 25f;
-            spot.spotOuterAngle = 40f;
-            // Enable shadow on first two spot lights
-            if (i < 2)
-            {
-                spot.shadows = true;
-                spot.shadowResolution = 1024;
-            }
-            spotObj.transform.position = spotPositions[i];
-            spotObj.transform.LookAt(new Vector3(spotPositions[i].x * 0.3f, -1f, spotPositions[i].z * 0.3f));
-        }
-
-        Debug.Log($"[ManyLightsDemo] {LightCount} point(2 shadow) + 1 dir(shadow) + 4 spot(2 shadow) — enjoy the show!");
+        RebuildSpotLights();
     }
 
     public override void Update()
     {
-        float time = Time.time;
-        foreach (var (go, radius, speed, height, phase) in _lights)
+        bool up = Input.GetKey(KeyCode.PageUp);
+        bool down = Input.GetKey(KeyCode.PageDown);
+        if (Input.GetKeyDown(KeyCode.PageUp) || Input.GetKeyDown(KeyCode.PageDown))
+            _keyRepeatTimer = 0f;
+        if (up || down)
         {
-            float angle = time * speed + phase;
-            go.transform.position = new Vector3(
-                Mathf.Cos(angle) * radius,
-                height,
-                Mathf.Sin(angle) * radius);
+            _keyRepeatTimer -= Time.deltaTime;
+            if (_keyRepeatTimer <= 0f)
+            {
+                _keyRepeatTimer = 0.1f;
+                if (up) _spotLightCount++;
+                if (down && _spotLightCount > 1) _spotLightCount--;
+                RebuildSpotLights();
+            }
         }
+
+        float time = Time.time;
+        foreach (var (go, phase) in _spots)
+        {
+            float angle = time * OrbitSpeed + phase;
+            go.transform.position = new Vector3(
+                Mathf.Cos(angle) * OrbitRadius, OrbitHeight, Mathf.Sin(angle) * OrbitRadius);
+            go.transform.LookAt(Vector3.zero);
+        }
+    }
+
+    private void RebuildSpotLights()
+    {
+        foreach (var (go, _) in _spots)
+            RoseEngine.Object.Destroy(go);
+        _spots.Clear();
+
+        for (int i = 0; i < _spotLightCount; i++)
+        {
+            float t = i / (float)_spotLightCount;
+            float angle = t * Mathf.PI * 2f;
+            var spotObj = new GameObject($"SpotLight_{i}");
+            var spot = spotObj.AddComponent<Light>();
+            spot.type = LightType.Spot;
+            spot.color = Color.HSVToRGB(t, 0.85f, 1f);
+            spot.intensity = 30f / _spotLightCount;
+            spot.range = 15f;
+            spot.spotAngle = 30f;
+            spot.spotOuterAngle = 60f;
+            spot.shadows = true;
+            spot.shadowResolution = 128;
+            spotObj.transform.position = new Vector3(
+                Mathf.Cos(angle) * OrbitRadius, OrbitHeight, Mathf.Sin(angle) * OrbitRadius);
+            spotObj.transform.LookAt(Vector3.zero);
+            _spots.Add((spotObj, angle));
+        }
+
+        if (_hudText != null)
+            _hudText.text = $"Spot Lights: {_spotLightCount}";
+        Debug.Log($"[ManyLightsDemo] Spot lights: {_spotLightCount}");
     }
 
     private static Texture2D CreateCheckerTexture(int size, int tiles, Color c1, Color c2)

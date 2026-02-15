@@ -49,5 +49,10 @@ namespace RoseEngine
         /// Procedural sky horizon intensity.
         /// </summary>
         public static float skyHorizonIntensity { get; set; } = 1.0f;
+
+        /// <summary>
+        /// Procedural sky sun intensity. Set to 0 to disable the sun disk entirely.
+        /// </summary>
+        public static float sunIntensity { get; set; } = 20.0f;
     }
 }

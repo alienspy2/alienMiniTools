@@ -59,19 +59,15 @@ void main()
         return;
     }
 
-    // If no lights, use hardcoded fallback (backwards compatibility)
+    // No lights — emit only emission (ambient handled by deferred pass)
     if (LightCount <= 0)
     {
-        vec3 lightDir = normalize(vec3(0.5, 1.0, -0.5));
-        float ndotl = max(dot(normal, lightDir), 0.0);
-        float ambient = 0.2;
-        float lighting = ambient + ndotl * 0.8;
-        out_Color = vec4(baseColor.rgb * lighting + Emission.rgb, baseColor.a);
+        out_Color = vec4(Emission.rgb, baseColor.a);
         return;
     }
 
-    // Multi-light accumulation
-    vec3 ambient = baseColor.rgb * 0.1;
+    // Multi-light accumulation (ambient handled by deferred pass)
+    vec3 ambient = vec3(0.0);
     vec3 diffuseAccum = vec3(0.0);
     vec3 specAccum = vec3(0.0);
 

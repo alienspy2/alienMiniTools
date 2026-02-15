@@ -251,7 +251,8 @@ void main()
 
     vec3 ambient_diffuse = kD_ambient * albedo * envDiffuse * occlusion;
     vec3 ambient_specular = specularScale * envSpecular * occlusion;
-    vec3 ambient = ambient_diffuse + ambient_specular;
+    float ambientScale = SkyAmbient.a; // ambientIntensity from RenderSettings
+    vec3 ambient = (ambient_diffuse + ambient_specular) * ambientScale;
 
     vec3 color = ambient + emissionIntensity * albedo;
     fsout_Color = vec4(color, 1.0);
