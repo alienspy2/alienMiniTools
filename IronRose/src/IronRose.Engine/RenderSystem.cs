@@ -96,6 +96,7 @@ namespace IronRose.Rendering
         private ResourceLayout? _perObjectLayout;
         private Sampler? _defaultSampler;
         private Texture2D? _whiteTexture;
+        private Cubemap? _whiteCubemap;
         private readonly Dictionary<TextureView, ResourceSet> _resourceSetCache = new();
         private ResourceSet? _defaultResourceSet;
 
@@ -196,11 +197,15 @@ namespace IronRose.Rendering
             _defaultSampler = factory.CreateSampler(new SamplerDescription(
                 SamplerAddressMode.Wrap, SamplerAddressMode.Wrap, SamplerAddressMode.Wrap,
                 SamplerFilter.MinLinear_MagLinear_MipLinear,
-                null, 0, 0, 0, 0, SamplerBorderColor.TransparentBlack));
+                null, 0, 0, uint.MaxValue, 0, SamplerBorderColor.TransparentBlack));
 
             // --- White fallback texture ---
             _whiteTexture = Texture2D.CreateWhitePixel();
             _whiteTexture.UploadToGPU(device);
+
+            // --- White fallback cubemap ---
+            _whiteCubemap = Cubemap.CreateWhiteCubemap();
+            _whiteCubemap.UploadToGPU(device);
 
             // --- Resource layouts ---
             // Per-object (set 0): transforms + material + texture + sampler
@@ -239,7 +244,7 @@ namespace IronRose.Rendering
                 _perObjectLayout, _transformBuffer, _materialBuffer, _whiteTexture.TextureView!, _defaultSampler));
 
             _skyboxResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
-                _skyboxLayout, _skyboxUniformBuffer, _whiteTexture.TextureView!, _defaultSampler));
+                _skyboxLayout, _skyboxUniformBuffer, _whiteCubemap!.TextureView!, _defaultSampler));
             _currentSkyboxTextureView = null;
 
             // --- Create size-dependent resources (GBuffer, HDR, pipelines) ---
@@ -421,7 +426,7 @@ namespace IronRose.Rendering
                 _gBuffer.WorldPosView,
                 _defaultSampler!,
                 _deferredLightBuffer!,
-                _whiteTexture!.TextureView!,
+                _whiteCubemap!.TextureView!,
                 _envMapBuffer!));
             _currentEnvMapTextureView = null;
         }
@@ -465,7 +470,15 @@ namespace IronRose.Rendering
 
             // === 2. Lighting Pass → HDR ===
             cl.SetFramebuffer(_hdrFramebuffer);
-            cl.ClearColorTarget(0, RgbaFloat.Clear);
+            if (camera.clearFlags == CameraClearFlags.SolidColor)
+            {
+                var bg = camera.backgroundColor;
+                cl.ClearColorTarget(0, new RgbaFloat(bg.r, bg.g, bg.b, bg.a));
+            }
+            else
+            {
+                cl.ClearColorTarget(0, RgbaFloat.Clear);
+            }
             // (depth is shared with GBuffer — do NOT clear it)
             cl.SetPipeline(_lightingPipeline);
             UpdateEnvMapForLighting();
@@ -475,7 +488,8 @@ namespace IronRose.Rendering
             cl.Draw(3, 1, 0, 0); // Fullscreen triangle
 
             // === 3. Skybox Pass → HDR (depth test LessEqual, only empty pixels) ===
-            RenderSkybox(cl, camera, viewProj);
+            if (camera.clearFlags == CameraClearFlags.Skybox)
+                RenderSkybox(cl, camera, viewProj);
 
             // === 4. Forward Pass → HDR (sprites, text, wireframe) ===
             if (Debug.wireframe && _wireframePipeline != null)
@@ -559,14 +573,21 @@ namespace IronRose.Rendering
             var skyboxMat = RenderSettings.skybox;
             if (skyboxMat?.shader?.name == "Skybox/Panoramic" && skyboxMat.mainTexture != null)
             {
-                skyboxMat.mainTexture.UploadToGPU(_device!, generateMipmaps: true);
-                envMapView = skyboxMat.mainTexture.TextureView;
+                // Lazy cubemap conversion with caching
+                if (skyboxMat._cachedCubemap == null || skyboxMat._cachedCubemapSource != skyboxMat.mainTexture)
+                {
+                    skyboxMat._cachedCubemap?.Dispose();
+                    skyboxMat._cachedCubemap = Cubemap.CreateFromEquirectangular(skyboxMat.mainTexture, 512);
+                    skyboxMat._cachedCubemap.UploadToGPU(_device!, generateMipmaps: true);
+                    skyboxMat._cachedCubemapSource = skyboxMat.mainTexture;
+                }
+                envMapView = skyboxMat._cachedCubemap.TextureView;
             }
 
             if (envMapView != _currentEnvMapTextureView)
             {
                 _deferredLightingSet?.Dispose();
-                var texView = envMapView ?? _whiteTexture!.TextureView!;
+                var texView = envMapView ?? _whiteCubemap!.TextureView!;
                 _deferredLightingSet = _device!.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
                     _deferredLightingLayout!,
                     _gBuffer!.AlbedoView, _gBuffer.NormalView, _gBuffer.MaterialView, _gBuffer.WorldPosView,
@@ -649,8 +670,15 @@ namespace IronRose.Rendering
             // Update resource set if skybox texture changed
             if (usePanoramic)
             {
-                skyboxMat!.mainTexture!.UploadToGPU(_device!);
-                var texView = skyboxMat.mainTexture.TextureView;
+                // Lazy cubemap conversion with caching (shared with deferred lighting)
+                if (skyboxMat!._cachedCubemap == null || skyboxMat._cachedCubemapSource != skyboxMat.mainTexture)
+                {
+                    skyboxMat._cachedCubemap?.Dispose();
+                    skyboxMat._cachedCubemap = Cubemap.CreateFromEquirectangular(skyboxMat.mainTexture!, 512);
+                    skyboxMat._cachedCubemap.UploadToGPU(_device!, generateMipmaps: true);
+                    skyboxMat._cachedCubemapSource = skyboxMat.mainTexture;
+                }
+                var texView = skyboxMat._cachedCubemap.TextureView;
                 if (texView != null && texView != _currentSkyboxTextureView)
                 {
                     _skyboxResourceSet?.Dispose();
@@ -661,10 +689,10 @@ namespace IronRose.Rendering
             }
             else if (_currentSkyboxTextureView != null)
             {
-                // Reset to default (white texture = procedural mode)
+                // Reset to default (white cubemap = procedural mode)
                 _skyboxResourceSet?.Dispose();
                 _skyboxResourceSet = _device!.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-                    _skyboxLayout!, _skyboxUniformBuffer!, _whiteTexture!.TextureView!, _defaultSampler!));
+                    _skyboxLayout!, _skyboxUniformBuffer!, _whiteCubemap!.TextureView!, _defaultSampler!));
                 _currentSkyboxTextureView = null;
             }
 
@@ -694,10 +722,10 @@ namespace IronRose.Rendering
             var skyboxMat = RenderSettings.skybox;
             float intensity = RenderSettings.ambientIntensity;
 
-            // If panoramic skybox with texture: use texture average color
+            // If panoramic skybox with texture: use cubemap average color
             if (skyboxMat?.shader?.name == "Skybox/Panoramic" && skyboxMat.mainTexture != null)
             {
-                var avg = skyboxMat.mainTexture.GetAverageColor();
+                var avg = skyboxMat._cachedCubemap?.GetAverageColor() ?? skyboxMat.mainTexture.GetAverageColor();
                 float exposure = skyboxMat.exposure;
                 return new Vector4(avg.r * exposure * intensity, avg.g * exposure * intensity, avg.b * exposure * intensity, 1f);
             }
@@ -1109,6 +1137,7 @@ namespace IronRose.Rendering
             _lightBuffer?.Dispose();
             _defaultSampler?.Dispose();
             _whiteTexture?.Dispose();
+            _whiteCubemap?.Dispose();
             _defaultResourceSet?.Dispose();
             _perFrameResourceSet?.Dispose();
             _perObjectLayout?.Dispose();

@@ -11,7 +11,7 @@ namespace UnityEngine
         public int width { get; private set; }
         public int height { get; private set; }
 
-        private byte[]? _pixelData;
+        internal byte[]? _pixelData;
         internal Veldrid.Texture? VeldridTexture { get; private set; }
         internal TextureView? TextureView { get; private set; }
         private bool _isDirty = true;

@@ -13,30 +13,21 @@ layout(set = 0, binding = 0) uniform SkyboxUniforms
     vec4 TextureParams;   // x = hasTexture, y = exposure, z = rotation (radians), w = unused
 };
 
-layout(set = 0, binding = 1) uniform texture2D SkyTexture;
+layout(set = 0, binding = 1) uniform textureCube SkyTexture;
 layout(set = 0, binding = 2) uniform sampler SkySampler;
 
 const float PI = 3.14159265359;
 
-// Convert direction to equirectangular UV coordinates
-vec2 directionToEquirectUV(vec3 dir, float rotationRad)
+// Apply Y-axis rotation to direction vector
+vec3 rotateY(vec3 dir, float rad)
 {
-    // Apply Y-axis rotation
-    float cosR = cos(rotationRad);
-    float sinR = sin(rotationRad);
-    vec3 rotDir = vec3(
+    float cosR = cos(rad);
+    float sinR = sin(rad);
+    return vec3(
         dir.x * cosR - dir.z * sinR,
         dir.y,
         dir.x * sinR + dir.z * cosR
     );
-
-    float u = atan(rotDir.z, rotDir.x) / (2.0 * PI) + 0.5;
-    float v = asin(clamp(rotDir.y, -1.0, 1.0)) / PI + 0.5;
-
-    // Flip V so top of image = zenith
-    v = 1.0 - v;
-
-    return vec2(u, v);
 }
 
 // Procedural sky (atmospheric gradient + sun)
@@ -86,9 +77,9 @@ void main()
 
     if (hasTexture > 0.5)
     {
-        // Panoramic (equirectangular) texture sampling
-        vec2 uv = directionToEquirectUV(dir, rotationRad);
-        color = texture(sampler2D(SkyTexture, SkySampler), uv).rgb;
+        // Cubemap sampling with Y-axis rotation
+        vec3 rotDir = rotateY(dir, rotationRad);
+        color = texture(samplerCube(SkyTexture, SkySampler), rotDir).rgb;
         color *= exposure;
     }
     else

@@ -28,8 +28,8 @@ layout(set = 0, binding = 5) uniform LightingBuffer
     LightInfo Lights[64];
 };
 
-// Environment map
-layout(set = 0, binding = 6) uniform texture2D envMap;
+// Environment map (cubemap)
+layout(set = 0, binding = 6) uniform textureCube envMap;
 layout(set = 0, binding = 7) uniform EnvMapParams
 {
     vec4 EnvTextureParams;   // x=hasTexture, y=exposure, z=rotation(rad), w=unused
@@ -43,21 +43,16 @@ const float PI = 3.14159265359;
 
 // === Environment Map Sampling ===
 
-vec2 directionToEquirectUV(vec3 dir, float rotationRad)
+// Apply Y-axis rotation to direction vector
+vec3 rotateY(vec3 dir, float rad)
 {
-    float cosR = cos(rotationRad);
-    float sinR = sin(rotationRad);
-    vec3 rotDir = vec3(
+    float cosR = cos(rad);
+    float sinR = sin(rad);
+    return vec3(
         dir.x * cosR - dir.z * sinR,
         dir.y,
         dir.x * sinR + dir.z * cosR
     );
-
-    float u = atan(rotDir.z, rotDir.x) / (2.0 * PI) + 0.5;
-    float v = asin(clamp(rotDir.y, -1.0, 1.0)) / PI + 0.5;
-    v = 1.0 - v;
-
-    return vec2(u, v);
 }
 
 vec3 proceduralSky(vec3 dir)
@@ -98,8 +93,8 @@ vec3 sampleEnvMap(vec3 dir)
 {
     if (EnvTextureParams.x > 0.5)
     {
-        vec2 uv = directionToEquirectUV(dir, EnvTextureParams.z);
-        return texture(sampler2D(envMap, gSampler), uv).rgb * EnvTextureParams.y;
+        vec3 rotDir = rotateY(dir, EnvTextureParams.z);
+        return textureLod(samplerCube(envMap, gSampler), rotDir, 0.0).rgb * EnvTextureParams.y;
     }
     else
     {
@@ -157,65 +152,90 @@ vec3 importanceSampleGGX(vec2 Xi, vec3 N, float roughness)
     return normalize(tangent * H.x + bitangent * H.y + N * H.z);
 }
 
+vec3 importanceSampleCosine(vec2 Xi, vec3 N)
+{
+    float phi = 2.0 * PI * Xi.x;
+    float cosTheta = sqrt(1.0 - Xi.y);
+    float sinTheta = sqrt(Xi.y);
+
+    vec3 H = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+
+    vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+
+    return normalize(tangent * H.x + bitangent * H.y + N * H.z);
+}
+
 const uint ENV_SAMPLE_COUNT = 32u;
+const uint DIFFUSE_SAMPLE_COUNT = 16u;
 
 vec3 sampleEnvMapRough(vec3 N, vec3 V, float roughness)
 {
     vec3 R = reflect(-V, N);
 
-    // Mirror-like surfaces: single sample, no blur needed
-    if (roughness < 0.05)
+    if (EnvTextureParams.x > 0.5)
     {
-        return sampleEnvMap(R);
+        // Unity's UnityImageBasedLighting.cginc: perceptualRoughness → LOD
+        float perceptualRoughness = roughness * (1.7 - 0.7 * roughness);
+        int envSize = textureSize(samplerCube(envMap, gSampler), 0).x;
+        float maxLod = log2(float(envSize));
+        float lod = perceptualRoughness * maxLod;
+
+        vec3 rotDir = rotateY(R, EnvTextureParams.z);
+        return textureLod(samplerCube(envMap, gSampler), rotDir, lod).rgb * EnvTextureParams.y;
     }
-
-    bool useTexture = EnvTextureParams.x > 0.5;
-    float saTexel = 1.0;
-    if (useTexture)
+    else
     {
-        ivec2 envSize = textureSize(sampler2D(envMap, gSampler), 0);
-        saTexel = 4.0 * PI / (float(envSize.x) * float(envSize.y));
-    }
+        // Procedural sky: importance sampling for roughness blur
+        if (roughness < 0.05)
+            return proceduralSky(R);
 
-    vec3 result = vec3(0.0);
-    float totalWeight = 0.0;
+        vec3 result = vec3(0.0);
+        float totalWeight = 0.0;
 
-    for (uint i = 0u; i < ENV_SAMPLE_COUNT; i++)
-    {
-        vec2 Xi = hammersley(i, ENV_SAMPLE_COUNT);
-        vec3 H = importanceSampleGGX(Xi, R, roughness);
-        vec3 L = normalize(2.0 * dot(R, H) * H - R);
-
-        float NdotL = max(dot(N, L), 0.0);
-        if (NdotL > 0.0)
+        for (uint i = 0u; i < ENV_SAMPLE_COUNT; i++)
         {
-            vec3 envColor;
+            vec2 Xi = hammersley(i, ENV_SAMPLE_COUNT);
+            vec3 H = importanceSampleGGX(Xi, R, roughness);
+            vec3 L = normalize(2.0 * dot(R, H) * H - R);
 
-            if (useTexture)
+            float NdotL = max(dot(N, L), 0.0);
+            if (NdotL > 0.0)
             {
-                // Per-sample mip level from GGX PDF (reduces noise)
-                float D = distributionGGX(R, H, roughness);
-                float pdf = D / 4.0 + 0.0001;
-                float saSample = 1.0 / (float(ENV_SAMPLE_COUNT) * pdf + 0.0001);
-                float mipLevel = max(0.5 * log2(saSample / saTexel), 0.0);
-
-                // MUST use textureLod — texture() has undefined implicit LOD
-                // inside non-uniform control flow (importance sampling loop)
-                vec2 uv = directionToEquirectUV(L, EnvTextureParams.z);
-                envColor = textureLod(sampler2D(envMap, gSampler), uv, mipLevel).rgb
-                         * EnvTextureParams.y;
+                result += proceduralSky(L) * NdotL;
+                totalWeight += NdotL;
             }
-            else
-            {
-                envColor = proceduralSky(L);
-            }
-
-            result += envColor * NdotL;
-            totalWeight += NdotL;
         }
-    }
 
-    return totalWeight > 0.0 ? result / totalWeight : sampleEnvMap(R);
+        return totalWeight > 0.0 ? result / totalWeight : proceduralSky(R);
+    }
+}
+
+// Diffuse IBL: cosine-weighted hemisphere irradiance
+vec3 sampleEnvMapDiffuse(vec3 N)
+{
+    if (EnvTextureParams.x > 0.5)
+    {
+        int envSize = textureSize(samplerCube(envMap, gSampler), 0).x;
+        float maxLod = log2(float(envSize));
+        vec3 rotDir = rotateY(N, EnvTextureParams.z);
+        return textureLod(samplerCube(envMap, gSampler), rotDir, maxLod).rgb * EnvTextureParams.y;
+    }
+    else
+    {
+        // Cosine-weighted hemisphere sampling for proper diffuse irradiance
+        vec3 result = vec3(0.0);
+
+        for (uint i = 0u; i < DIFFUSE_SAMPLE_COUNT; i++)
+        {
+            vec2 Xi = hammersley(i, DIFFUSE_SAMPLE_COUNT);
+            vec3 sampleDir = importanceSampleCosine(Xi, N);
+            result += proceduralSky(sampleDir);
+        }
+
+        return result / float(DIFFUSE_SAMPLE_COUNT);
+    }
 }
 
 // === PBR Functions ===
@@ -237,6 +257,17 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     float NdotV = max(dot(N, V), 0.0);
     float NdotL = max(dot(N, L), 0.0);
     return geometrySchlickGGX(NdotV, roughness) * geometrySchlickGGX(NdotL, roughness);
+}
+
+// Analytical approximation of split-sum BRDF integration LUT
+// Reference: Lazarov 2013, "Getting More Physical in Call of Duty: Black Ops II"
+vec2 envBRDFApprox(float NdotV, float roughness)
+{
+    vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+    vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+    return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
 void main()
@@ -312,15 +343,16 @@ void main()
         Lo += (kD * albedo / PI + specular) * lightColor * NdotL * attenuation;
     }
 
-    // IBL Ambient with Roughness-based Environment Blur
+    // IBL Ambient — split-sum approximation with BRDF integration
     vec3 envSpecular = sampleEnvMapRough(N, V, roughness);
-    vec3 envDiffuse = sampleEnvMap(N);
+    vec3 envDiffuse = sampleEnvMapDiffuse(N);
 
-    vec3 F_roughness = F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - NdotV, 0.0, 1.0), 5.0);
-    vec3 kD_ambient = (vec3(1.0) - F_roughness) * (1.0 - metallic);
+    vec2 brdf = envBRDFApprox(NdotV, roughness);
+    vec3 specularScale = F0 * brdf.x + brdf.y;
+    vec3 kD_ambient = (vec3(1.0) - specularScale) * (1.0 - metallic);
 
     vec3 ambient_diffuse = kD_ambient * albedo * envDiffuse * occlusion;
-    vec3 ambient_specular = F_roughness * envSpecular * occlusion;
+    vec3 ambient_specular = specularScale * envSpecular * occlusion;
     vec3 ambient = ambient_diffuse + ambient_specular;
     vec3 color = ambient + Lo + emissionIntensity * albedo;
 

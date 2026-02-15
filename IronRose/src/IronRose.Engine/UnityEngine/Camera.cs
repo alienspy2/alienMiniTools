@@ -1,10 +1,19 @@
 namespace UnityEngine
 {
+    public enum CameraClearFlags
+    {
+        Skybox = 1,
+        SolidColor = 2,
+    }
+
     public class Camera : Component
     {
         public float fieldOfView = 60f;
         public float nearClipPlane = 0.1f;
         public float farClipPlane = 1000f;
+
+        public CameraClearFlags clearFlags = CameraClearFlags.Skybox;
+        public Color backgroundColor = new Color(0.192f, 0.302f, 0.475f, 1f);
 
         public static Camera? main { get; internal set; }
 

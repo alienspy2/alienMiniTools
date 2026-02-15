@@ -18,6 +18,10 @@ namespace UnityEngine
         public float exposure { get; set; } = 1.0f;
         public float rotation { get; set; } = 0.0f;
 
+        // RenderSystem caches the lazy-converted cubemap here
+        internal Cubemap? _cachedCubemap;
+        internal Texture2D? _cachedCubemapSource; // change detection
+
         public Material() { }
 
         public Material(Shader shader)

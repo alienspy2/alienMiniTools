@@ -16,6 +16,8 @@ public class PhysicsDemo3D : MonoBehaviour
         // Camera
         var camObj = new GameObject("Main Camera");
         var cam = camObj.AddComponent<Camera>();
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = new Color(0.1f, 0.1f, 0.12f, 1f);
         camObj.transform.position = new Vector3(0, 3f, -12f);
         camObj.transform.Rotate(10, 0, 0);
 

@@ -9,6 +9,8 @@ public class CornellBoxDemo : MonoBehaviour
         // Camera — centered, looking into the box
         var camObj = new GameObject("Main Camera");
         var cam = camObj.AddComponent<Camera>();
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = Color.black;
         camObj.transform.position = new Vector3(0, 0, -8f);
 
         // --- Cornell Box Light (ceiling area, white) ---
