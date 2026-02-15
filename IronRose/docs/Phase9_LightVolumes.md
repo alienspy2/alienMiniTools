@@ -17,9 +17,9 @@
 | 단계 | 내용 | 상태 |
 |------|------|------|
 | **9A. Light Volume Rendering** | Ambient/Directional/Point 파이프라인 분리, sphere 볼륨 렌더링 | ✅ 완료 |
-| **9A-2. Spot Light Volume** | Spot Light cone 메시 볼륨 렌더링 + 셰이더 | ⬜ 미구현 |
-| **9B. Shadow Mapping (개별)** | Directional 2D, Point cubemap, Spot perspective 2D shadow map, PCF | ⬜ 미구현 |
-| **9C. Shadow Map Atlas** | 모든 shadow map을 단일 아틀라스 텍스처로 통합 | ⬜ 미구현 |
+| **9A-2. Spot Light Volume** | Spot Light cone 메시 볼륨 렌더링 + 셰이더 | ✅ 완료 |
+| **9B. Shadow Mapping (개별)** | Directional 2D, Point cubemap, Spot perspective 2D shadow map, PCF | ✅ 완료 |
+| **9C. Shadow Map Atlas** | 모든 shadow map을 단일 아틀라스 텍스처로 통합 | ✅ 완료 |
 
 > **Phase 9 완료 조건**: 9A + 9A-2 + 9B + 9C 모두 구현 및 검증 완료
 

@@ -34,6 +34,7 @@ public class CornellBoxDemo : MonoBehaviour
         ceilingLight.color = Color.white;
         ceilingLight.intensity = 10f;
         ceilingLight.range = 10f;
+        ceilingLight.shadows = true;
         lightObj.transform.position = new Vector3(0, 2.3f, 0);
 
         // --- Cornell Box Walls (5 quads, front open) ---

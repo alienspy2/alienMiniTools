@@ -15,16 +15,25 @@ struct LightInfo
     vec4 PositionOrDirection;   // xyz = position, w = type (1=point)
     vec4 ColorIntensity;        // rgb = color, a = intensity
     vec4 Params;                // x = range
-    vec4 _padding;
+    vec4 SpotDirection;
 };
 
 layout(set = 1, binding = 0) uniform LightVolumeData
 {
     mat4 WorldViewProjection;
+    mat4 LightViewProjection;
     vec4 CameraPos;
     vec4 ScreenParams;          // x=width, y=height
+    vec4 ShadowParams;          // x=hasShadow, y=bias
+    vec4 ShadowAtlasParams;    // xy=tileOffset, zw=tileScale (unused for point, use FaceAtlasParams)
     LightInfo Light;
+    mat4 FaceVPs[6];            // 6 cubemap face view-projection matrices
+    vec4 FaceAtlasParams[6];   // xy=tileOffset, zw=tileScale per face
 };
+
+// Shadow atlas (2D texture — all shadow maps tiled)
+layout(set = 1, binding = 1) uniform texture2D ShadowMap;
+layout(set = 1, binding = 2) uniform sampler ShadowSampler;
 
 const float PI = 3.14159265359;
 
@@ -60,6 +69,18 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
     float NdotV = max(dot(N, V), 0.0);
     float NdotL = max(dot(N, L), 0.0);
     return geometrySchlickGGX(NdotV, roughness) * geometrySchlickGGX(NdotL, roughness);
+}
+
+// Determine cubemap face from direction vector (light → fragment)
+// Matches _cubeFaceTargets order: +X=0, -X=1, +Y=2, -Y=3, +Z=4, -Z=5
+int getDominantFace(vec3 dir)
+{
+    vec3 a = abs(dir);
+    if (a.x >= a.y && a.x >= a.z)
+        return dir.x > 0.0 ? 0 : 1;
+    if (a.y >= a.x && a.y >= a.z)
+        return dir.y > 0.0 ? 2 : 3;
+    return dir.z > 0.0 ? 4 : 5;
 }
 
 void main()
@@ -109,7 +130,36 @@ void main()
 
     vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
 
-    vec3 Lo = (kD * albedo / PI + specular) * lightColor * NdotL * attenuation;
+    // Shadow atlas lookup (face-based, replaces cubemap)
+    float shadow = 1.0;
+    if (ShadowParams.x > 0.5)
+    {
+        vec3 lightToFrag = worldPos - lightPos;
+        int face = getDominantFace(lightToFrag);
+
+        vec4 lightSpacePos = FaceVPs[face] * vec4(worldPos, 1.0);
+        vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+        projCoords.xy = projCoords.xy * 0.5 + 0.5;
+
+        if (projCoords.z <= 1.0)
+        {
+            vec2 atlasUV = projCoords.xy * FaceAtlasParams[face].zw + FaceAtlasParams[face].xy;
+
+            // PCF 3x3
+            shadow = 0.0;
+            vec2 texelSize = 1.0 / textureSize(sampler2D(ShadowMap, ShadowSampler), 0);
+            for (int x = -1; x <= 1; x++) {
+                for (int y = -1; y <= 1; y++) {
+                    float closestDepth = texture(sampler2D(ShadowMap, ShadowSampler),
+                        atlasUV + vec2(x, y) * texelSize).r;
+                    shadow += projCoords.z - ShadowParams.y > closestDepth ? 0.0 : 1.0;
+                }
+            }
+            shadow /= 9.0;
+        }
+    }
+
+    vec3 Lo = (kD * albedo / PI + specular) * lightColor * NdotL * attenuation * shadow;
 
     fsout_Color = vec4(Lo, 0.0);
 }

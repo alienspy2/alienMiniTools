@@ -1,6 +1,5 @@
 #version 450
 
-layout(location = 0) in vec2 fsin_UV;
 layout(location = 0) out vec4 fsout_Color;
 
 // Set 0 — GBuffer
@@ -13,15 +12,15 @@ layout(set = 0, binding = 4) uniform sampler gSampler;
 // Set 1 — Light volume data
 struct LightInfo
 {
-    vec4 PositionOrDirection;   // xyz = dir (forward), w = type (0=dir)
+    vec4 PositionOrDirection;   // xyz = position, w = type (2=spot)
     vec4 ColorIntensity;        // rgb = color, a = intensity
-    vec4 Params;                // x = range
-    vec4 SpotDirection;
+    vec4 Params;                // x = range, y = cosInnerAngle, z = cosOuterAngle
+    vec4 SpotDirection;         // xyz = spot forward direction
 };
 
 layout(set = 1, binding = 0) uniform LightVolumeData
 {
-    mat4 WorldViewProjection;   // unused for directional
+    mat4 WorldViewProjection;
     mat4 LightViewProjection;   // shadow map VP
     vec4 CameraPos;
     vec4 ScreenParams;          // x=width, y=height
@@ -72,16 +71,16 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 
 void main()
 {
-    vec4 albedoData = texture(sampler2D(gAlbedo, gSampler), fsin_UV);
-    vec4 normalData = texture(sampler2D(gNormal, gSampler), fsin_UV);
-    vec4 materialData = texture(sampler2D(gMaterial, gSampler), fsin_UV);
-    vec4 worldPosData = texture(sampler2D(gWorldPos, gSampler), fsin_UV);
+    // Reconstruct UV from gl_FragCoord
+    vec2 uv = gl_FragCoord.xy / ScreenParams.xy;
+
+    vec4 albedoData = texture(sampler2D(gAlbedo, gSampler), uv);
+    vec4 normalData = texture(sampler2D(gNormal, gSampler), uv);
+    vec4 materialData = texture(sampler2D(gMaterial, gSampler), uv);
+    vec4 worldPosData = texture(sampler2D(gWorldPos, gSampler), uv);
 
     if (worldPosData.a < 0.5)
-    {
-        fsout_Color = vec4(0.0);
-        return;
-    }
+        discard;
 
     vec3 albedo = albedoData.rgb;
     vec3 N = normalize(normalData.rgb);
@@ -91,9 +90,32 @@ void main()
     vec3 V = normalize(CameraPos.xyz - worldPos);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // Directional light
+    // Spot light position and direction
+    vec3 lightPos = Light.PositionOrDirection.xyz;
+    vec3 spotDir = normalize(Light.SpotDirection.xyz);
+    vec3 toLight = lightPos - worldPos;
+    float dist = length(toLight);
+    vec3 L = toLight / max(dist, 0.001);
+
+    // Spot cone falloff
+    float theta = dot(L, -spotDir);
+    float cosInner = Light.Params.y;
+    float cosOuter = Light.Params.z;
+    float epsilon = cosInner - cosOuter;
+    float spotFactor = clamp((theta - cosOuter) / epsilon, 0.0, 1.0);
+
+    if (spotFactor <= 0.0)
+        discard;
+
+    // Distance attenuation (same as point light)
+    float lightRange = Light.Params.x;
+    float attenuation = max(1.0 - (dist / lightRange), 0.0);
+    attenuation *= attenuation;
+
+    if (attenuation <= 0.0)
+        discard;
+
     vec3 lightColor = Light.ColorIntensity.rgb * Light.ColorIntensity.a;
-    vec3 L = normalize(-Light.PositionOrDirection.xyz);
     vec3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0);
 
@@ -115,8 +137,7 @@ void main()
         vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
         projCoords = projCoords * 0.5 + 0.5;
 
-        if (projCoords.z <= 1.0 && projCoords.x >= 0.0 && projCoords.x <= 1.0
-            && projCoords.y >= 0.0 && projCoords.y <= 1.0)
+        if (projCoords.z <= 1.0)
         {
             vec2 atlasUV = projCoords.xy * ShadowAtlasParams.zw + ShadowAtlasParams.xy;
 
@@ -133,6 +154,7 @@ void main()
         }
     }
 
-    vec3 Lo = (kD * albedo / PI + specular) * lightColor * NdotL * shadow;
+    vec3 Lo = (kD * albedo / PI + specular) * lightColor * NdotL * attenuation * spotFactor * shadow;
+
     fsout_Color = vec4(Lo, 0.0);
 }

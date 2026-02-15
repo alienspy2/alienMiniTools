@@ -30,10 +30,10 @@ namespace IronRose.Rendering
     [StructLayout(LayoutKind.Sequential)]
     internal struct LightInfoGPU
     {
-        public Vector4 PositionOrDirection; // xyz = pos/dir, w = type (0=dir, 1=point)
+        public Vector4 PositionOrDirection; // xyz = pos/dir, w = type (0=dir, 1=point, 2=spot)
         public Vector4 ColorIntensity;      // rgb = color, a = intensity
-        public Vector4 Params;              // x = range
-        public Vector4 _padding;
+        public Vector4 Params;              // x = range, y = cosInnerAngle (spot), z = cosOuterAngle (spot)
+        public Vector4 SpotDirection;       // xyz = spot forward direction (spot only)
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -65,9 +65,31 @@ namespace IronRose.Rendering
     internal struct LightVolumeUniforms
     {
         public System.Numerics.Matrix4x4 WorldViewProjection;  // 64 bytes
+        public System.Numerics.Matrix4x4 LightViewProjection;  // 64 bytes (shadow map VP)
         public Vector4 CameraPos;                               // 16 bytes
         public Vector4 ScreenParams;                            // 16 bytes (x=width, y=height)
+        public Vector4 ShadowParams;                            // 16 bytes (x=hasShadow, y=bias, z=normalBias, w=strength)
+        public Vector4 ShadowAtlasParams;                       // 16 bytes (xy=tileOffset, zw=tileScale)
         public LightInfoGPU Light;                              // 64 bytes
+        // Point light face data (6 faces for cubemap → atlas mapping):
+        public System.Numerics.Matrix4x4 FaceVP0;              // 64 bytes
+        public System.Numerics.Matrix4x4 FaceVP1;              // 64 bytes
+        public System.Numerics.Matrix4x4 FaceVP2;              // 64 bytes
+        public System.Numerics.Matrix4x4 FaceVP3;              // 64 bytes
+        public System.Numerics.Matrix4x4 FaceVP4;              // 64 bytes
+        public System.Numerics.Matrix4x4 FaceVP5;              // 64 bytes
+        public Vector4 FaceAtlasParams0;                        // 16 bytes
+        public Vector4 FaceAtlasParams1;                        // 16 bytes
+        public Vector4 FaceAtlasParams2;                        // 16 bytes
+        public Vector4 FaceAtlasParams3;                        // 16 bytes
+        public Vector4 FaceAtlasParams4;                        // 16 bytes
+        public Vector4 FaceAtlasParams5;                        // 16 bytes
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct ShadowTransformUniforms
+    {
+        public System.Numerics.Matrix4x4 LightMVP;  // 64 bytes
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -128,24 +150,52 @@ namespace IronRose.Rendering
         private Veldrid.Shader[]? _ambientShaders;
         private Veldrid.Shader[]? _directionalLightShaders;
         private Veldrid.Shader[]? _pointLightShaders;
+        private Veldrid.Shader[]? _spotLightShaders;
 
         private Pipeline? _ambientPipeline;
         private Pipeline? _directionalLightPipeline;
         private Pipeline? _pointLightPipeline;
+        private Pipeline? _spotLightPipeline;
 
         private ResourceLayout? _gBufferLayout;
         private ResourceLayout? _ambientLayout;
-        private ResourceLayout? _lightVolumeLayout;
+        private ResourceLayout? _lightVolumeShadowLayout; // All light types (UBO + Texture2D + Sampler)
 
         private ResourceSet? _gBufferResourceSet;
         private ResourceSet? _ambientResourceSet;
-        private ResourceSet? _lightVolumeResourceSet;
+        private ResourceSet? _atlasShadowSet;             // Unified atlas resource set for all lights
 
         private DeviceBuffer? _ambientBuffer;
         private DeviceBuffer? _lightVolumeBuffer;
         private DeviceBuffer? _envMapBuffer;
 
+        // --- Shadow atlas ---
+        private const int AtlasSize = 4096;
+        private Veldrid.Shader[]? _shadowAtlasShaders;
+        private Pipeline? _shadowAtlasPipeline;
+        private ResourceLayout? _shadowLayout;
+        private DeviceBuffer? _shadowTransformBuffer;
+        private Sampler? _shadowSampler;
+        private Texture? _atlasTexture;
+        private Texture? _atlasDepthTexture;
+        private TextureView? _atlasView;
+        private Framebuffer? _atlasFramebuffer;
+
+        // Per-frame shadow tile info (rebuilt each shadow pass)
+        private struct FrameShadowTile
+        {
+            public System.Numerics.Matrix4x4 LightVP;
+            public Vector4 AtlasParams;          // xy=offset, zw=scale
+            public System.Numerics.Matrix4x4[]? FaceVPs;         // Point: 6
+            public Vector4[]? FaceAtlasParams;   // Point: 6
+        }
+        private readonly Dictionary<Light, FrameShadowTile> _frameShadows = new();
+
+        // Atlas tile allocator state
+        private int _atlasPackX, _atlasPackY, _atlasRowHeight;
+
         private Mesh? _lightSphereMesh;
+        private Mesh? _lightConeMesh;
         private TextureView? _currentAmbientEnvMapView;
 
         // --- Skybox ---
@@ -195,6 +245,14 @@ namespace IronRose.Rendering
                 Path.Combine(_shaderDir, "deferred_pointlight.vert"),
                 Path.Combine(_shaderDir, "deferred_pointlight.frag"));
 
+            _spotLightShaders = ShaderCompiler.CompileGLSL(device,
+                Path.Combine(_shaderDir, "deferred_spotlight.vert"),
+                Path.Combine(_shaderDir, "deferred_spotlight.frag"));
+
+            _shadowAtlasShaders = ShaderCompiler.CompileGLSL(device,
+                Path.Combine(_shaderDir, "shadow.vert"),
+                Path.Combine(_shaderDir, "shadow_atlas.frag"));
+
             _skyboxShaders = ShaderCompiler.CompileGLSL(device,
                 Path.Combine(_shaderDir, "skybox.vert"),
                 Path.Combine(_shaderDir, "skybox.frag"));
@@ -234,6 +292,17 @@ namespace IronRose.Rendering
                 SamplerFilter.MinLinear_MagLinear_MipLinear,
                 null, 0, 0, uint.MaxValue, 0, SamplerBorderColor.TransparentBlack));
 
+            // --- Shadow sampler (clamp to border white, for outside-frustum reads) ---
+            _shadowSampler = factory.CreateSampler(new SamplerDescription(
+                SamplerAddressMode.Border, SamplerAddressMode.Border, SamplerAddressMode.Border,
+                SamplerFilter.MinLinear_MagLinear_MipLinear,
+                null, 0, 0, 0, 0, SamplerBorderColor.OpaqueWhite));
+
+            // --- Shadow transform buffer ---
+            _shadowTransformBuffer = factory.CreateBuffer(new BufferDescription(
+                (uint)Marshal.SizeOf<ShadowTransformUniforms>(),
+                BufferUsage.UniformBuffer | BufferUsage.Dynamic));
+
             // --- White fallback texture ---
             _whiteTexture = Texture2D.CreateWhitePixel();
             _whiteTexture.UploadToGPU(device);
@@ -268,9 +337,15 @@ namespace IronRose.Rendering
                 new ResourceLayoutElementDescription("EnvMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
                 new ResourceLayoutElementDescription("EnvMapParams", ResourceKind.UniformBuffer, ShaderStages.Fragment)));
 
-            // Light volume layout (set 1, shared by directional + point)
-            _lightVolumeLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
-                new ResourceLayoutElementDescription("LightVolumeData", ResourceKind.UniformBuffer, ShaderStages.Vertex | ShaderStages.Fragment)));
+            // Light volume shadow layout (set 1, all light types — UBO + shadow map + sampler)
+            _lightVolumeShadowLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("LightVolumeData", ResourceKind.UniformBuffer, ShaderStages.Vertex | ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("ShadowMap", ResourceKind.TextureReadOnly, ShaderStages.Fragment),
+                new ResourceLayoutElementDescription("ShadowSampler", ResourceKind.Sampler, ShaderStages.Fragment)));
+
+            // Shadow pass layout (set 0): just the MVP transform
+            _shadowLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
+                new ResourceLayoutElementDescription("ShadowTransforms", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
 
             // Skybox (set 0): uniform buffer + texture + sampler
             _skyboxLayout = factory.CreateResourceLayout(new ResourceLayoutDescription(
@@ -289,13 +364,27 @@ namespace IronRose.Rendering
                 _skyboxLayout, _skyboxUniformBuffer, _whiteCubemap!.TextureView!, _defaultSampler));
             _currentSkyboxTextureView = null;
 
-            // --- Light volume resource set (buffer doesn't change, content does) ---
-            _lightVolumeResourceSet = factory.CreateResourceSet(new ResourceSetDescription(
-                _lightVolumeLayout, _lightVolumeBuffer));
+            // --- Shadow Atlas (single R32_Float texture for all shadow maps) ---
+            _atlasTexture = factory.CreateTexture(TextureDescription.Texture2D(
+                (uint)AtlasSize, (uint)AtlasSize, 1, 1, PixelFormat.R32_Float,
+                TextureUsage.RenderTarget | TextureUsage.Sampled));
+            _atlasDepthTexture = factory.CreateTexture(TextureDescription.Texture2D(
+                (uint)AtlasSize, (uint)AtlasSize, 1, 1, PixelFormat.D32_Float_S8_UInt,
+                TextureUsage.DepthStencil));
+            _atlasView = factory.CreateTextureView(_atlasTexture);
+            _atlasFramebuffer = factory.CreateFramebuffer(new FramebufferDescription(
+                _atlasDepthTexture, _atlasTexture));
 
-            // --- Light sphere mesh for point light volumes ---
+            // --- Unified atlas shadow resource set (for all light types) ---
+            _atlasShadowSet = factory.CreateResourceSet(new ResourceSetDescription(
+                _lightVolumeShadowLayout, _lightVolumeBuffer, _atlasView, _shadowSampler));
+
+            // --- Light volume meshes ---
             _lightSphereMesh = PrimitiveGenerator.CreateSphere(12, 8);
             _lightSphereMesh.UploadToGPU(device);
+
+            _lightConeMesh = PrimitiveGenerator.CreateCone(16);
+            _lightConeMesh.UploadToGPU(device);
 
             // --- Create size-dependent resources (GBuffer, HDR, pipelines) ---
             CreateSizeDependentResources(width, height);
@@ -323,6 +412,7 @@ namespace IronRose.Rendering
             _ambientPipeline?.Dispose();
             _directionalLightPipeline?.Dispose();
             _pointLightPipeline?.Dispose();
+            _spotLightPipeline?.Dispose();
             _skyboxPipeline?.Dispose();
             _forwardPipeline?.Dispose();
             _wireframePipeline?.Dispose();
@@ -406,6 +496,24 @@ namespace IronRose.Rendering
                 Outputs = _hdrFramebuffer.OutputDescription,
             });
 
+            // --- Shadow Atlas Pipeline (R32_Float color + depth, for all shadow types) ---
+            _shadowAtlasPipeline?.Dispose();
+            _shadowAtlasPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = BlendStateDescription.SingleOverrideBlend,
+                DepthStencilState = new DepthStencilStateDescription(
+                    depthTestEnabled: true, depthWriteEnabled: true, comparisonKind: ComparisonKind.LessEqual),
+                RasterizerState = new RasterizerStateDescription(
+                    cullMode: FaceCullMode.Back, fillMode: PolygonFillMode.Solid,
+                    frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
+                PrimitiveTopology = PrimitiveTopology.TriangleList,
+                ResourceLayouts = new[] { _shadowLayout! },
+                ShaderSet = new ShaderSetDescription(
+                    vertexLayouts: new[] { vertexLayout },
+                    shaders: _shadowAtlasShaders!),
+                Outputs = _atlasFramebuffer!.OutputDescription,
+            });
+
             // --- Directional Light Pipeline (→ HDR, fullscreen, additive) ---
             _directionalLightPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
             {
@@ -415,14 +523,14 @@ namespace IronRose.Rendering
                     cullMode: FaceCullMode.None, fillMode: PolygonFillMode.Solid,
                     frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
                 PrimitiveTopology = PrimitiveTopology.TriangleList,
-                ResourceLayouts = new[] { _gBufferLayout!, _lightVolumeLayout! },
+                ResourceLayouts = new[] { _gBufferLayout!, _lightVolumeShadowLayout! },
                 ShaderSet = new ShaderSetDescription(
                     vertexLayouts: Array.Empty<VertexLayoutDescription>(),
                     shaders: _directionalLightShaders!),
                 Outputs = _hdrFramebuffer.OutputDescription,
             });
 
-            // --- Point Light Pipeline (→ HDR, sphere mesh, additive) ---
+            // --- Point Light Pipeline (→ HDR, sphere mesh, additive, cubemap shadow) ---
             // CullMode.Back + GreaterEqual: keep front faces (engine's winding convention),
             // which are the far hemisphere from inside the sphere → depth > scene = pixel inside volume
             _pointLightPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
@@ -434,10 +542,27 @@ namespace IronRose.Rendering
                     cullMode: FaceCullMode.Back, fillMode: PolygonFillMode.Solid,
                     frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
                 PrimitiveTopology = PrimitiveTopology.TriangleList,
-                ResourceLayouts = new[] { _gBufferLayout!, _lightVolumeLayout! },
+                ResourceLayouts = new[] { _gBufferLayout!, _lightVolumeShadowLayout! },
                 ShaderSet = new ShaderSetDescription(
                     vertexLayouts: new[] { vertexLayout },
                     shaders: _pointLightShaders!),
+                Outputs = _hdrFramebuffer.OutputDescription,
+            });
+
+            // --- Spot Light Pipeline (→ HDR, cone mesh, additive, same depth as point) ---
+            _spotLightPipeline = factory.CreateGraphicsPipeline(new GraphicsPipelineDescription
+            {
+                BlendState = additiveBlend,
+                DepthStencilState = new DepthStencilStateDescription(
+                    depthTestEnabled: true, depthWriteEnabled: false, comparisonKind: ComparisonKind.GreaterEqual),
+                RasterizerState = new RasterizerStateDescription(
+                    cullMode: FaceCullMode.Back, fillMode: PolygonFillMode.Solid,
+                    frontFace: FrontFace.Clockwise, depthClipEnabled: true, scissorTestEnabled: false),
+                PrimitiveTopology = PrimitiveTopology.TriangleList,
+                ResourceLayouts = new[] { _gBufferLayout!, _lightVolumeShadowLayout! },
+                ShaderSet = new ShaderSetDescription(
+                    vertexLayouts: new[] { vertexLayout },
+                    shaders: _spotLightShaders!),
                 Outputs = _hdrFramebuffer.OutputDescription,
             });
 
@@ -585,6 +710,9 @@ namespace IronRose.Rendering
             if (debugLog)
                 Console.WriteLine($"[Render] GeometryPass: drew {opaqueCount} opaque objects");
 
+            // === 1.5 Shadow Pass ===
+            RenderShadowPass(cl, camera);
+
             // === 2. Ambient/IBL Pass → HDR (Overwrite) ===
             cl.SetFramebuffer(_hdrFramebuffer);
             if (camera.clearFlags == CameraClearFlags.SolidColor)
@@ -614,32 +742,37 @@ namespace IronRose.Rendering
                 Console.WriteLine($"[Render] AmbientPass: fullscreen draw");
 
             // === 3. Direct Lights → HDR (Additive) ===
-            int dirCount = 0, pointCount = 0;
+            // Restore viewport to HDR size after shadow pass
+            cl.SetFramebuffer(_hdrFramebuffer);
+            cl.SetFullViewports();
+
+            int dirCount = 0, pointCount = 0, spotCount = 0;
             foreach (var light in Light._allLights)
             {
                 if (!light.enabled || !light.gameObject.activeInHierarchy) continue;
 
                 UploadSingleLightUniforms(cl, light, camera, viewProj);
+                var lightSet = GetLightVolumeResourceSet(light);
 
                 if (light.type == LightType.Directional)
                 {
                     cl.SetPipeline(_directionalLightPipeline);
                     cl.SetGraphicsResourceSet(0, _gBufferResourceSet);
-                    cl.SetGraphicsResourceSet(1, _lightVolumeResourceSet);
+                    cl.SetGraphicsResourceSet(1, lightSet);
                     cl.Draw(3, 1, 0, 0);
                     dirCount++;
 
                     if (debugLog)
                     {
                         var fwd = light.transform.forward;
-                        Console.WriteLine($"[Render] DirectionalLight: dir=({fwd.x:F2},{fwd.y:F2},{fwd.z:F2}) color=({light.color.r:F2},{light.color.g:F2},{light.color.b:F2}) intensity={light.intensity:F2}");
+                        Console.WriteLine($"[Render] DirectionalLight: dir=({fwd.x:F2},{fwd.y:F2},{fwd.z:F2}) color=({light.color.r:F2},{light.color.g:F2},{light.color.b:F2}) intensity={light.intensity:F2} shadow={light.shadows}");
                     }
                 }
-                else // Point
+                else if (light.type == LightType.Point)
                 {
                     cl.SetPipeline(_pointLightPipeline);
                     cl.SetGraphicsResourceSet(0, _gBufferResourceSet);
-                    cl.SetGraphicsResourceSet(1, _lightVolumeResourceSet);
+                    cl.SetGraphicsResourceSet(1, lightSet);
                     cl.SetVertexBuffer(0, _lightSphereMesh!.VertexBuffer);
                     cl.SetIndexBuffer(_lightSphereMesh.IndexBuffer!, IndexFormat.UInt32);
                     cl.DrawIndexed((uint)_lightSphereMesh.indices.Length);
@@ -652,9 +785,25 @@ namespace IronRose.Rendering
                         Console.WriteLine($"[Render] PointLight: pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) range={light.range:F1} sphereScale={scale:F1} color=({light.color.r:F2},{light.color.g:F2},{light.color.b:F2}) intensity={light.intensity:F2} indices={_lightSphereMesh.indices.Length}");
                     }
                 }
+                else if (light.type == LightType.Spot)
+                {
+                    cl.SetPipeline(_spotLightPipeline);
+                    cl.SetGraphicsResourceSet(0, _gBufferResourceSet);
+                    cl.SetGraphicsResourceSet(1, lightSet);
+                    cl.SetVertexBuffer(0, _lightConeMesh!.VertexBuffer);
+                    cl.SetIndexBuffer(_lightConeMesh.IndexBuffer!, IndexFormat.UInt32);
+                    cl.DrawIndexed((uint)_lightConeMesh.indices.Length);
+                    spotCount++;
+
+                    if (debugLog)
+                    {
+                        var pos = light.transform.position;
+                        Console.WriteLine($"[Render] SpotLight: pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) range={light.range:F1} innerAngle={light.spotAngle:F1} outerAngle={light.spotOuterAngle:F1} color=({light.color.r:F2},{light.color.g:F2},{light.color.b:F2}) intensity={light.intensity:F2} shadow={light.shadows}");
+                    }
+                }
             }
             if (debugLog)
-                Console.WriteLine($"[Render] LightPass: {dirCount} directional, {pointCount} point lights");
+                Console.WriteLine($"[Render] LightPass: {dirCount} directional, {pointCount} point, {spotCount} spot lights");
 
             // === 4. Skybox Pass → HDR (depth test LessEqual, only empty pixels) ===
             if (camera.clearFlags == CameraClearFlags.Skybox)
@@ -709,10 +858,22 @@ namespace IronRose.Rendering
             else
             {
                 var pos = light.transform.position;
-                info.PositionOrDirection = new Vector4(pos.x, pos.y, pos.z, 1f);
+                info.PositionOrDirection = new Vector4(pos.x, pos.y, pos.z, (float)light.type);
             }
             info.ColorIntensity = new Vector4(light.color.r, light.color.g, light.color.b, light.intensity);
-            info.Params = new Vector4(light.range, 0, 0, 0);
+
+            if (light.type == LightType.Spot)
+            {
+                float cosInner = MathF.Cos(light.spotAngle * 0.5f * MathF.PI / 180f);
+                float cosOuter = MathF.Cos(light.spotOuterAngle * 0.5f * MathF.PI / 180f);
+                info.Params = new Vector4(light.range, cosInner, cosOuter, 0);
+                var fwd = light.transform.forward;
+                info.SpotDirection = new Vector4(fwd.x, fwd.y, fwd.z, 0);
+            }
+            else
+            {
+                info.Params = new Vector4(light.range, 0, 0, 0);
+            }
             return info;
         }
 
@@ -744,10 +905,29 @@ namespace IronRose.Rendering
                     new RoseEngine.Vector3(scale, scale, scale)).ToNumerics();
                 mvp = world * viewProj;
             }
+            else if (light.type == LightType.Spot)
+            {
+                var pos = light.transform.position;
+                float height = light.range;
+                float halfAngle = light.spotOuterAngle * 0.5f * MathF.PI / 180f;
+                float baseRadius = height * MathF.Tan(halfAngle);
+                var rotation = RoseEngine.Quaternion.FromToRotation(
+                    RoseEngine.Vector3.forward, light.transform.forward);
+                var world = RoseEngine.Matrix4x4.TRS(
+                    new RoseEngine.Vector3(pos.x, pos.y, pos.z),
+                    rotation,
+                    new RoseEngine.Vector3(baseRadius, baseRadius, height)).ToNumerics();
+                mvp = world * viewProj;
+            }
             else
             {
                 mvp = System.Numerics.Matrix4x4.Identity;
             }
+
+            // Shadow atlas params
+            var lightVP = System.Numerics.Matrix4x4.Identity;
+            var shadowParams = Vector4.Zero; // x=0 means no shadow
+            var atlasParams = Vector4.Zero;
 
             var uniforms = new LightVolumeUniforms
             {
@@ -757,7 +937,273 @@ namespace IronRose.Rendering
                 Light = lightInfo,
             };
 
+            if (light.shadows && _frameShadows.TryGetValue(light, out var shadowTile))
+            {
+                shadowParams = new Vector4(1f, light.shadowBias, light.shadowNormalBias, 1f);
+
+                if (light.type == LightType.Point && shadowTile.FaceVPs != null && shadowTile.FaceAtlasParams != null)
+                {
+                    uniforms.FaceVP0 = shadowTile.FaceVPs[0];
+                    uniforms.FaceVP1 = shadowTile.FaceVPs[1];
+                    uniforms.FaceVP2 = shadowTile.FaceVPs[2];
+                    uniforms.FaceVP3 = shadowTile.FaceVPs[3];
+                    uniforms.FaceVP4 = shadowTile.FaceVPs[4];
+                    uniforms.FaceVP5 = shadowTile.FaceVPs[5];
+                    uniforms.FaceAtlasParams0 = shadowTile.FaceAtlasParams[0];
+                    uniforms.FaceAtlasParams1 = shadowTile.FaceAtlasParams[1];
+                    uniforms.FaceAtlasParams2 = shadowTile.FaceAtlasParams[2];
+                    uniforms.FaceAtlasParams3 = shadowTile.FaceAtlasParams[3];
+                    uniforms.FaceAtlasParams4 = shadowTile.FaceAtlasParams[4];
+                    uniforms.FaceAtlasParams5 = shadowTile.FaceAtlasParams[5];
+                }
+                else
+                {
+                    lightVP = shadowTile.LightVP;
+                    atlasParams = shadowTile.AtlasParams;
+                }
+            }
+
+            uniforms.LightViewProjection = lightVP;
+            uniforms.ShadowParams = shadowParams;
+            uniforms.ShadowAtlasParams = atlasParams;
+
             cl.UpdateBuffer(_lightVolumeBuffer, 0, uniforms);
+        }
+
+        // ==============================
+        // Shadow mapping
+        // ==============================
+
+        private static readonly System.Numerics.Vector3[] _cubeFaceTargets =
+        {
+            System.Numerics.Vector3.UnitX,   // +X
+            -System.Numerics.Vector3.UnitX,  // -X
+            System.Numerics.Vector3.UnitY,   // +Y
+            -System.Numerics.Vector3.UnitY,  // -Y
+            System.Numerics.Vector3.UnitZ,   // +Z
+            -System.Numerics.Vector3.UnitZ,  // -Z
+        };
+        private static readonly System.Numerics.Vector3[] _cubeFaceUps =
+        {
+            -System.Numerics.Vector3.UnitY,  // +X
+            -System.Numerics.Vector3.UnitY,  // -X
+            System.Numerics.Vector3.UnitZ,   // +Y
+            -System.Numerics.Vector3.UnitZ,  // -Y
+            -System.Numerics.Vector3.UnitY,  // +Z
+            -System.Numerics.Vector3.UnitY,  // -Z
+        };
+
+        private void ComputeShadowVP(Light light, Camera camera, out System.Numerics.Matrix4x4 lightVP)
+        {
+            if (light.type == LightType.Directional)
+            {
+                var camPos = camera.transform.position;
+                var lightDir = light.transform.forward;
+                float shadowRange = 20f;
+                var eye = new System.Numerics.Vector3(
+                    camPos.x - lightDir.x * shadowRange,
+                    camPos.y - lightDir.y * shadowRange,
+                    camPos.z - lightDir.z * shadowRange);
+                var target = new System.Numerics.Vector3(camPos.x, camPos.y, camPos.z);
+                var lightView = System.Numerics.Matrix4x4.CreateLookAt(eye, target, System.Numerics.Vector3.UnitY);
+                var lightProj = System.Numerics.Matrix4x4.CreateOrthographic(
+                    shadowRange * 2, shadowRange * 2, 0.1f, shadowRange * 2);
+                lightVP = lightView * lightProj;
+            }
+            else if (light.type == LightType.Spot)
+            {
+                var pos = light.transform.position;
+                var fwd = light.transform.forward;
+                var eye = new System.Numerics.Vector3(pos.x, pos.y, pos.z);
+                var target = new System.Numerics.Vector3(pos.x + fwd.x, pos.y + fwd.y, pos.z + fwd.z);
+                var lightView = System.Numerics.Matrix4x4.CreateLookAt(eye, target, System.Numerics.Vector3.UnitY);
+                var lightProj = System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView(
+                    light.spotOuterAngle * MathF.PI / 180f, 1f, light.shadowNearPlane, light.range);
+                lightVP = lightView * lightProj;
+            }
+            else
+            {
+                lightVP = System.Numerics.Matrix4x4.Identity;
+            }
+        }
+
+        private void RenderShadowPass(CommandList cl, Camera camera)
+        {
+            if (_shadowAtlasPipeline == null || _shadowLayout == null) return;
+
+            _frameShadows.Clear();
+            _atlasPackX = 0;
+            _atlasPackY = 0;
+            _atlasRowHeight = 0;
+
+            // Check if any shadow lights exist
+            bool hasShadowLights = false;
+            foreach (var light in Light._allLights)
+            {
+                if (light.enabled && light.shadows)
+                { hasShadowLights = true; break; }
+            }
+            if (!hasShadowLights) return;
+
+            // Clear atlas
+            cl.SetFramebuffer(_atlasFramebuffer);
+            cl.ClearColorTarget(0, new RgbaFloat(1f, 1f, 1f, 1f)); // white = max depth = no shadow
+            cl.ClearDepthStencil(1f);
+            cl.SetPipeline(_shadowAtlasPipeline);
+
+            var shadowResourceSet = _device!.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
+                _shadowLayout, _shadowTransformBuffer));
+
+            foreach (var light in Light._allLights)
+            {
+                if (!light.enabled || !light.shadows) continue;
+
+                if (light.type == LightType.Point)
+                {
+                    RenderPointShadowToAtlas(cl, light, shadowResourceSet);
+                }
+                else
+                {
+                    RenderDirSpotShadowToAtlas(cl, light, camera, shadowResourceSet);
+                }
+            }
+
+            shadowResourceSet.Dispose();
+        }
+
+        private bool AllocateAtlasTile(int size, out int tileX, out int tileY)
+        {
+            if (_atlasPackX + size > AtlasSize)
+            {
+                _atlasPackX = 0;
+                _atlasPackY += _atlasRowHeight;
+                _atlasRowHeight = 0;
+            }
+            if (_atlasPackY + size > AtlasSize)
+            {
+                tileX = 0;
+                tileY = 0;
+                return false;
+            }
+            tileX = _atlasPackX;
+            tileY = _atlasPackY;
+            _atlasPackX += size;
+            _atlasRowHeight = Math.Max(_atlasRowHeight, size);
+            return true;
+        }
+
+        private static Vector4 ComputeAtlasParams(int tileX, int tileY, int tileSize)
+        {
+            return new Vector4(
+                (float)tileX / AtlasSize, (float)tileY / AtlasSize,
+                (float)tileSize / AtlasSize, (float)tileSize / AtlasSize);
+        }
+
+        private void RenderDirSpotShadowToAtlas(CommandList cl, Light light, Camera camera, ResourceSet shadowResourceSet)
+        {
+            int res = light.shadowResolution;
+            if (!AllocateAtlasTile(res, out int tileX, out int tileY))
+                return; // Atlas full — skip this light's shadow
+
+            ComputeShadowVP(light, camera, out var lightVP);
+            var atlasParams = ComputeAtlasParams(tileX, tileY, res);
+
+            cl.SetViewport(0, new Viewport((uint)tileX, (uint)tileY, (uint)res, (uint)res, 0, 1));
+            cl.SetScissorRect(0, (uint)tileX, (uint)tileY, (uint)res, (uint)res);
+
+            foreach (var renderer in MeshRenderer._allRenderers)
+            {
+                if (!renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
+                var filter = renderer.GetComponent<MeshFilter>();
+                if (filter?.mesh == null) continue;
+                var mesh = filter.mesh;
+                if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
+
+                var t = renderer.transform;
+                var world = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+                var mvp = world * lightVP;
+
+                cl.UpdateBuffer(_shadowTransformBuffer, 0, new ShadowTransformUniforms { LightMVP = mvp });
+                cl.SetGraphicsResourceSet(0, shadowResourceSet);
+                cl.SetVertexBuffer(0, mesh.VertexBuffer);
+                cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
+                cl.DrawIndexed((uint)mesh.indices.Length);
+            }
+
+            _frameShadows[light] = new FrameShadowTile
+            {
+                LightVP = lightVP,
+                AtlasParams = atlasParams,
+            };
+        }
+
+        private void RenderPointShadowToAtlas(CommandList cl, Light light, ResourceSet shadowResourceSet)
+        {
+            int res = light.shadowResolution;
+            var faceVPs = new System.Numerics.Matrix4x4[6];
+            var faceAtlasParams = new Vector4[6];
+
+            // Allocate 6 tiles
+            for (int face = 0; face < 6; face++)
+            {
+                if (!AllocateAtlasTile(res, out int tileX, out int tileY))
+                    return; // Atlas full — skip this light entirely
+                faceAtlasParams[face] = ComputeAtlasParams(tileX, tileY, res);
+            }
+
+            // Compute 6 face VPs
+            var pos = light.transform.position;
+            var eye = new System.Numerics.Vector3(pos.x, pos.y, pos.z);
+            var faceProj = System.Numerics.Matrix4x4.CreatePerspectiveFieldOfView(
+                MathF.PI / 2f, 1f, light.shadowNearPlane, light.range);
+
+            for (int face = 0; face < 6; face++)
+            {
+                var faceView = System.Numerics.Matrix4x4.CreateLookAt(
+                    eye, eye + _cubeFaceTargets[face], _cubeFaceUps[face]);
+                faceVPs[face] = faceView * faceProj;
+            }
+
+            // Render each face into its atlas tile
+            for (int face = 0; face < 6; face++)
+            {
+                var ap = faceAtlasParams[face];
+                int tileX = (int)(ap.X * AtlasSize);
+                int tileY = (int)(ap.Y * AtlasSize);
+
+                cl.SetViewport(0, new Viewport((uint)tileX, (uint)tileY, (uint)res, (uint)res, 0, 1));
+                cl.SetScissorRect(0, (uint)tileX, (uint)tileY, (uint)res, (uint)res);
+
+                foreach (var renderer in MeshRenderer._allRenderers)
+                {
+                    if (!renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
+                    var filter = renderer.GetComponent<MeshFilter>();
+                    if (filter?.mesh == null) continue;
+                    var mesh = filter.mesh;
+                    if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
+
+                    var t = renderer.transform;
+                    var world = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+                    var mvp = world * faceVPs[face];
+
+                    cl.UpdateBuffer(_shadowTransformBuffer, 0, new ShadowTransformUniforms { LightMVP = mvp });
+                    cl.SetGraphicsResourceSet(0, shadowResourceSet);
+                    cl.SetVertexBuffer(0, mesh.VertexBuffer);
+                    cl.SetIndexBuffer(mesh.IndexBuffer, IndexFormat.UInt32);
+                    cl.DrawIndexed((uint)mesh.indices.Length);
+                }
+            }
+
+            _frameShadows[light] = new FrameShadowTile
+            {
+                FaceVPs = faceVPs,
+                FaceAtlasParams = faceAtlasParams,
+            };
+        }
+
+        private ResourceSet GetLightVolumeResourceSet(Light light)
+        {
+            return _atlasShadowSet!;
         }
 
         // ==============================
@@ -1222,10 +1668,22 @@ namespace IronRose.Rendering
             _ambientPipeline?.Dispose();
             _directionalLightPipeline?.Dispose();
             _pointLightPipeline?.Dispose();
+            _spotLightPipeline?.Dispose();
+            _shadowAtlasPipeline?.Dispose();
             _skyboxPipeline?.Dispose();
             _forwardPipeline?.Dispose();
             _wireframePipeline?.Dispose();
             _spritePipeline?.Dispose();
+
+            // Shadow atlas
+            _atlasShadowSet?.Dispose();
+            _atlasView?.Dispose();
+            _atlasFramebuffer?.Dispose();
+            _atlasTexture?.Dispose();
+            _atlasDepthTexture?.Dispose();
+            _shadowSampler?.Dispose();
+            _shadowTransformBuffer?.Dispose();
+            _shadowLayout?.Dispose();
 
             _skyboxResourceSet?.Dispose();
             _skyboxLayout?.Dispose();
@@ -1233,11 +1691,10 @@ namespace IronRose.Rendering
 
             _gBufferResourceSet?.Dispose();
             _ambientResourceSet?.Dispose();
-            _lightVolumeResourceSet?.Dispose();
 
             _gBufferLayout?.Dispose();
             _ambientLayout?.Dispose();
-            _lightVolumeLayout?.Dispose();
+            _lightVolumeShadowLayout?.Dispose();
 
             _ambientBuffer?.Dispose();
             _lightVolumeBuffer?.Dispose();
@@ -1274,6 +1731,10 @@ namespace IronRose.Rendering
                 foreach (var s in _directionalLightShaders) s.Dispose();
             if (_pointLightShaders != null)
                 foreach (var s in _pointLightShaders) s.Dispose();
+            if (_spotLightShaders != null)
+                foreach (var s in _spotLightShaders) s.Dispose();
+            if (_shadowAtlasShaders != null)
+                foreach (var s in _shadowAtlasShaders) s.Dispose();
             if (_skyboxShaders != null)
                 foreach (var s in _skyboxShaders) s.Dispose();
 

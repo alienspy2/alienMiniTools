@@ -55,6 +55,9 @@ public class ManyLightsDemo : MonoBehaviour
             light.intensity = 1.5f;
             light.range = 8f;
 
+            light.shadows = true;
+            light.shadowResolution = 256;
+
             // Vary orbit parameters per light
             float radius = 4f + (i % 4) * 1.2f;
             float speed  = 0.4f + (i % 5) * 0.12f;
@@ -64,7 +67,45 @@ public class ManyLightsDemo : MonoBehaviour
             _lights.Add((lightObj, radius, speed, height, phase));
         }
 
-        Debug.Log($"[ManyLightsDemo] {LightCount} lights orbiting — enjoy the show!");
+        // --- Directional light with shadow ---
+        var dirLightObj = new GameObject("DirLight_Shadow");
+        var dirLight = dirLightObj.AddComponent<Light>();
+        dirLight.type = LightType.Directional;
+        dirLight.color = new Color(1f, 0.95f, 0.9f);
+        dirLight.intensity = 1.5f;
+        dirLight.shadows = true;
+        dirLight.shadowResolution = 2048;
+        dirLight.shadowBias = 0.005f;
+        dirLightObj.transform.Rotate(50, -30, 0);
+
+        // --- Spot lights pointing down at corners ---
+        var spotColors = new[] { Color.red, Color.green, Color.blue, Color.yellow };
+        var spotPositions = new[]
+        {
+            new Vector3(-6, 6, -6), new Vector3(6, 6, -6),
+            new Vector3(-6, 6, 6),  new Vector3(6, 6, 6),
+        };
+        for (int i = 0; i < 4; i++)
+        {
+            var spotObj = new GameObject($"SpotLight_{i}");
+            var spot = spotObj.AddComponent<Light>();
+            spot.type = LightType.Spot;
+            spot.color = spotColors[i];
+            spot.intensity = 8f;
+            spot.range = 15f;
+            spot.spotAngle = 25f;
+            spot.spotOuterAngle = 40f;
+            // Enable shadow on first two spot lights
+            if (i < 2)
+            {
+                spot.shadows = true;
+                spot.shadowResolution = 1024;
+            }
+            spotObj.transform.position = spotPositions[i];
+            spotObj.transform.LookAt(new Vector3(spotPositions[i].x * 0.3f, -1f, spotPositions[i].z * 0.3f));
+        }
+
+        Debug.Log($"[ManyLightsDemo] {LightCount} point(2 shadow) + 1 dir(shadow) + 4 spot(2 shadow) — enjoy the show!");
     }
 
     public override void Update()

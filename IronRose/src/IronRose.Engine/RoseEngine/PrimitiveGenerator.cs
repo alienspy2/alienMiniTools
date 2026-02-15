@@ -260,6 +260,54 @@ namespace RoseEngine
             return mesh;
         }
 
+        /// <summary>Cone: apex at origin, base at Z=1, radius=1. For spot light volumes.</summary>
+        public static Mesh CreateCone(int segments = 16)
+        {
+            var mesh = new Mesh();
+            var verts = new List<Vertex>();
+            var indices = new List<uint>();
+
+            // Apex vertex
+            verts.Add(new Vertex(Vector3.zero, new Vector3(0, 0, -1), new Vector2(0.5f, 0)));
+
+            // Base circle vertices
+            for (int i = 0; i <= segments; i++)
+            {
+                float angle = 2f * MathF.PI * i / segments;
+                float x = MathF.Cos(angle);
+                float y = MathF.Sin(angle);
+                var pos = new Vector3(x, y, 1f);
+                // Side normal: perpendicular to cone surface, pointing outward
+                var sideNormal = new Vector3(x, y, 1f);
+                sideNormal = sideNormal.normalized;
+                verts.Add(new Vertex(pos, sideNormal, new Vector2((float)i / segments, 1)));
+            }
+
+            // Side triangles: apex → base[i] → base[i+1]
+            for (int i = 0; i < segments; i++)
+            {
+                indices.Add(0);               // apex
+                indices.Add((uint)(i + 1));   // base[i]
+                indices.Add((uint)(i + 2));   // base[i+1]
+            }
+
+            // Base cap center vertex
+            uint baseCenterIdx = (uint)verts.Count;
+            verts.Add(new Vertex(new Vector3(0, 0, 1), Vector3.forward, new Vector2(0.5f, 0.5f)));
+
+            // Base cap triangles: center → base[i+1] → base[i] (outward normal = +Z)
+            for (int i = 0; i < segments; i++)
+            {
+                indices.Add(baseCenterIdx);
+                indices.Add((uint)(i + 2));   // base[i+1]
+                indices.Add((uint)(i + 1));   // base[i]
+            }
+
+            mesh.vertices = verts.ToArray();
+            mesh.indices = indices.ToArray();
+            return mesh;
+        }
+
         /// <summary>Quad: 1x1, centered, facing Z+ (Unity-compatible).</summary>
         public static Mesh CreateQuad()
         {

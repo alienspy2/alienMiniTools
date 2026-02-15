@@ -26,7 +26,7 @@ struct LightInfo
     vec4 PositionOrDirection; // xyz = position/direction, w = type (0=dir, 1=point)
     vec4 ColorIntensity;     // rgb = color, a = intensity
     vec4 Params;             // x = range, yzw = unused
-    vec4 _padding;
+    vec4 SpotDirection;
 };
 
 layout(set = 1, binding = 0) uniform LightData
