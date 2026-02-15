@@ -13,16 +13,16 @@ IronRose 엔진에는 텍스트 렌더링 기능이 전혀 없다. Unity에서�
 ### 새 파일 (4개)
 | 파일 | 설명 |
 |------|------|
-| `src/IronRose.Engine/UnityEngine/Font.cs` | 폰트 로딩 + 글리프 아틀라스 생성 |
-| `src/IronRose.Engine/UnityEngine/TextRenderer.cs` | 3D 텍스트 렌더링 컴포넌트 |
-| `src/IronRose.Engine/UnityEngine/TextAlignment.cs` | 정렬 열거형 |
+| `src/IronRose.Engine/RoseEngine/Font.cs` | 폰트 로딩 + 글리프 아틀라스 생성 |
+| `src/IronRose.Engine/RoseEngine/TextRenderer.cs` | 3D 텍스트 렌더링 컴포넌트 |
+| `src/IronRose.Engine/RoseEngine/TextAlignment.cs` | 정렬 열거형 |
 | `src/IronRose.Demo/TextDemo.cs` | 데모 씬 |
 
 ### 수정 파일 (3개)
 | 파일 | 변경 내용 |
 |------|-----------|
 | `src/IronRose.Engine/RenderSystem.cs` | `DrawAllTexts()` 추가 (Sprite 파이프라인 재사용) |
-| `src/IronRose.Engine/UnityEngine/SceneManager.cs` | TextRenderer 정리 (Destroy/Clear) |
+| `src/IronRose.Engine/RoseEngine/SceneManager.cs` | TextRenderer 정리 (Destroy/Clear) |
 | `src/IronRose.Demo/TestScript.cs` | Demo 4 등록 |
 
 ### 패키지 추가 (1개)
@@ -45,7 +45,7 @@ SixLabors.Fonts는 이미 사용 중인 SixLabors.ImageSharp와 동일 생태계
 ### 2. `TextAlignment.cs` — 새 파일
 
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public enum TextAlignment
     {
@@ -67,7 +67,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Drawing.Processing;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public class Font
     {
@@ -241,7 +241,7 @@ namespace UnityEngine
 MeshRenderer/SpriteRenderer와 동일한 정적 리스트 패턴 사용.
 
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class TextRenderer : Component
     {
@@ -441,7 +441,7 @@ private void DrawAllTexts(CommandList cl, Matrix4x4 viewProj, Camera camera)
         if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
 
         var t = tr.transform;
-        var worldMatrix = UnityEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+        var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
 
         var transforms = new TransformUniforms { World = worldMatrix, ViewProjection = viewProj };
         cl.UpdateBuffer(_transformBuffer, 0, transforms);

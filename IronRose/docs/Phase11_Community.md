@@ -67,7 +67,7 @@ dotnet run --project src/IronRose.Engine
 
 ### 첫 번째 스크립트
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class HelloWorld : MonoBehaviour
 {

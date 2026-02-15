@@ -35,19 +35,19 @@ namespace IronRose.AI
         {
             var systemPrompt = @"
 You are a Unity C# code generator for the IronRose game engine.
-Generate ONLY valid C# code that uses UnityEngine namespace.
+Generate ONLY valid C# code that uses RoseEngine namespace.
 Do NOT include explanations, markdown, or code blocks.
 Just output raw C# code.
 
 Available APIs:
-- UnityEngine.GameObject
-- UnityEngine.MonoBehaviour
-- UnityEngine.Transform
-- UnityEngine.Vector3, Quaternion, Color
-- UnityEngine.Time, Debug
+- RoseEngine.GameObject
+- RoseEngine.MonoBehaviour
+- RoseEngine.Transform
+- RoseEngine.Vector3, Quaternion, Color
+- RoseEngine.Time, Debug
 
 Example:
-using UnityEngine;
+using RoseEngine;
 
 public class RotatingCube : MonoBehaviour
 {
@@ -308,7 +308,7 @@ public class ScriptExecutor
 
 **AI 생성 코드:**
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class BouncingSphere : MonoBehaviour
 {
@@ -339,7 +339,7 @@ public class BouncingSphere : MonoBehaviour
 
 **AI 생성 코드:**
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class CameraRotator : MonoBehaviour
 {

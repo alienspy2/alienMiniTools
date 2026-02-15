@@ -1,11 +1,26 @@
-using UnityEngine;
-using UnityEngine.InputSystem;
+using RoseEngine;
+using RoseEngine.InputSystem;
 using IronRose.API;
 using IronRose.Engine;
 
 public class DemoLauncher : MonoBehaviour
 {
-    private int _currentDemo = 0;
+    // ── 데모 등록: 여기에 추가하면 메뉴·키·HUD 자동 반영 ──
+    private static readonly (string Label, System.Type Type)[] _builtinDemos =
+    {
+        ("Cornell Box",     typeof(CornellBoxDemo)),
+        ("Asset Import",    typeof(AssetImportDemo)),
+        ("3D Physics",      typeof(PhysicsDemo3D)),
+        ("PBR",             typeof(PBRDemo)),
+    };
+
+    private static readonly KeyCode[] _numKeys =
+    {
+        KeyCode.Alpha1, KeyCode.Alpha2, KeyCode.Alpha3, KeyCode.Alpha4, KeyCode.Alpha5,
+        KeyCode.Alpha6, KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0,
+    };
+
+    private int _currentDemo = -1;
     private string _currentLiveCodeDemo = "";
     private static Font? _hudFont;
     private static bool _isLoading;
@@ -15,7 +30,7 @@ public class DemoLauncher : MonoBehaviour
     private int _lastLiveCodeCount = -1;
 
     // 핫 리로드 후 활성 데모 자동 복원용 (static → SceneManager.Clear 후에도 유지)
-    private static int _activeBuiltinDemo;
+    private static int _activeBuiltinDemo = -1;
     private static string _activeLiveCodeDemo = "";
 
     public override void Awake()
@@ -47,7 +62,7 @@ public class DemoLauncher : MonoBehaviour
             {
                 AutoRestoreLiveCodeDemo();
             }
-            else if (_activeBuiltinDemo > 0)
+            else if (_activeBuiltinDemo >= 0)
             {
                 _currentDemo = _activeBuiltinDemo;
                 LaunchBuiltinDemo(_activeBuiltinDemo);
@@ -61,23 +76,19 @@ public class DemoLauncher : MonoBehaviour
         }
     }
 
+    private static string KeyLabel(int slot) => slot < 9 ? $"{slot + 1}" : "0";
+
     private void PrintDemoMenu()
     {
         Debug.Log("=== IronRose Demo Selector ===");
-        Debug.Log("[1] Cornell Box");
-        Debug.Log("[2] Asset Import");
-        Debug.Log("[3] Sprite Renderer");
-        Debug.Log("[4] Text Renderer");
-        Debug.Log("[5] 3D Physics");
-        Debug.Log("[6] PBR Demo");
+        for (int i = 0; i < _builtinDemos.Length && i < _numKeys.Length; i++)
+            Debug.Log($"[{KeyLabel(i)}] {_builtinDemos[i].Label}");
 
         // LiveCode 데모 출력
         var liveTypes = EngineCore.LiveCodeDemoTypes;
-        for (int i = 0; i < liveTypes.Length && i < 4; i++)
-        {
-            int key = 7 + i;
-            Debug.Log($"[{key}] {liveTypes[i].Name} (LiveCode)");
-        }
+        int liveStart = _builtinDemos.Length;
+        for (int i = 0; i < liveTypes.Length && liveStart + i < _numKeys.Length; i++)
+            Debug.Log($"[{KeyLabel(liveStart + i)}] {liveTypes[i].Name} (LiveCode)");
 
         Debug.Log("[F1] Wireframe | [F12] Screenshot | [ESC] Quit");
         Debug.Log("==============================");
@@ -86,19 +97,18 @@ public class DemoLauncher : MonoBehaviour
     public override void Update()
     {
         // 빌트인 데모 선택
-        if (Input.GetKeyDown(KeyCode.Alpha1)) LoadDemo(1);
-        if (Input.GetKeyDown(KeyCode.Alpha2)) LoadDemo(2);
-        if (Input.GetKeyDown(KeyCode.Alpha3)) LoadDemo(3);
-        if (Input.GetKeyDown(KeyCode.Alpha4)) LoadDemo(4);
-        if (Input.GetKeyDown(KeyCode.Alpha5)) LoadDemo(5);
-        if (Input.GetKeyDown(KeyCode.Alpha6)) LoadDemo(6);
-
-        // LiveCode 데모 선택 (키 7~0)
-        var liveTypes = EngineCore.LiveCodeDemoTypes;
-        KeyCode[] liveKeys = { KeyCode.Alpha7, KeyCode.Alpha8, KeyCode.Alpha9, KeyCode.Alpha0 };
-        for (int i = 0; i < liveTypes.Length && i < liveKeys.Length; i++)
+        for (int i = 0; i < _builtinDemos.Length && i < _numKeys.Length; i++)
         {
-            if (Input.GetKeyDown(liveKeys[i]))
+            if (Input.GetKeyDown(_numKeys[i]))
+                LoadDemo(i);
+        }
+
+        // LiveCode 데모 선택 (빌트인 이후 키)
+        var liveTypes = EngineCore.LiveCodeDemoTypes;
+        int liveStart = _builtinDemos.Length;
+        for (int i = 0; i < liveTypes.Length && liveStart + i < _numKeys.Length; i++)
+        {
+            if (Input.GetKeyDown(_numKeys[liveStart + i]))
                 LoadLiveCodeDemo(liveTypes[i]);
         }
 
@@ -161,7 +171,7 @@ public class DemoLauncher : MonoBehaviour
         _isLoading = true;
 
         // static 기억 (핫 리로드 시 복원용)
-        _activeBuiltinDemo = 0;
+        _activeBuiltinDemo = -1;
         _activeLiveCodeDemo = demoType.Name;
 
         SceneManager.Clear();
@@ -215,44 +225,11 @@ public class DemoLauncher : MonoBehaviour
 
     private static void LaunchBuiltinDemo(int demoIndex)
     {
-        switch (demoIndex)
-        {
-            case 1:
-                var go1 = new GameObject("CornellBoxDemo");
-                go1.AddComponent<CornellBoxDemo>();
-                Debug.Log("[Demo] >> Cornell Box");
-                break;
-
-            case 2:
-                var go2 = new GameObject("AssetImportDemo");
-                go2.AddComponent<AssetImportDemo>();
-                Debug.Log("[Demo] >> Asset Import");
-                break;
-
-            case 3:
-                var go3 = new GameObject("SpriteDemo");
-                go3.AddComponent<SpriteDemo>();
-                Debug.Log("[Demo] >> Sprite Renderer");
-                break;
-
-            case 4:
-                var go4 = new GameObject("TextDemo");
-                go4.AddComponent<TextDemo>();
-                Debug.Log("[Demo] >> Text Renderer");
-                break;
-
-            case 5:
-                var go5 = new GameObject("PhysicsDemo3D");
-                go5.AddComponent<PhysicsDemo3D>();
-                Debug.Log("[Demo] >> 3D Physics");
-                break;
-
-            case 6:
-                var go6 = new GameObject("PBRDemo");
-                go6.AddComponent<PBRDemo>();
-                Debug.Log("[Demo] >> PBR Demo");
-                break;
-        }
+        if (demoIndex < 0 || demoIndex >= _builtinDemos.Length) return;
+        var (label, type) = _builtinDemos[demoIndex];
+        var go = new GameObject(type.Name);
+        go.AddComponent(type);
+        Debug.Log($"[Demo] >> {label}");
     }
 
     private void EnsureCamera()
@@ -270,26 +247,21 @@ public class DemoLauncher : MonoBehaviour
 
         // 기존 HUD 즉시 제거 (Destroy는 프레임 끝까지 지연되어 중복 렌더링됨)
         if (_hudGo != null)
-            UnityEngine.Object.DestroyImmediate(_hudGo);
+            RoseEngine.Object.DestroyImmediate(_hudGo);
 
         _hudGo = new GameObject("HudMenu");
         var tr = _hudGo.AddComponent<TextRenderer>();
         tr.font = _hudFont;
 
         // HUD 텍스트 생성 (빌트인 + LiveCode 데모)
-        var hudText = "[1] Cornell Box\n"
-                    + "[2] Asset Import\n"
-                    + "[3] Sprite Renderer\n"
-                    + "[4] Text Renderer\n"
-                    + "[5] 3D Physics\n"
-                    + "[6] PBR\n";
+        var hudText = "";
+        for (int i = 0; i < _builtinDemos.Length && i < _numKeys.Length; i++)
+            hudText += $"[{KeyLabel(i)}] {_builtinDemos[i].Label}\n";
 
         var liveTypes = EngineCore.LiveCodeDemoTypes;
-        string[] keyLabels = { "7", "8", "9", "0" };
-        for (int i = 0; i < liveTypes.Length && i < keyLabels.Length; i++)
-        {
-            hudText += $"[{keyLabels[i]}] {liveTypes[i].Name} *\n";
-        }
+        int liveStart = _builtinDemos.Length;
+        for (int i = 0; i < liveTypes.Length && liveStart + i < _numKeys.Length; i++)
+            hudText += $"[{KeyLabel(liveStart + i)}] {liveTypes[i].Name} *\n";
 
         hudText += "[F1] Wireframe | [F12] Screenshot\n"
                  + "[ESC] Quit";
@@ -313,10 +285,10 @@ public class DemoLauncher : MonoBehaviour
 
         const float z = 3f;
         float halfH = z * Mathf.Tan(Camera.main.fieldOfView * 0.5f * Mathf.Deg2Rad);
-        float halfW = halfH * ((float)UnityEngine.Screen.width / UnityEngine.Screen.height);
+        float halfW = halfH * ((float)RoseEngine.Screen.width / RoseEngine.Screen.height);
 
         // World units per screen pixel at this Z plane
-        float worldPerPx = 2f * halfH / UnityEngine.Screen.height;
+        float worldPerPx = 2f * halfH / RoseEngine.Screen.height;
 
         // Fixed screen-pixel margin from the top-left corner
         const float marginPx = 20f;
@@ -324,7 +296,7 @@ public class DemoLauncher : MonoBehaviour
         float y = halfH - marginPx * worldPerPx;
 
         // Scale: keep constant pixel-size (reference = 720p)
-        float scale = 720f / UnityEngine.Screen.height;
+        float scale = 720f / RoseEngine.Screen.height;
 
         _hudGo.transform.localPosition = new Vector3(x, y + -0.3f, z);
         _hudGo.transform.localScale = new Vector3(scale, scale, scale);

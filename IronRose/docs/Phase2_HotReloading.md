@@ -48,7 +48,7 @@ namespace IronRose.Scripting
             AddReference(typeof(Enumerable));       // System.Linq
 
             // IronRose.Engine 참조 추가 (나중에)
-            // AddReference(typeof(UnityEngine.GameObject));
+            // AddReference(typeof(RoseEngine.GameObject));
         }
 
         public void AddReference(Type type)

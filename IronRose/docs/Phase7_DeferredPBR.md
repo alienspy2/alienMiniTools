@@ -32,7 +32,7 @@ PBR에 필요한 속성을 `Material.cs`에 추가합니다.
 
 **추가 속성:**
 ```csharp
-// Material.cs (UnityEngine namespace)
+// Material.cs (RoseEngine namespace)
 public class Material
 {
     // 기존
@@ -663,7 +663,7 @@ Phase 7 기능을 검증하는 데모 씬을 작성합니다.
 
 | 파일 | 작업 | 위치 |
 |---|---|---|
-| `Material.cs` | **수정** | src/IronRose.Engine/UnityEngine/ |
+| `Material.cs` | **수정** | src/IronRose.Engine/RoseEngine/ |
 | `RenderSystem.cs` | **대폭 수정** | src/IronRose.Engine/ |
 | `GraphicsManager.cs` | **수정** (리사이즈 이벤트에 GBuffer 재생성 연결) | src/IronRose.Rendering/ |
 | `GBuffer.cs` | **신규** | src/IronRose.Rendering/ |

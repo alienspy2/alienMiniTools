@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
-using UnityEngine;
+using System.Linq;
+using RoseEngine;
 
 namespace IronRose.AssetPipeline
 {
@@ -60,8 +61,14 @@ namespace IronRose.AssetPipeline
 
         public T? Load<T>(string path) where T : class
         {
+            // 캐시된 MeshImportResult에서 Mesh 또는 Material 추출
             if (_loadedAssets.TryGetValue(path, out var cached))
             {
+                if (cached is MeshImportResult result)
+                {
+                    if (typeof(T) == typeof(Mesh)) return result.Mesh as T;
+                    if (typeof(T) == typeof(Material)) return result.Materials.FirstOrDefault() as T;
+                }
                 return cached as T;
             }
 
@@ -81,6 +88,13 @@ namespace IronRose.AssetPipeline
             if (asset != null)
             {
                 _loadedAssets[path] = asset;
+            }
+
+            // MeshImportResult에서 요청 타입 추출
+            if (asset is MeshImportResult meshResult)
+            {
+                if (typeof(T) == typeof(Mesh)) return meshResult.Mesh as T;
+                if (typeof(T) == typeof(Material)) return meshResult.Materials.FirstOrDefault() as T;
             }
 
             return asset as T;
@@ -106,7 +120,7 @@ namespace IronRose.AssetPipeline
             _loadedAssets.Clear();
         }
 
-        private Mesh? ImportMesh(string path, RoseMetadata meta)
+        private MeshImportResult? ImportMesh(string path, RoseMetadata meta)
         {
             float scale = 1.0f;
             bool generateNormals = true;

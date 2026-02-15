@@ -360,7 +360,7 @@ public class ScriptDomain
 **xUnit 테스트 작성:**
 ```csharp
 using Xunit;
-using UnityEngine;
+using RoseEngine;
 
 namespace IronRose.Tests
 {

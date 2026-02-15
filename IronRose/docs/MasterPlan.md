@@ -225,7 +225,7 @@ Shim(껍데기)이 아닌 실제 동작하는 엔진 구조입니다.
 
 #### 3.1 기본 수학 타입 (IronRose.Engine)
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct Vector3
     {
@@ -252,7 +252,7 @@ namespace UnityEngine
 
 #### 3.2 GameObject & Component 시스템
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class GameObject
     {
@@ -366,11 +366,11 @@ public static class Debug
 ```
 
 #### 3.6 Unity InputSystem (액션 기반 입력) ✅
-기존 `UnityEngine.Input` (레거시)을 유지하면서, Unity 새 Input System (`UnityEngine.InputSystem`) API를 구현합니다.
+기존 `RoseEngine.Input` (레거시)을 유지하면서, Unity 새 Input System (`RoseEngine.InputSystem`) API를 구현합니다.
 기존 Silk.NET 입력 인프라 위에 액션 기반 API 레이어를 구축합니다.
 
 ```csharp
-using UnityEngine.InputSystem;
+using RoseEngine.InputSystem;
 
 var moveAction = new InputAction("Move", InputActionType.Value);
 moveAction.AddCompositeBinding("2DVector")
@@ -391,7 +391,7 @@ Vector2 move = moveAction.ReadValue<Vector2>();
 
 **구현 파일 (7개):**
 ```
-UnityEngine/InputSystem/
+RoseEngine/InputSystem/
 ├── InputActionType.cs      # enum: Button, Value, PassThrough
 ├── InputActionPhase.cs     # enum: Disabled, Waiting, Started, Performed, Canceled
 ├── InputBinding.cs         # 바인딩 사양 + CompositeBinder
@@ -561,7 +561,7 @@ public class PhysicsWorld3D : IDisposable
     public TypedIndex AddBoxShape(float x, float y, float z);
 }
 
-// IronRose.Engine/UnityEngine — Unity API
+// IronRose.Engine/RoseEngine — Unity API
 public class Rigidbody : Component { /* velocity, mass, AddForce, SyncFromPhysics */ }
 public abstract class Collider : Component { /* isTrigger, center */ }
 public class BoxCollider : Collider { /* size */ }
@@ -579,7 +579,7 @@ public class PhysicsWorld2D : IDisposable
     public void AttachRectangle(Body body, float w, float h, float density);
 }
 
-// IronRose.Engine/UnityEngine — Unity API
+// IronRose.Engine/RoseEngine — Unity API
 public class Rigidbody2D : Component { /* velocity, gravityScale, AddForce */ }
 public abstract class Collider2D : Component { /* isTrigger, offset */ }
 public class BoxCollider2D : Collider2D { /* size */ }

@@ -11,7 +11,7 @@
 
 **XML 주석 작성:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     /// <summary>
     /// 3D 공간의 벡터를 표현합니다.
@@ -123,7 +123,7 @@ docfx serve _site
 
 ### Unity 코드
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class PlayerController : MonoBehaviour
 {
@@ -141,7 +141,7 @@ public class PlayerController : MonoBehaviour
 
 ### IronRose 코드 (동일!)
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class PlayerController : MonoBehaviour
 {
@@ -159,8 +159,8 @@ public class PlayerController : MonoBehaviour
 
 **InputSystem 방식도 지원:**
 ```csharp
-using UnityEngine;
-using UnityEngine.InputSystem;
+using RoseEngine;
+using RoseEngine.InputSystem;
 
 public class PlayerController : MonoBehaviour
 {
@@ -261,7 +261,7 @@ public class BulletPool
 
 **samples/01_HelloWorld/HelloWorld.cs:**
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class HelloWorld : MonoBehaviour
 {
@@ -282,7 +282,7 @@ public class HelloWorld : MonoBehaviour
 
 **samples/02_RotatingCube/RotatingCube.cs:**
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class RotatingCube : MonoBehaviour
 {

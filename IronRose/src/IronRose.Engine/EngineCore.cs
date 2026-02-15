@@ -2,7 +2,7 @@ using IronRose.API;
 using IronRose.AssetPipeline;
 using IronRose.Rendering;
 using IronRose.Scripting;
-using UnityEngine;
+using RoseEngine;
 using Silk.NET.Input;
 using Silk.NET.Windowing;
 using System;
@@ -70,7 +70,7 @@ namespace IronRose.Engine
                     _renderSystem = new RenderSystem();
                     _renderSystem.Initialize(_graphicsManager.Device);
                     Console.WriteLine("[Engine] RenderSystem initialized");
-                    UnityEngine.RenderSettings.postProcessing = _renderSystem.PostProcessing;
+                    RoseEngine.RenderSettings.postProcessing = _renderSystem.PostProcessing;
 
                     // 리사이즈 이벤트 → RenderSystem (GBuffer, HDR, PostProcessing 재생성)
                     _graphicsManager.Resized += (w, h) => _renderSystem?.Resize(w, h);
@@ -84,11 +84,11 @@ namespace IronRose.Engine
             }
 
             // Screen 치수 설정
-            UnityEngine.Screen.SetSize(_window.Size.X, _window.Size.Y);
+            RoseEngine.Screen.SetSize(_window.Size.X, _window.Size.Y);
             _window.Resize += size =>
             {
                 if (size.X > 0 && size.Y > 0)
-                    UnityEngine.Screen.SetSize(size.X, size.Y);
+                    RoseEngine.Screen.SetSize(size.X, size.Y);
             };
 
             // 플러그인 API 연결
@@ -105,7 +105,7 @@ namespace IronRose.Engine
             {
                 _assetDatabase.ScanAssets(assetsPath);
             }
-            UnityEngine.Resources.SetAssetDatabase(_assetDatabase);
+            RoseEngine.Resources.SetAssetDatabase(_assetDatabase);
 
             // LiveCode 핫 리로드 초기화
             InitializeLiveCode();
@@ -296,7 +296,7 @@ namespace IronRose.Engine
         {
             // 입력은 항상 갱신 (pause 상태에서도 키 입력 감지 필요)
             Input.Update();
-            UnityEngine.InputSystem.InputSystem.Update();
+            RoseEngine.InputSystem.InputSystem.Update();
 
             // 엔진 레벨 키 처리 (MonoBehaviour 밖에서 동작)
             ProcessEngineKeys();

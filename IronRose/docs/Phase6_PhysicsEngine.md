@@ -23,7 +23,7 @@ IronRose.Physics (순수 물리 래퍼, Engine 미참조)
 IronRose.Engine (Physics 참조 추가)
   ├── Physics/
   │   └── PhysicsManager.cs  (PhysicsWorld3D/2D 통합 + FixedUpdate 루프)
-  └── UnityEngine/
+  └── RoseEngine/
       ├── Rigidbody.cs, Rigidbody2D.cs      (Component 래퍼)
       ├── Collider.cs, BoxCollider.cs, ...   (Component 래퍼)
       ├── Collider2D.cs, BoxCollider2D.cs, ...
@@ -152,7 +152,7 @@ public static float fixedTime { get; internal set; }
 **PhysicsWorld3D.cs (IronRose.Physics):**
 
 > BepuPhysics는 System.Numerics 타입만 사용합니다.
-> UnityEngine 타입과의 변환은 Engine 측 래퍼에서 처리합니다.
+> RoseEngine 타입과의 변환은 Engine 측 래퍼에서 처리합니다.
 
 ```csharp
 using BepuPhysics;
@@ -403,7 +403,7 @@ namespace IronRose.Physics
 
 ```csharp
 using IronRose.Physics;
-using UnityEngine;
+using RoseEngine;
 
 namespace IronRose.Engine
 {
@@ -496,11 +496,11 @@ namespace IronRose.Engine
 
 ### 6.4 Unity 3D 물리 API
 
-**Collider.cs (UnityEngine — 기본 클래스):**
+**Collider.cs (RoseEngine — 기본 클래스):**
 ```csharp
 using BepuPhysics.Collidables;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public abstract class Collider : Component
     {
@@ -519,7 +519,7 @@ namespace UnityEngine
 ```csharp
 using BepuPhysics.Collidables;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public class BoxCollider : Collider
     {
@@ -537,7 +537,7 @@ namespace UnityEngine
 
 **SphereCollider.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class SphereCollider : Collider
     {
@@ -555,7 +555,7 @@ namespace UnityEngine
 
 **CapsuleCollider.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class CapsuleCollider : Collider
     {
@@ -574,7 +574,7 @@ namespace UnityEngine
 
 **ForceMode.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public enum ForceMode
     {
@@ -590,7 +590,7 @@ namespace UnityEngine
 ```csharp
 using BepuPhysics;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public class Rigidbody : Component
     {
@@ -712,7 +712,7 @@ namespace UnityEngine
 
 **Collider2D.cs (기본 클래스):**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public abstract class Collider2D : Component
     {
@@ -726,7 +726,7 @@ namespace UnityEngine
 
 **BoxCollider2D.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class BoxCollider2D : Collider2D
     {
@@ -737,7 +737,7 @@ namespace UnityEngine
 
 **CircleCollider2D.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class CircleCollider2D : Collider2D
     {
@@ -751,7 +751,7 @@ namespace UnityEngine
 using tainicom.Aether.Physics2D.Dynamics;
 using AetherVector2 = Microsoft.Xna.Framework.Vector2;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public class Rigidbody2D : Component
     {
@@ -860,7 +860,7 @@ namespace UnityEngine
 
 **Collision.cs / Collision2D.cs (충돌 데이터):**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class Collision
     {
@@ -898,7 +898,7 @@ namespace UnityEngine
 
 **Physics.cs (3D Raycast 등):**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct RaycastHit
     {
@@ -946,7 +946,7 @@ namespace UnityEngine
 
 **Physics2D.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct RaycastHit2D
     {
@@ -1013,7 +1013,7 @@ src/IronRose.Physics/                    (NuGet 래퍼, Engine 미참조)
 src/IronRose.Engine/
 ├── Physics/
 │   └── PhysicsManager.cs               (~100줄) 통합 관리자
-└── UnityEngine/
+└── RoseEngine/
     ├── Collider.cs                      (~20줄) 3D 콜라이더 기본 클래스
     ├── BoxCollider.cs                   (~15줄)
     ├── SphereCollider.cs                (~15줄)

@@ -11,9 +11,9 @@ IronRose 엔진은 현재 MeshRenderer + MeshFilter 기반의 3D 렌더링만 �
 ### 새 파일 (4개)
 | 파일 | 설명 |
 |------|------|
-| `src/IronRose.Engine/UnityEngine/Rect.cs` | 사각형 구조체 |
-| `src/IronRose.Engine/UnityEngine/Sprite.cs` | 텍스처 + 영역 + 피벗 래핑 |
-| `src/IronRose.Engine/UnityEngine/SpriteRenderer.cs` | 스프라이트 렌더링 컴포넌트 |
+| `src/IronRose.Engine/RoseEngine/Rect.cs` | 사각형 구조체 |
+| `src/IronRose.Engine/RoseEngine/Sprite.cs` | 텍스처 + 영역 + 피벗 래핑 |
+| `src/IronRose.Engine/RoseEngine/SpriteRenderer.cs` | 스프라이트 렌더링 컴포넌트 |
 | `src/IronRose.Demo/SpriteDemo.cs` | 데모 씬 |
 
 ### 수정 파일 (4개)
@@ -21,13 +21,13 @@ IronRose 엔진은 현재 MeshRenderer + MeshFilter 기반의 3D 렌더링만 �
 |------|-----------|
 | `Shaders/fragment.glsl` | Unlit 모드 early-out 추가 (`LightCount < 0`) |
 | `src/IronRose.Engine/RenderSystem.cs` | 알파 블렌드 파이프라인 + `DrawAllSprites()` |
-| `src/IronRose.Engine/UnityEngine/SceneManager.cs` | SpriteRenderer 정리 (Destroy/Clear) |
+| `src/IronRose.Engine/RoseEngine/SceneManager.cs` | SpriteRenderer 정리 (Destroy/Clear) |
 | `src/IronRose.Demo/TestScript.cs` | Demo 3 등록 |
 
 ### 소규모 수정 (1개)
 | 파일 | 변경 내용 |
 |------|-----------|
-| `src/IronRose.Engine/UnityEngine/Texture2D.cs` | `SetPixels(byte[])` public 메서드 추가 |
+| `src/IronRose.Engine/RoseEngine/Texture2D.cs` | `SetPixels(byte[])` public 메서드 추가 |
 
 ---
 
@@ -36,7 +36,7 @@ IronRose 엔진은 현재 MeshRenderer + MeshFilter 기반의 3D 렌더링만 �
 ### 1. `Rect.cs` — 새 파일
 
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct Rect
     {
@@ -52,7 +52,7 @@ namespace UnityEngine
 ### 2. `Sprite.cs` — 새 파일
 
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class Sprite
     {
@@ -77,7 +77,7 @@ namespace UnityEngine
 MeshRenderer와 동일한 정적 리스트 패턴 사용.
 
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class SpriteRenderer : Component
     {

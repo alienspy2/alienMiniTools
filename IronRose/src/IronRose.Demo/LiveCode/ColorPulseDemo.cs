@@ -1,4 +1,4 @@
-using UnityEngine;
+using RoseEngine;
 using IronRose.Scripting;
 
 /// <summary>
@@ -47,7 +47,7 @@ public class ColorPulseDemo : MonoBehaviour, IHotReloadable
         if (_cube == null || _cubeMat == null) return;
 
         // 시간에 따른 색상 변화
-        float t = Time.time;
+        float t = Time.time * 1;
         float r = (Mathf.Sin(t * 1.0f) + 1f) * 0.5f;
         float g = (Mathf.Sin(t * 1.3f + 2f) + 1f) * 0.5f;
         float b = (Mathf.Sin(t * 1.7f + 4f) + 1f) * 0.5f;

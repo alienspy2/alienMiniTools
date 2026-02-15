@@ -290,19 +290,19 @@
 ### 완료된 작업
 
 #### Wave 1: 수학 타입 + 유틸리티 (신규 6파일)
-- [x] `UnityEngine/Vector3.cs` - x,y,z struct, 연산자, Dot, Cross, Lerp, Distance
-- [x] `UnityEngine/Vector2.cs` - x,y struct, 기본 연산자, Vector3 implicit 변환
-- [x] `UnityEngine/Quaternion.cs` - x,y,z,w struct, Euler(), AngleAxis(), operator*
-- [x] `UnityEngine/Color.cs` - r,g,b,a struct, 프리셋 색상 (white, red, blue 등)
-- [x] `UnityEngine/Time.cs` - static deltaTime, time, frameCount (internal set)
-- [x] `UnityEngine/Debug.cs` - static Log, LogWarning, LogError
+- [x] `RoseEngine/Vector3.cs` - x,y,z struct, 연산자, Dot, Cross, Lerp, Distance
+- [x] `RoseEngine/Vector2.cs` - x,y struct, 기본 연산자, Vector3 implicit 변환
+- [x] `RoseEngine/Quaternion.cs` - x,y,z,w struct, Euler(), AngleAxis(), operator*
+- [x] `RoseEngine/Color.cs` - r,g,b,a struct, 프리셋 색상 (white, red, blue 등)
+- [x] `RoseEngine/Time.cs` - static deltaTime, time, frameCount (internal set)
+- [x] `RoseEngine/Debug.cs` - static Log, LogWarning, LogError
 
 #### Wave 2: Component 계층 (신규 5파일)
-- [x] `UnityEngine/Component.cs` - 기본 클래스 (gameObject, transform, GetComponent<T>)
-- [x] `UnityEngine/Transform.cs` - position, rotation, localScale, Translate(), Rotate()
-- [x] `UnityEngine/MonoBehaviour.cs` - virtual Awake/Start/Update/LateUpdate/OnDestroy
-- [x] `UnityEngine/SceneManager.cs` - RegisterBehaviour, Update(deltaTime), Clear()
-- [x] `UnityEngine/GameObject.cs` - AddComponent<T>, AddComponent(Type), GetComponent<T>
+- [x] `RoseEngine/Component.cs` - 기본 클래스 (gameObject, transform, GetComponent<T>)
+- [x] `RoseEngine/Transform.cs` - position, rotation, localScale, Translate(), Rotate()
+- [x] `RoseEngine/MonoBehaviour.cs` - virtual Awake/Start/Update/LateUpdate/OnDestroy
+- [x] `RoseEngine/SceneManager.cs` - RegisterBehaviour, Update(deltaTime), Clear()
+- [x] `RoseEngine/GameObject.cs` - AddComponent<T>, AddComponent(Type), GetComponent<T>
 
 #### Wave 3: 기존 파일 수정 (2파일)
 - [x] **ScriptDomain.cs 수정**
@@ -310,7 +310,7 @@
   - `SetTypeFilter(Func<Type, bool>)` 추가 (MonoBehaviour 필터링)
   - ALC `Resolving` 이벤트 핸들러 추가 (default ALC fallback)
 - [x] **EngineCore.cs 수정**
-  - 엔진 어셈블리 참조 추가 (UnityEngine 타입 컴파일용)
+  - 엔진 어셈블리 참조 추가 (RoseEngine 타입 컴파일용)
   - TypeFilter 설정 (MonoBehaviour를 legacy 인스턴스화에서 제외)
   - `RegisterMonoBehaviours()` 신규 메서드 (GameObject 생성 + AddComponent + Awake)
   - `CompileAndLoadScripts()`: SceneManager.Clear() → Reload → RegisterMonoBehaviours 흐름
@@ -324,7 +324,7 @@
 
 ### 주요 설계 결정
 
-1. **UnityEngine 네임스페이스 위치**: `src/IronRose.Engine/UnityEngine/`
+1. **RoseEngine 네임스페이스 위치**: `src/IronRose.Engine/RoseEngine/`
    - IronRose.Engine.dll (default ALC)에 위치
    - LiveCode ALC가 IronRose.Engine 참조 시 default ALC로 fallback → 타입 동일성 보장
    - `typeof(MonoBehaviour).IsAssignableFrom(liveCodeType)` 정상 동작
@@ -358,7 +358,7 @@
 
 ### 신규 파일 목록 (11개)
 ```
-src/IronRose.Engine/UnityEngine/
+src/IronRose.Engine/RoseEngine/
 ├── Vector3.cs        (~65줄)
 ├── Vector2.cs        (~60줄)
 ├── Quaternion.cs     (~100줄)
@@ -381,13 +381,13 @@ src/IronRose.Engine/UnityEngine/
 ### 완료된 작업
 
 #### 신규 파일 (7개)
-- [x] `UnityEngine/InputSystem/InputActionType.cs` - enum: Button, Value, PassThrough
-- [x] `UnityEngine/InputSystem/InputActionPhase.cs` - enum: Disabled, Waiting, Started, Performed, Canceled
-- [x] `UnityEngine/InputSystem/InputBinding.cs` - 바인딩 사양 + CompositeBinder (fluent `.With()` API)
-- [x] `UnityEngine/InputSystem/InputControlPath.cs` - 경로 파싱 (`<Keyboard>/space` → `KeyCode.Space`) + 레거시 Input 재활용
-- [x] `UnityEngine/InputSystem/InputAction.cs` - 핵심 액션 클래스 + CallbackContext + phase 전이 + `ReadValue<T>()`
-- [x] `UnityEngine/InputSystem/InputActionMap.cs` - 액션 그룹 (AddAction, FindAction, Enable/Disable)
-- [x] `UnityEngine/InputSystem/InputSystem.cs` - 정적 매니저 (활성 액션 추적, Update 루프)
+- [x] `RoseEngine/InputSystem/InputActionType.cs` - enum: Button, Value, PassThrough
+- [x] `RoseEngine/InputSystem/InputActionPhase.cs` - enum: Disabled, Waiting, Started, Performed, Canceled
+- [x] `RoseEngine/InputSystem/InputBinding.cs` - 바인딩 사양 + CompositeBinder (fluent `.With()` API)
+- [x] `RoseEngine/InputSystem/InputControlPath.cs` - 경로 파싱 (`<Keyboard>/space` → `KeyCode.Space`) + 레거시 Input 재활용
+- [x] `RoseEngine/InputSystem/InputAction.cs` - 핵심 액션 클래스 + CallbackContext + phase 전이 + `ReadValue<T>()`
+- [x] `RoseEngine/InputSystem/InputActionMap.cs` - 액션 그룹 (AddAction, FindAction, Enable/Disable)
+- [x] `RoseEngine/InputSystem/InputSystem.cs` - 정적 매니저 (활성 액션 추적, Update 루프)
 
 #### 수정 파일 (2개)
 - [x] `Program.cs` — `InputSystem.Update()` 호출 추가 (Input.Update() 직후)
@@ -395,7 +395,7 @@ src/IronRose.Engine/UnityEngine/
 
 ### 주요 설계 결정
 
-1. **레거시 Input 재활용**: InputSystem이 기존 `UnityEngine.Input` 정적 상태를 읽음 (Silk.NET 이벤트 중복 등록 없음)
+1. **레거시 Input 재활용**: InputSystem이 기존 `RoseEngine.Input` 정적 상태를 읽음 (Silk.NET 이벤트 중복 등록 없음)
 2. **Phase 전이 모델**: `Waiting → Started → Performed → Canceled`
    - Button: 누를 때 Started+Performed, 뗄 때 Canceled
    - Value: 매 프레임 값이 있으면 Performed 재호출
@@ -413,8 +413,8 @@ Program.OnUpdate()
 
 ### 사용 예시
 ```csharp
-using UnityEngine;
-using UnityEngine.InputSystem;
+using RoseEngine;
+using RoseEngine.InputSystem;
 
 public class TestScript : MonoBehaviour
 {
@@ -448,11 +448,11 @@ public class TestScript : MonoBehaviour
 
 ### 테스트 결과
 - ✅ `dotnet build` 성공 (경고 0개, 오류 0개)
-- ✅ 레거시 `UnityEngine.Input`과 `UnityEngine.InputSystem` 공존
+- ✅ 레거시 `RoseEngine.Input`과 `RoseEngine.InputSystem` 공존
 
 ### 신규 파일 목록 (7개)
 ```
-src/IronRose.Engine/UnityEngine/InputSystem/
+src/IronRose.Engine/RoseEngine/InputSystem/
 ├── InputActionType.cs     (~10줄)
 ├── InputActionPhase.cs    (~10줄)
 ├── InputBinding.cs        (~30줄)
@@ -471,12 +471,12 @@ src/IronRose.Engine/UnityEngine/InputSystem/
 ### 완료된 작업
 
 #### 신규 파일 (6개)
-- [x] `UnityEngine/Mathf.cs` — Sin, Cos, Lerp, Clamp, Clamp01, SmoothDamp, PingPong, Repeat, Approximately 등 ~40개 메서드
-- [x] `UnityEngine/Random.cs` — Range(float/int), insideUnitSphere, onUnitSphere, insideUnitCircle, rotation, ColorHSV
-- [x] `UnityEngine/Object.cs` — 기반 클래스: Destroy(deferred), DestroyImmediate, Instantiate(deep clone), FindObjectOfType/s, implicit bool
-- [x] `UnityEngine/Attributes.cs` — SerializeField, HideInInspector, Header, Range, Tooltip, Space, RequireComponent 등
-- [x] `UnityEngine/YieldInstruction.cs` — WaitForSeconds, WaitForEndOfFrame, WaitUntil, WaitWhile, CustomYieldInstruction
-- [x] `UnityEngine/Coroutine.cs` — Coroutine 핸들 (중첩 코루틴 지원)
+- [x] `RoseEngine/Mathf.cs` — Sin, Cos, Lerp, Clamp, Clamp01, SmoothDamp, PingPong, Repeat, Approximately 등 ~40개 메서드
+- [x] `RoseEngine/Random.cs` — Range(float/int), insideUnitSphere, onUnitSphere, insideUnitCircle, rotation, ColorHSV
+- [x] `RoseEngine/Object.cs` — 기반 클래스: Destroy(deferred), DestroyImmediate, Instantiate(deep clone), FindObjectOfType/s, implicit bool
+- [x] `RoseEngine/Attributes.cs` — SerializeField, HideInInspector, Header, Range, Tooltip, Space, RequireComponent 등
+- [x] `RoseEngine/YieldInstruction.cs` — WaitForSeconds, WaitForEndOfFrame, WaitUntil, WaitWhile, CustomYieldInstruction
+- [x] `RoseEngine/Coroutine.cs` — Coroutine 핸들 (중첩 코루틴 지원)
 
 #### 기존 수정 (8개)
 - [x] `Component.cs` — Object 상속, name→gameObject 위임, tag, GetComponentInChildren/InParent, GetComponentsInChildren/InParent
@@ -490,7 +490,7 @@ src/IronRose.Engine/UnityEngine/InputSystem/
 
 ### 주요 설계 결정
 
-1. **UnityEngine.Object 베이스**: Component와 GameObject가 Object를 상속. `implicit operator bool`로 Destroy된 오브젝트 null 체크 패턴 지원
+1. **RoseEngine.Object 베이스**: Component와 GameObject가 Object를 상속. `implicit operator bool`로 Destroy된 오브젝트 null 체크 패턴 지원
 2. **Deferred Destroy**: `Object.Destroy(go, delay)` → SceneManager 큐 → 프레임 끝 처리. 자식 재귀 파괴 + OnDisable/OnDestroy 호출 + 레지스트리 정리
 3. **Transform 로컬/월드 분리**: 내부에 localPosition/localRotation 저장, position/rotation은 부모 체인 계산. SetParent(worldPositionStays) 지원
 4. **코루틴 스케줄러**: SceneManager에서 중앙 관리. WaitForSeconds 타이머, 중첩 Coroutine/IEnumerator 자동 감지, CustomYieldInstruction 지원
@@ -572,8 +572,8 @@ src/IronRose.Engine/UnityEngine/InputSystem/
   - Engine/Program.cs: ~120줄
   - Engine/EngineCore.cs: ~260줄
   - Engine/RenderSystem.cs: ~212줄
-  - Engine/UnityEngine/*.cs: ~3600줄 (30파일)
-  - Engine/UnityEngine/InputSystem/*.cs: ~500줄 (7파일)
+  - Engine/RoseEngine/*.cs: ~3600줄 (30파일)
+  - Engine/RoseEngine/InputSystem/*.cs: ~500줄 (7파일)
   - Rendering/GraphicsManager.cs: ~85줄
   - Rendering/ShaderCompiler.cs: ~50줄
   - Scripting/ScriptCompiler.cs: ~145줄
@@ -628,7 +628,7 @@ src/IronRose.Engine/UnityEngine/InputSystem/
     - `Quaternion.cs`: Inverse, Lerp/Slerp, LookRotation, RotateTowards, FromToRotation, Angle
     - `Vector3.cs`: MoveTowards, SmoothDamp, Angle/SignedAngle, Scale, Project, Reflect, ClampMagnitude
     - `Color.cs`: HSVToRGB, RGBToHSV
-  - UnityEngine 전체: 27파일 ~3300줄 + InputSystem 7파일 ~500줄
+  - RoseEngine 전체: 27파일 ~3300줄 + InputSystem 7파일 ~500줄
   - Demo 프로젝트 정상 실행 (60 FPS)
 - **Debug 토글 & ImageSharp 취약성 수정**
   - `Debug.Enabled` 프로퍼티 추가 (로그 출력 ON/OFF 토글)
@@ -637,7 +637,7 @@ src/IronRose.Engine/UnityEngine/InputSystem/
   - ImageSharp 3.x API 마이그레이션: `GetPixelRowSpan` → `ProcessPixelRows`
   - NU 취약성 경고 28개 → 0개
 - **Phase 3 완료** ✅ (Unity Architecture)
-  - UnityEngine 네임스페이스 구현 (Vector3, Vector2, Quaternion, Color, Time, Debug)
+  - RoseEngine 네임스페이스 구현 (Vector3, Vector2, Quaternion, Color, Time, Debug)
   - GameObject/Component/Transform/MonoBehaviour 아키텍처
   - SceneManager 라이프사이클 (Awake → Start → Update → LateUpdate → OnDestroy)
   - ScriptDomain TypeFilter + ALC Resolving fallback
@@ -650,7 +650,7 @@ src/IronRose.Engine/UnityEngine/InputSystem/
     - GraphicsManager: 네이티브 핸들(X11/Wayland/Win32) → Veldrid SwapchainSource
     - EngineCore: IWindow 인터페이스로 전환
     - Veldrid.StartupUtilities, Silk.NET.SDL 패키지 제거
-  - **Unity 스타일 Input 정적 클래스** (UnityEngine.Input)
+  - **Unity 스타일 Input 정적 클래스** (RoseEngine.Input)
     - GetKey/GetKeyDown/GetKeyUp, GetMouseButton/Down/Up
     - mousePosition, mouseScrollDelta
     - GetAxis("Horizontal"/"Vertical"/"Mouse X"/"Mouse Y")
@@ -658,7 +658,7 @@ src/IronRose.Engine/UnityEngine/InputSystem/
   - **KeyCode enum** + Silk.NET.Input.Key 매핑 (A-Z, 0-9, F1-F12, 화살표, 수정자, 키패드)
   - LiveCode TestScript에 WASD/마우스 입력 데모 추가
 - **Phase 3.5+ 완료** ✅ (Unity InputSystem - 액션 기반 입력)
-  - **UnityEngine.InputSystem 네임스페이스** (7개 신규 파일)
+  - **RoseEngine.InputSystem 네임스페이스** (7개 신규 파일)
     - InputAction: 콜백 기반 입력 (started/performed/canceled)
     - InputActionType: Button, Value, PassThrough
     - InputActionPhase: Disabled → Waiting → Started → Performed → Canceled

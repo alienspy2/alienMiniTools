@@ -10,7 +10,32 @@
             "args": [],
             "cwd": "${workspaceFolder}",
             "console": "internalConsole",
-            "stopAtEntry": false
+            "stopAtEntry": false,
+            "justMyCode": false,
+            "enableStepFiltering": false,
+            "suppressJITOptimizations": true,
+            "logging": {
+                "moduleLoad": false,
+                "engineLogging": false
+            }
+        },
+        {
+            "name": "IronRose Step Trace (Entry)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/src/IronRose.Demo/bin/Debug/net10.0/IronRose.Demo.dll",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "internalConsole",
+            "stopAtEntry": true,
+            "justMyCode": false,
+            "enableStepFiltering": false,
+            "suppressJITOptimizations": true,
+            "logging": {
+                "moduleLoad": false,
+                "engineLogging": false
+            }
         }
     ]
 }

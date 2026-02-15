@@ -5,7 +5,7 @@ using System.Linq;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Veldrid;
-using UnityEngine;
+using RoseEngine;
 
 namespace IronRose.Rendering
 {
@@ -837,7 +837,7 @@ namespace IronRose.Rendering
                 if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
 
                 var t = renderer.transform;
-                var worldMatrix = UnityEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+                var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
 
                 cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
                 {
@@ -895,7 +895,7 @@ namespace IronRose.Rendering
                 if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
 
                 var t = renderer.transform;
-                var worldMatrix = UnityEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+                var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
 
                 cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
                 {
@@ -977,7 +977,7 @@ namespace IronRose.Rendering
                 if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
 
                 var t = sr.transform;
-                var worldMatrix = UnityEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+                var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
 
                 cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
                 {
@@ -1052,7 +1052,7 @@ namespace IronRose.Rendering
                 if (mesh.VertexBuffer == null || mesh.IndexBuffer == null) continue;
 
                 var t = tr.transform;
-                var worldMatrix = UnityEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
+                var worldMatrix = RoseEngine.Matrix4x4.TRS(t.position, t.rotation, t.localScale).ToNumerics();
 
                 cl.UpdateBuffer(_transformBuffer, 0, new TransformUniforms
                 {

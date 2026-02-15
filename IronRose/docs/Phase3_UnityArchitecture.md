@@ -27,11 +27,11 @@ Shim(껍데기)이 아닌 실제 동작하는 엔진 구조입니다.
 
 ### 3.1 기본 수학 타입 (IronRose.Engine)
 
-**UnityEngine/Vector3.cs:**
+**RoseEngine/Vector3.cs:**
 ```csharp
 using System;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct Vector3
     {
@@ -87,11 +87,11 @@ namespace UnityEngine
 }
 ```
 
-**UnityEngine/Quaternion.cs:**
+**RoseEngine/Quaternion.cs:**
 ```csharp
 using System;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct Quaternion
     {
@@ -140,9 +140,9 @@ namespace UnityEngine
 }
 ```
 
-**UnityEngine/Color.cs:**
+**RoseEngine/Color.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct Color
     {
@@ -171,7 +171,7 @@ namespace UnityEngine
 
 **Component.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class Component
     {
@@ -187,7 +187,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public class GameObject
     {
@@ -247,7 +247,7 @@ namespace UnityEngine
 
 **Transform.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class Transform : Component
     {
@@ -279,7 +279,7 @@ namespace UnityEngine
 
 **MonoBehaviour.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class MonoBehaviour : Component
     {
@@ -300,7 +300,7 @@ namespace UnityEngine
 ```csharp
 using System.Collections.Generic;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public static class SceneManager
     {
@@ -345,7 +345,7 @@ namespace UnityEngine
 
 **Time.cs:**
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public static class Time
     {
@@ -364,7 +364,7 @@ namespace UnityEngine
 ```csharp
 using System;
 
-namespace UnityEngine
+namespace RoseEngine
 {
     public static class Debug
     {
@@ -394,7 +394,7 @@ namespace UnityEngine
 
 ### 3.6 Unity InputSystem (액션 기반 입력)
 
-기존 `UnityEngine.Input` (레거시 입력)을 유지하면서, Unity의 새 Input System (`UnityEngine.InputSystem`) 패키지를 모사합니다.
+기존 `RoseEngine.Input` (레거시 입력)을 유지하면서, Unity의 새 Input System (`RoseEngine.InputSystem`) 패키지를 모사합니다.
 기존 Silk.NET 입력 인프라 위에 액션 기반 API 레이어를 구축합니다.
 
 **핵심 설계:**
@@ -412,9 +412,9 @@ Program.OnUpdate()
   → EngineCore.Update()      // 게임 로직
 ```
 
-**UnityEngine/InputSystem/InputAction.cs (핵심):**
+**RoseEngine/InputSystem/InputAction.cs (핵심):**
 ```csharp
-namespace UnityEngine.InputSystem
+namespace RoseEngine.InputSystem
 {
     public class InputAction
     {
@@ -440,8 +440,8 @@ namespace UnityEngine.InputSystem
 
 **사용 예시:**
 ```csharp
-using UnityEngine;
-using UnityEngine.InputSystem;
+using RoseEngine;
+using RoseEngine.InputSystem;
 
 public class TestScript : MonoBehaviour
 {
@@ -475,7 +475,7 @@ public class TestScript : MonoBehaviour
 
 **파일 구조 (7개):**
 ```
-src/IronRose.Engine/UnityEngine/InputSystem/
+src/IronRose.Engine/RoseEngine/InputSystem/
 ├── InputActionType.cs     (~10줄)
 ├── InputActionPhase.cs    (~10줄)
 ├── InputBinding.cs        (~30줄)
@@ -496,7 +496,7 @@ Phase 4(고급 렌더링)로 넘어가기 전에, 화면에 큐브가 렌더링�
 
 **Matrix4x4** — System.Numerics 위임:
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct Matrix4x4
     {
@@ -512,7 +512,7 @@ namespace UnityEngine
 
 **Mesh + Vertex** — 정점/인덱스 데이터 + GPU 버퍼:
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public struct Vertex  // Position + Normal + UV (32 bytes)
     {
@@ -659,7 +659,7 @@ EngineCore.Render()
 
 **파일 구조 (신규 7개 + 셰이더 2개 + 기존 수정 5개):**
 ```
-src/IronRose.Engine/UnityEngine/
+src/IronRose.Engine/RoseEngine/
 ├── Matrix4x4.cs              # 4x4 변환 행렬
 ├── Mesh.cs                   # Vertex 구조체 + Mesh 클래스
 ├── Material.cs               # 색상 기반 머터리얼
@@ -679,13 +679,13 @@ Shaders/
 └── fragment.glsl             # 램버트 조명 프래그먼트 셰이더
 ```
 
-> **설계 결정:** RenderSystem은 UnityEngine 타입(Camera, MeshRenderer 등)에 의존하므로
+> **설계 결정:** RenderSystem은 RoseEngine 타입(Camera, MeshRenderer 등)에 의존하므로
 > 순환 참조를 피하기 위해 IronRose.Rendering이 아닌 IronRose.Engine 프로젝트에 배치.
 > ShaderCompiler는 Veldrid API만 사용하므로 IronRose.Rendering에 유지.
 
 **사용 예시:**
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class TestScript : MonoBehaviour
 {
@@ -724,7 +724,7 @@ public class TestScript : MonoBehaviour
 ✅ Unity 스타일 스크립트 작성 가능:
 
 ```csharp
-using UnityEngine;
+using RoseEngine;
 
 public class RotatingCube : MonoBehaviour
 {
@@ -755,7 +755,7 @@ Phase 4(렌더링)로 넘어가기 전에, Unity 스크립트 호환성을 높�
 Unity 스크립트에서 가장 많이 쓰이는 수학 유틸리티:
 
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public static class Mathf
     {
@@ -796,10 +796,10 @@ namespace UnityEngine
 }
 ```
 
-#### UnityEngine.Random
+#### RoseEngine.Random
 
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public static class Random
     {
@@ -816,12 +816,12 @@ namespace UnityEngine
 }
 ```
 
-#### UnityEngine.Object 기반 클래스
+#### RoseEngine.Object 기반 클래스
 
 Component와 GameObject의 공통 베이스:
 
 ```csharp
-namespace UnityEngine
+namespace RoseEngine
 {
     public class Object
     {
@@ -1076,7 +1076,7 @@ SceneManager.Update(deltaTime):
 
 **파일 구조 (신규 6개 + 기존 수정 8개):**
 ```
-src/IronRose.Engine/UnityEngine/
+src/IronRose.Engine/RoseEngine/
 ├── Mathf.cs              # 수학 유틸리티 (~120줄)
 ├── Random.cs             # 난수 생성 (~55줄)
 ├── Object.cs             # 기반 클래스: Destroy, Instantiate, FindObjectOfType (~120줄)

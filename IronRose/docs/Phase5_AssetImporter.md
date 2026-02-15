@@ -75,7 +75,7 @@ public class UnityPrefab
 using System;
 using System.IO;
 using System.Collections.Generic;
-using UnityEngine;
+using RoseEngine;
 
 namespace IronRose.AssetPipeline
 {
@@ -165,7 +165,7 @@ namespace IronRose.AssetPipeline
 ```csharp
 using Assimp;
 using System.IO;
-using UnityEngine;
+using RoseEngine;
 
 namespace IronRose.AssetPipeline
 {
@@ -264,7 +264,7 @@ namespace IronRose.AssetPipeline
         {
             if (!File.Exists(pngPath))
             {
-                UnityEngine.Debug.LogError($"Texture not found: {pngPath}");
+                RoseEngine.Debug.LogError($"Texture not found: {pngPath}");
                 return null!;
             }
 
@@ -279,7 +279,7 @@ namespace IronRose.AssetPipeline
                 data = image.Data
             };
 
-            UnityEngine.Debug.Log($"Imported texture: {image.Width}x{image.Height}");
+            RoseEngine.Debug.Log($"Imported texture: {image.Width}x{image.Height}");
 
             return texture;
         }
@@ -441,7 +441,7 @@ namespace IronRose.AssetPipeline
 ```csharp
 using System.Collections.Generic;
 using System.IO;
-using UnityEngine;
+using RoseEngine;
 
 namespace IronRose.AssetPipeline
 {
