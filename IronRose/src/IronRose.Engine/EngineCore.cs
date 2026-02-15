@@ -6,7 +6,9 @@ using UnityEngine;
 using Silk.NET.Input;
 using Silk.NET.Windowing;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace IronRose.Engine
 {
@@ -26,12 +28,20 @@ namespace IronRose.Engine
         // 스크립팅
         private ScriptCompiler? _compiler;
         private ScriptDomain? _scriptDomain;
-        private FileSystemWatcher? _liveCodeWatcher;
+        private readonly List<string> _liveCodePaths = new();
+        private readonly List<FileSystemWatcher> _liveCodeWatchers = new();
         private bool _reloadRequested = false;
         private DateTime _lastReloadTime = DateTime.MinValue;
+        private readonly Dictionary<string, string> _savedHotReloadStates = new();
 
         // 디버깅 스크린캡처 (기본 off)
         public bool ScreenCaptureEnabled { get; set; } = false;
+
+        // 핫 리로드 후 씬 복원 콜백
+        public Action? OnAfterReload { get; set; }
+
+        // LiveCode에서 발견된 MonoBehaviour 데모 타입 목록 (DemoLauncher에서 참조)
+        public static Type[] LiveCodeDemoTypes { get; private set; } = Array.Empty<Type>();
 
         public void Initialize(IWindow window)
         {
@@ -60,6 +70,7 @@ namespace IronRose.Engine
                     _renderSystem = new RenderSystem();
                     _renderSystem.Initialize(_graphicsManager.Device);
                     Console.WriteLine("[Engine] RenderSystem initialized");
+                    UnityEngine.RenderSettings.postProcessing = _renderSystem.PostProcessing;
 
                     // 리사이즈 이벤트 → RenderSystem (GBuffer, HDR, PostProcessing 재생성)
                     _graphicsManager.Resized += (w, h) => _renderSystem?.Resize(w, h);
@@ -107,40 +118,78 @@ namespace IronRose.Engine
             _compiler = new ScriptCompiler();
             _compiler.AddReference(typeof(IronRose.API.Screen)); // IronRose.Contracts
             _compiler.AddReference(typeof(EngineCore).Assembly.Location); // IronRose.Engine
+            _compiler.AddReference(typeof(PostProcessStack).Assembly.Location); // IronRose.Rendering
+            _compiler.AddReference(typeof(IHotReloadable).Assembly.Location); // IronRose.Scripting
             _scriptDomain = new ScriptDomain();
 
             var monoBehaviourType = typeof(MonoBehaviour);
             _scriptDomain.SetTypeFilter(type => !monoBehaviourType.IsAssignableFrom(type));
 
-            string liveCodePath = Path.GetFullPath("LiveCode");
-            if (!Directory.Exists(liveCodePath))
+            // LiveCode 디렉토리 탐색: 루트 LiveCode/ + src/*/LiveCode/
+            FindLiveCodeDirectories();
+
+            foreach (var path in _liveCodePaths)
             {
-                Directory.CreateDirectory(liveCodePath);
-                Console.WriteLine($"[Engine] Created LiveCode directory: {liveCodePath}");
+                var watcher = new FileSystemWatcher(path, "*.cs");
+                watcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size;
+                watcher.Changed += OnLiveCodeChanged;
+                watcher.Created += OnLiveCodeChanged;
+                watcher.Deleted += OnLiveCodeChanged;
+                watcher.Renamed += (s, e) => OnLiveCodeChanged(s, e);
+                watcher.EnableRaisingEvents = true;
+                _liveCodeWatchers.Add(watcher);
+                Console.WriteLine($"[Engine] FileSystemWatcher active on {path}");
             }
 
-            // 초기 LiveCode 컴파일
-            CompileAndLoadLiveCode(liveCodePath);
-
-            // FileSystemWatcher
-            _liveCodeWatcher = new FileSystemWatcher(liveCodePath, "*.cs");
-            _liveCodeWatcher.NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.Size;
-            _liveCodeWatcher.Changed += OnLiveCodeChanged;
-            _liveCodeWatcher.Created += OnLiveCodeChanged;
-            _liveCodeWatcher.Deleted += OnLiveCodeChanged;
-            _liveCodeWatcher.Renamed += (s, e) => OnLiveCodeChanged(s, e);
-            _liveCodeWatcher.EnableRaisingEvents = true;
-
-            Console.WriteLine("[Engine] FileSystemWatcher active on LiveCode/");
+            // 초기 컴파일
+            CompileAllLiveCode();
         }
 
-        private void CompileAndLoadLiveCode(string liveCodePath)
+        private void FindLiveCodeDirectories()
         {
-            var csFiles = Directory.GetFiles(liveCodePath, "*.cs");
+            // src/*/LiveCode/ 탐색 (프로젝트별 LiveCode 폴더만 사용)
+            string[] searchRoots = { ".", "..", "../.." };
+            foreach (var root in searchRoots)
+            {
+                string srcDir = Path.GetFullPath(Path.Combine(root, "src"));
+                if (!Directory.Exists(srcDir)) continue;
+
+                foreach (var projectDir in Directory.GetDirectories(srcDir))
+                {
+                    string liveCodeDir = Path.Combine(projectDir, "LiveCode");
+                    if (!Directory.Exists(liveCodeDir)) continue;
+
+                    string fullPath = Path.GetFullPath(liveCodeDir);
+                    if (!_liveCodePaths.Contains(fullPath))
+                    {
+                        _liveCodePaths.Add(fullPath);
+                        Console.WriteLine($"[Engine] Found LiveCode directory: {fullPath}");
+                    }
+                }
+                break; // src/ 찾으면 중복 탐색 방지
+            }
+
+            // LiveCode 디렉토리가 하나도 없으면 Demo/LiveCode 생성
+            if (_liveCodePaths.Count == 0)
+            {
+                string fallback = Path.GetFullPath("LiveCode");
+                Directory.CreateDirectory(fallback);
+                _liveCodePaths.Add(fallback);
+                Console.WriteLine($"[Engine] Created LiveCode directory: {fallback}");
+            }
+        }
+
+        private void CompileAllLiveCode()
+        {
+            var csFiles = _liveCodePaths
+                .Where(Directory.Exists)
+                .SelectMany(p => Directory.GetFiles(p, "*.cs"))
+                .ToArray();
+
             if (csFiles.Length == 0)
                 return;
 
-            Console.WriteLine($"[Engine] Compiling {csFiles.Length} LiveCode files...");
+            Console.WriteLine($"[Engine] Compiling {csFiles.Length} LiveCode files from {_liveCodePaths.Count} directories...");
 
             var result = _compiler!.CompileFromFiles(csFiles, "LiveCode");
             if (result.Success && result.AssemblyBytes != null)
@@ -150,7 +199,6 @@ namespace IronRose.Engine
                 else
                     _scriptDomain.LoadScripts(result.AssemblyBytes);
 
-                // LiveCode MonoBehaviour 등록
                 RegisterLiveCodeBehaviours();
 
                 Console.WriteLine("[Engine] LiveCode loaded!");
@@ -165,24 +213,72 @@ namespace IronRose.Engine
         {
             var monoBehaviourType = typeof(MonoBehaviour);
             var types = _scriptDomain!.GetLoadedTypes();
+            var demoTypes = new List<Type>();
 
             foreach (var type in types)
             {
                 if (type.IsAbstract || type.IsInterface) continue;
                 if (!monoBehaviourType.IsAssignableFrom(type)) continue;
 
-                try
+                demoTypes.Add(type);
+                Console.WriteLine($"[Engine] LiveCode demo detected: {type.Name}");
+            }
+
+            LiveCodeDemoTypes = demoTypes.ToArray();
+            Console.WriteLine($"[Engine] LiveCode demos available: {LiveCodeDemoTypes.Length}");
+        }
+
+        private void SaveHotReloadableState()
+        {
+            _savedHotReloadStates.Clear();
+            foreach (var go in SceneManager.AllGameObjects)
+            {
+                foreach (var comp in go.InternalComponents)
                 {
-                    var go = new GameObject(type.Name);
-                    var behaviour = (MonoBehaviour)go.AddComponent(type);
-                    SceneManager.RegisterBehaviour(behaviour);
-                    Console.WriteLine($"[Engine] LiveCode: {type.Name}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Engine] ERROR registering {type.Name}: {ex.Message}");
+                    if (comp is IHotReloadable reloadable)
+                    {
+                        try
+                        {
+                            var state = reloadable.SerializeState();
+                            _savedHotReloadStates[comp.GetType().Name] = state;
+                            Console.WriteLine($"[Engine] State saved: {comp.GetType().Name}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[Engine] State save failed for {comp.GetType().Name}: {ex.Message}");
+                        }
+                    }
                 }
             }
+        }
+
+        private void RestoreHotReloadableState()
+        {
+            if (_savedHotReloadStates.Count == 0) return;
+
+            foreach (var go in SceneManager.AllGameObjects)
+            {
+                foreach (var comp in go.InternalComponents)
+                {
+                    if (comp is IHotReloadable reloadable)
+                    {
+                        string typeName = comp.GetType().Name;
+                        if (_savedHotReloadStates.TryGetValue(typeName, out var state))
+                        {
+                            try
+                            {
+                                reloadable.DeserializeState(state);
+                                Console.WriteLine($"[Engine] State restored: {typeName}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[Engine] State restore failed for {typeName}: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+            }
+            _savedHotReloadStates.Clear();
         }
 
         private void OnLiveCodeChanged(object sender, FileSystemEventArgs e)
@@ -215,11 +311,18 @@ namespace IronRose.Engine
                 _reloadRequested = false;
                 Console.WriteLine("[Engine] Hot reloading LiveCode...");
 
-                // LiveCode 씬 초기화
-                SceneManager.Clear();
+                // 1. IHotReloadable 상태 저장 (Clear 전)
+                SaveHotReloadableState();
 
-                string liveCodePath = Path.GetFullPath("LiveCode");
-                CompileAndLoadLiveCode(liveCodePath);
+                // 2. 씬 초기화 + 리컴파일
+                SceneManager.Clear();
+                CompileAllLiveCode();
+
+                // 3. 씬 복원 (DemoLauncher가 활성 데모를 자동 재시작)
+                OnAfterReload?.Invoke();
+
+                // 4. IHotReloadable 상태 복원 (데모 재시작 후)
+                RestoreHotReloadableState();
             }
 
             // Fixed timestep 물리 루프
@@ -296,7 +399,9 @@ namespace IronRose.Engine
             SceneManager.Clear();
             _assetDatabase?.UnloadAll();
             _physicsManager?.Dispose();
-            _liveCodeWatcher?.Dispose();
+            foreach (var watcher in _liveCodeWatchers)
+                watcher.Dispose();
+            _liveCodeWatchers.Clear();
             _renderSystem?.Dispose();
             _graphicsManager?.Dispose();
         }

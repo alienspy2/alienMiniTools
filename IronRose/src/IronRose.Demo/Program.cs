@@ -44,6 +44,9 @@ namespace IronRose.Demo
             _engine = new EngineCore();
             _engine.Initialize(_window);
 
+            // 핫 리로드 후 씬 복원 콜백 등록
+            _engine.OnAfterReload = RegisterScene;
+
             // Demo selector 등록
             RegisterScene();
         }
@@ -52,7 +55,7 @@ namespace IronRose.Demo
         {
             Console.WriteLine("[Demo] Registering demo selector...");
 
-            Register<TestScript>();
+            Register<DemoLauncher>();
         }
 
         static void Register<T>() where T : MonoBehaviour, new()

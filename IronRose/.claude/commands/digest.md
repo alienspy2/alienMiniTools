@@ -1,4 +1,5 @@
-LiveCode에서 검증된 스크립트를 Demo 프로젝트(src/IronRose.Demo/)로 이동합니다.
+LiveCode에서 검증된 스크립트를 정식 Demo 프로젝트(src/IronRose.Demo/)로 승격(promote)합니다.
+LiveCode → Demo 방향으로만 동작합니다. (반대 방향 아님)
 
 ## 절차
 

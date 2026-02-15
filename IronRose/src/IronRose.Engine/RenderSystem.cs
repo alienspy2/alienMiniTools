@@ -136,7 +136,8 @@ namespace IronRose.Rendering
         private Framebuffer? _hdrFramebuffer;
 
         // --- Post-processing ---
-        private PostProcessing? _postProcessing;
+        private PostProcessStack? _postProcessStack;
+        public PostProcessStack? PostProcessing => _postProcessStack;
 
         private const int MaxDeferredLights = 64;
         private static readonly uint DeferredLightHeaderSize = (uint)Marshal.SizeOf<DeferredLightHeader>();
@@ -250,10 +251,11 @@ namespace IronRose.Rendering
             // --- Create size-dependent resources (GBuffer, HDR, pipelines) ---
             CreateSizeDependentResources(width, height);
 
-            // --- PostProcessing ---
-            _postProcessing = new PostProcessing();
-            _postProcessing.Initialize(device, width, height, _shaderDir);
-            _postProcessing.CreateResourceSets(_hdrView!);
+            // --- PostProcessing Stack ---
+            _postProcessStack = new PostProcessStack();
+            _postProcessStack.Initialize(device, width, height, _shaderDir);
+            _postProcessStack.AddEffect(new BloomEffect());
+            _postProcessStack.AddEffect(new TonemapEffect());
 
             Console.WriteLine("[RenderSystem] Deferred PBR pipeline initialized");
         }
@@ -439,8 +441,7 @@ namespace IronRose.Rendering
 
             CreateSizeDependentResources(width, height);
 
-            _postProcessing?.Resize(width, height);
-            _postProcessing?.CreateResourceSets(_hdrView!);
+            _postProcessStack?.Resize(width, height);
 
             Console.WriteLine($"[RenderSystem] Resized to {width}x{height}");
         }
@@ -510,7 +511,7 @@ namespace IronRose.Rendering
             }
 
             // === 5. Post-Processing → Swapchain ===
-            _postProcessing?.Execute(cl, _device.SwapchainFramebuffer);
+            _postProcessStack?.Execute(cl, _hdrView!, _device.SwapchainFramebuffer);
         }
 
         // ==============================
@@ -1108,7 +1109,7 @@ namespace IronRose.Rendering
 
         public void Dispose()
         {
-            _postProcessing?.Dispose();
+            _postProcessStack?.Dispose();
 
             _geometryPipeline?.Dispose();
             _lightingPipeline?.Dispose();
