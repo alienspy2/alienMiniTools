@@ -1,6 +1,6 @@
 # IronRose 개발 진행 상황
 
-**최종 업데이트**: 2026-02-14 (Phase 4 완료 - 3D 렌더링 파이프라인)
+**최종 업데이트**: 2026-02-15 (Phase 7+ 완료 - Deferred PBR + IBL + 네임스페이스 마이그레이션)
 
 ---
 
@@ -16,9 +16,11 @@
 - [x] Phase 3.5+: Unity InputSystem (액션 기반 입력) ✅
 - [x] Phase 3.5++: Unity 호환성 확장 (Mathf, Random, Object, Destroy, Coroutine, Transform 계층 등) ✅
 - [x] Phase 4: 3D 렌더링 파이프라인 (Mesh, Shader, Camera, Primitive, Light, Material) ✅
-- [ ] Phase 5: Unity 에셋 임포터
-- [ ] Phase 6: 물리 엔진
-- [ ] Phase 7: Deferred PBR 렌더링
+- [x] Phase 5: Unity 에셋 임포터 (AssetDatabase, MeshImporter, TextureImporter, PrefabImporter) ✅
+- [x] Phase 5A: SpriteRenderer (3D Space Sprite 렌더링, 알파 블렌딩) ✅
+- [x] Phase 5B: TextRenderer (Font 아틀라스 기반 3D 텍스트 렌더링) ✅
+- [x] Phase 6: 물리 엔진 (BepuPhysics 3D + Aether.Physics2D, FixedUpdate 50Hz) ✅
+- [x] Phase 7: Deferred PBR 렌더링 (G-Buffer, Cook-Torrance BRDF, IBL, Post-Processing) ✅
 - [ ] Phase 8: AI 통합
 
 ---
@@ -558,29 +560,266 @@ src/IronRose.Engine/RoseEngine/InputSystem/
 
 ---
 
-## 다음 단계: Phase 5
+## Phase 5: Unity 에셋 임포터 ✅
 
-→ [Phase 5: Unity 에셋 임포터](Phase5_AssetImporter.md)
+**완료 날짜**: 2026-02-14
+**커밋**: `d43a185`
+
+### 완료된 작업
+
+#### 5.1 AssetDatabase (GUID 매핑)
+- [x] `AssetDatabase.cs` — 프로젝트 `Assets/` 디렉토리 스캔, GUID→경로 매핑, 에셋 캐싱
+- [x] `.rose` 메타데이터 파일 자동 생성 (TOML 기반, Unity .meta 대응)
+
+#### 5.2 MeshImporter (AssimpNet)
+- [x] `MeshImporter.cs` — GLB/FBX/OBJ 모델 로드 (Triangulate + GenerateNormals + FlipUVs)
+- [x] 머티리얼 자동 추출 (albedo color, metallic, roughness, emission, 텍스처 참조)
+- [x] `GlbTextureExtractor.cs` — GLB 파일 내 임베디드 텍스처 추출
+
+#### 5.3 TextureImporter (ImageSharp)
+- [x] `TextureImporter.cs` — PNG/JPG/BMP → Veldrid GPU 텍스처 업로드
+
+#### 5.4 PrefabImporter
+- [x] `PrefabImporter.cs` — Unity .prefab YAML 파싱 → GameObject 생성
+
+#### 5.5 RoseMetadata
+- [x] `RoseMetadata.cs` — TOML 기반 에셋 메타데이터 (guid, importer 설정)
+- [x] `UnityYamlParser.cs` — Unity YAML `!u!` 태그 처리
+
+### 테스트 결과
+- ✅ `dotnet build` 성공
+- ✅ GLB 모델 로드 + 텍스처 적용 정상
+- ✅ `.rose` 파일 자동 생성 확인
+- ✅ AssetDatabase GUID 매핑 정상 작동
+
+### 신규 파일 목록 (7개)
+```
+src/IronRose.Engine/AssetPipeline/
+├── AssetDatabase.cs
+├── MeshImporter.cs
+├── GlbTextureExtractor.cs
+├── TextureImporter.cs
+├── PrefabImporter.cs
+├── RoseMetadata.cs
+└── UnityYamlParser.cs
+```
+
+---
+
+## Phase 5A: SpriteRenderer ✅
+
+**완료 날짜**: 2026-02-14
+**커밋**: `ba8c715`
+
+### 완료된 작업
+- [x] `Rect.cs` — 2D 사각형 구조체 (x, y, width, height)
+- [x] `Sprite.cs` — Texture2D 래퍼 (rect, pivot, pixelsPerUnit)
+- [x] `SpriteRenderer.cs` — 3D 공간 스프라이트 렌더링, 알파 블렌딩, Unlit 파이프라인
+- [x] `TextAlignment.cs` — Left, Center, Right 정렬 enum
+
+### 테스트 결과
+- ✅ 3D 공간에서 스프라이트 정상 렌더링
+- ✅ 알파 블렌딩 정상 작동
+- ✅ SpriteDemo.cs 데모 씬 작동
+
+---
+
+## Phase 5B: TextRenderer ✅
+
+**완료 날짜**: 2026-02-14
+**커밋**: `ba8c715`
+
+### 완료된 작업
+- [x] `Font.cs` — SixLabors.Fonts 기반 글리프 아틀라스 래스터라이저
+- [x] `TextRenderer.cs` — 아틀라스 기반 per-character 쿼드 메시 3D 텍스트 렌더링
+- [x] 기존 Sprite 알파 블렌드 파이프라인 재사용
+
+### 테스트 결과
+- ✅ 3D 공간에서 텍스트 정상 렌더링
+- ✅ TextDemo.cs 데모 씬 작동
+
+---
+
+## Phase 6: 물리 엔진 통합 ✅
+
+**완료 날짜**: 2026-02-14
+**커밋**: `066922a`
+
+### 완료된 작업
+
+#### 6.0 사전 작업: FixedUpdate 인프라
+- [x] `MonoBehaviour.cs` — FixedUpdate() + 충돌 콜백 (OnCollisionEnter/Stay/Exit, OnTriggerEnter/Stay/Exit) + 2D 콜백
+- [x] `EngineCore.cs` — Fixed timestep 누적기 (50Hz, `_fixedAccumulator`)
+- [x] `SceneManager.cs` — FixedUpdate() 루프 추가
+- [x] `Time.cs` — fixedDeltaTime, fixedTime
+
+#### 6.1 3D 물리: BepuPhysics v2.4.0
+- [x] `PhysicsWorld3D.cs` — BepuPhysics 순수 래퍼 (System.Numerics 타입만 사용)
+  - Initialize, Step, AddDynamicBody/StaticBody
+  - Box/Sphere/Capsule shape 생성
+  - Body pose/velocity 읽기/쓰기, ApplyImpulse
+
+#### 6.2 2D 물리: Aether.Physics2D v2.2.0
+- [x] `PhysicsWorld2D.cs` — Aether.Physics2D 순수 래퍼
+  - Initialize, Step, CreateDynamic/Static/KinematicBody
+  - AttachRectangle/Circle fixture 생성
+
+#### 6.3 PhysicsManager (통합 관리자)
+- [x] `PhysicsManager.cs` — PhysicsWorld3D/2D 통합, Transform↔Physics 양방향 동기화, 충돌 콜백 디스패치
+
+#### 6.4 Unity 3D 물리 API
+- [x] `Collider.cs` — 3D 콜라이더 기본 클래스 (isTrigger, center)
+- [x] `BoxCollider.cs`, `SphereCollider.cs`, `CapsuleCollider.cs` — 3D 콜라이더 구현
+- [x] `Rigidbody.cs` — BepuPhysics↔Transform 동기화, velocity, AddForce, mass
+
+#### 6.5 Unity 2D 물리 API
+- [x] `Collider2D.cs` — 2D 콜라이더 기본 클래스 (isTrigger, offset)
+- [x] `BoxCollider2D.cs`, `CircleCollider2D.cs` — 2D 콜라이더 구현
+- [x] `Rigidbody2D.cs` — Aether↔Transform 동기화, velocity, AddForce, gravityScale
+
+#### 6.6 Unity 물리 유틸리티
+- [x] `ForceMode.cs` — Force, Acceleration, Impulse, VelocityChange enum
+- [x] `Collision.cs` — 3D/2D 충돌 데이터, ContactPoint 구조체
+- [x] `PhysicsStatic.cs` — 정적 물리 오브젝트 컴포넌트
+
+### 주요 설계 결정
+- **의존성 역전**: IronRose.Physics는 Engine 미참조 (순수 래퍼), Engine이 Physics 참조
+- **FixedUpdate 50Hz**: 물리 시뮬레이션 고정 타임스텝, 렌더링과 독립
+- **Transform↔Physics 동기화**: Dynamic=Physics→Transform, Kinematic=Transform→Physics
+
+### 테스트 결과
+- ✅ `dotnet build` 성공
+- ✅ 큐브가 바닥으로 떨어지는 중력 시뮬레이션 정상
+- ✅ MonoBehaviour.FixedUpdate() 50Hz 호출 확인
+- ✅ PhysicsDemo3D.cs 데모 씬 작동
+
+---
+
+## Phase 7: Deferred PBR 렌더링 ✅
+
+**완료 날짜**: 2026-02-15
+**커밋**: `1197355`, `3049434`, `4cc5e4d`, `0fa6f56`
+
+### 완료된 작업
+
+#### 7.1 Material 확장 (PBR)
+- [x] `Material.cs` — metallic(0-1), roughness(0-1), occlusion(0-1), normalMap, MROMap 추가
+- [x] `MaterialUniforms` GPU 구조체 확장
+
+#### 7.2 G-Buffer 생성
+- [x] `GBuffer.cs` — 4개 Render Target + Depth 관리
+  - RT0: Albedo (R8G8B8A8_UNorm) — RGB: Base Color, A: Alpha
+  - RT1: Normal+Roughness (R16G16B16A16_Float) — RGB: World Normal, A: Roughness
+  - RT2: Material (R8G8B8A8_UNorm) — R: Metallic, G: Occlusion, B: Emission intensity
+  - RT3: WorldPos (R16G16B16A16_Float) — RGB: World Position, A: 1.0
+  - Depth: D32_Float_S8_UInt
+
+#### 7.3 Geometry Pass (MRT)
+- [x] `deferred_geometry.vert` + `deferred_geometry.frag` — 불투명 3D 메시 → G-Buffer 기록
+- [x] 4개 MRT BlendAttachmentDescription 명시적 제공 (Vulkan 호환)
+
+#### 7.4 Lighting Pass (PBR)
+- [x] `deferred_lighting.vert` + `deferred_lighting.frag` — Fullscreen triangle PBR 라이팅
+- [x] Cook-Torrance BRDF (GGX Distribution + Schlick Fresnel + Smith Geometry)
+- [x] Directional + Point 라이트 지원 (최대 64개)
+- [x] HDR 중간 텍스처 출력 (R16G16B16A16_Float)
+
+#### 7.5 Forward/Deferred 하이브리드
+- [x] Geometry Pass → Lighting Pass → Forward Pass (Sprite/Text) → Post-Processing
+- [x] 기존 Forward 렌더러(Sprite, Text, Wireframe)와 공존
+
+#### 7.6 Post-Processing 모듈화
+- [x] `PostProcessStack.cs` — 이펙트 파이프라인 관리자
+- [x] `PostProcessEffect.cs` — 이펙트 베이스 클래스
+- [x] `BloomEffect.cs` — Bloom threshold + Gaussian blur (9-tap, 2-pass separable) + composite
+- [x] `TonemapEffect.cs` — ACES Filmic Tone Mapping + Gamma 보정
+- [x] `EffectParameterInfo.cs` + `EffectParamAttribute.cs` — 이펙트 파라미터 메타데이터
+
+#### 7.7 Skybox / IBL (Image-Based Lighting)
+- [x] `Cubemap.cs` — 큐브맵 로드 및 관리 (단일 파노라마 → 6면 변환)
+- [x] `RenderSettings.cs` — ambientLight, skybox, reflectionCubemap 설정
+- [x] `skybox.vert` + `skybox.frag` — 스카이박스 렌더링
+- [x] 큐브맵 기반 IBL: Split-sum PBR approximation + 디퓨즈 irradiance
+- [x] `CameraClearFlags` 지원 (Skybox, SolidColor)
+
+#### 7.8 Demo 구조 개편
+- [x] `DemoLauncher.cs` — 데모 씬 선택기
+- [x] FrozenCode/LiveCode 분리 (안정 데모 vs 실험 스크립트)
+- [x] `PBRDemo.cs` — 5x5 구체 그리드 (metallic × roughness), 멀티라이트
+- [x] `CornellBoxDemo.cs`, `PhysicsDemo3D.cs`, `AssetImportDemo.cs`, `SpriteDemo.cs`, `TextDemo.cs`
+
+#### 7.9 네임스페이스 마이그레이션
+- [x] `UnityEngine/` → `RoseEngine/` 디렉토리 이동 완료
+- [x] 전체 코드베이스 `using RoseEngine;` 통일
+
+### 주요 설계 결정
+
+1. **World Position 직접 기록**: Depth Copy 대신 RT3에 world position 직접 저장 (정밀도 + 안정성)
+2. **MRT BlendState**: Vulkan에서 4개 blend attachment 명시적 제공 필수
+3. **Clear Color 보존**: Composite pipeline alpha blending으로 배경 clear color 유지
+4. **IBL Split-Sum**: 큐브맵 기반 환경 반사, 프레넬 근사 + roughness mip 보간
+5. **PostProcessing 모듈화**: 각 이펙트를 독립 클래스로 분리 (BloomEffect, TonemapEffect)
+6. **Demo 구조**: FrozenCode(안정) + LiveCode(실험) 이원화
+
+### 테스트 결과
+- ✅ PBR 5x5 구체 그리드: metallic/roughness 그라데이션 정확
+- ✅ Directional + Point 라이트 PBR 정상 계산
+- ✅ Bloom 효과 + ACES Tone Mapping 가시적
+- ✅ Sprite/Text 렌더링 Deferred 전환 후에도 정상
+- ✅ 스카이박스 + IBL 환경 반사 정상
+- ✅ 모든 데모 씬 정상 작동 (60 FPS 안정)
+
+### 신규/수정 파일 요약
+```
+신규 셰이더 (8개):
+  Shaders/deferred_geometry.vert, deferred_geometry.frag
+  Shaders/deferred_lighting.vert, deferred_lighting.frag
+  Shaders/skybox.vert, skybox.frag
+  Shaders/bloom_threshold.frag, bloom_composite.frag
+  Shaders/gaussian_blur.frag
+  Shaders/tonemap.frag, tonemap_composite.frag
+  Shaders/fullscreen.vert
+
+신규 렌더링 (7개):
+  src/IronRose.Rendering/GBuffer.cs
+  src/IronRose.Rendering/PostProcessing/PostProcessStack.cs
+  src/IronRose.Rendering/PostProcessing/PostProcessEffect.cs
+  src/IronRose.Rendering/PostProcessing/BloomEffect.cs
+  src/IronRose.Rendering/PostProcessing/TonemapEffect.cs
+  src/IronRose.Rendering/PostProcessing/EffectParameterInfo.cs
+  src/IronRose.Rendering/PostProcessing/EffectParamAttribute.cs
+
+신규 RoseEngine (2개):
+  src/IronRose.Engine/RoseEngine/Cubemap.cs
+  src/IronRose.Engine/RoseEngine/RenderSettings.cs
+
+대폭 수정:
+  src/IronRose.Engine/RenderSystem.cs (~1163줄)
+  src/IronRose.Engine/EngineCore.cs (~409줄)
+```
+
+---
+
+## 다음 단계: Phase 8 (AI 통합)
 
 ---
 
 ## 개발 메트릭
 
-### 코드 통계
+### 코드 통계 (Phase 7 완료 기준)
 - **프로젝트 수**: 7개 (Engine, Demo, Contracts, Scripting, Rendering, AssetPipeline, Physics)
-- **총 라인 수**: ~5800줄 (Phase 4)
-  - Engine/Program.cs: ~120줄
-  - Engine/EngineCore.cs: ~260줄
-  - Engine/RenderSystem.cs: ~212줄
-  - Engine/RoseEngine/*.cs: ~3600줄 (30파일)
-  - Engine/RoseEngine/InputSystem/*.cs: ~500줄 (7파일)
-  - Rendering/GraphicsManager.cs: ~85줄
-  - Rendering/ShaderCompiler.cs: ~50줄
-  - Scripting/ScriptCompiler.cs: ~145줄
-  - Scripting/ScriptDomain.cs: ~165줄
-  - Scripting/StateManager.cs: ~50줄
-  - Demo/*.cs: ~215줄
-  - Shaders/*.glsl: ~137줄
+- **총 라인 수**: ~11,255줄 (C# 소스, obj/ 제외) + ~921줄 (셰이더)
+  - Engine/EngineCore.cs: ~409줄
+  - Engine/RenderSystem.cs: ~1,163줄
+  - Engine/RoseEngine/*.cs: ~5,500줄 (59파일)
+  - Engine/RoseEngine/InputSystem/*.cs: ~617줄 (7파일)
+  - Engine/AssetPipeline/*.cs: ~871줄 (7파일)
+  - Engine/Physics/PhysicsManager.cs: ~84줄
+  - Rendering/*.cs: ~1,025줄 (9파일, PostProcessing 포함)
+  - Physics/*.cs: ~310줄 (2파일)
+  - Scripting/*.cs: ~366줄 (3파일)
+  - Demo/*.cs: ~1,509줄 (9파일, FrozenCode + LiveCode)
+  - Shaders/*: ~921줄 (14파일)
 - **NuGet 패키지**: 18개
 
 ### 빌드 통계
@@ -597,7 +836,41 @@ src/IronRose.Engine/RoseEngine/InputSystem/
 
 ## 변경 이력
 
-### 2026-02-14 (Phase 4 완료)
+### 2026-02-15 (Phase 7+ 완료)
+- **네임스페이스 마이그레이션** (`0fa6f56`)
+  - `UnityEngine/` → `RoseEngine/` 디렉토리 이동
+  - MeshImporter 머티리얼 자동 추출 (albedo, metallic, roughness, emission, 텍스처)
+  - GlbTextureExtractor 추가 (GLB 임베디드 텍스처 추출)
+- **Demo 구조 개편 + PostProcessing 모듈화** (`4cc5e4d`)
+  - FrozenCode/LiveCode 이원화 구조
+  - PostProcessStack → BloomEffect + TonemapEffect 개별 클래스 분리
+  - EngineCore 핫 리로드 개선 (상태 보존 강화)
+- **큐브맵 기반 IBL** (`3049434`)
+  - Split-sum PBR approximation, 디퓨즈 irradiance
+  - CameraClearFlags 지원 (Skybox/SolidColor)
+  - skybox.vert/frag 셰이더 추가
+- **Phase 7 Deferred PBR 완료** (`1197355`)
+  - G-Buffer (4 RT + Depth), Cook-Torrance BRDF
+  - Bloom + ACES Tone Mapping 포스트프로세싱
+  - Forward/Deferred 하이브리드 렌더링
+  - PBRDemo 씬 (5x5 구체 + 멀티라이트)
+
+### 2026-02-14 (Phase 4-6 완료)
+- **Phase 6 완료** ✅ (`066922a`) — 물리 엔진 통합
+  - BepuPhysics 3D + Aether.Physics2D 2D
+  - FixedUpdate 50Hz 누적기
+  - Rigidbody/Collider 3D+2D 컴포넌트
+  - PhysicsManager Transform↔Physics 동기화
+  - PhysicsDemo3D.cs 데모 씬
+- **Phase 5A/5B 완료** ✅ (`ba8c715`) — SpriteRenderer + TextRenderer
+  - 3D 공간 스프라이트 렌더링 (알파 블렌딩, Unlit)
+  - Font 아틀라스 기반 텍스트 렌더링
+  - SpriteDemo.cs, TextDemo.cs 데모 씬
+- **Phase 5 완료** ✅ (`d43a185`) — 에셋 임포터 파이프라인
+  - AssetDatabase GUID 매핑
+  - MeshImporter (AssimpNet), TextureImporter (ImageSharp)
+  - PrefabImporter (Unity YAML), RoseMetadata (.rose TOML)
+  - AssetImportDemo.cs 데모 씬
 - **Phase 4 완료** ✅ (3D 렌더링 파이프라인 및 Unity 호환성 대폭 확장)
   - **렌더링 파이프라인**: Forward Rendering (Solid + Wireframe 듀얼)
   - **메시 시스템**: Mesh (GPU dirty-flag), MeshFilter, MeshRenderer

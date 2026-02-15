@@ -1,4 +1,6 @@
-# Phase 7: Deferred Rendering & PBR
+# Phase 7: Deferred Rendering & PBR ✅ (2026-02-15 완료)
+
+> **커밋**: `1197355` (G-Buffer + PBR), `3049434` (IBL), `4cc5e4d` (PostProcessing 모듈화)
 
 ## 목표
 Forward → Deferred 하이브리드 렌더링 파이프라인으로 전환하여 PBR 머티리얼과 다중 라이트를 지원합니다.
@@ -701,17 +703,20 @@ MRT blend 문제와 depth 복사 호환성 이슈로 RT3에 world position을 �
 
 ## 검증 기준
 
-- [x] 금속/플라스틱 재질이 물리적으로 정확하게 렌더링됨 (5x5 구체 그리드)
-- [x] Directional + Point 라이트가 PBR로 정확히 계산됨
-- [x] Bloom 효과가 밝은 영역에서 가시적
-- [x] ACES Tone Mapping + Gamma 보정 적용
-- [x] Sprite/Text 렌더링이 Deferred 전환 후에도 정상 동작
-- [x] 배경 clear color가 정상 표시됨
-- [x] TextRenderer 라벨로 PBR 파라미터 축 의미 확인 가능
-- [ ] 윈도우 리사이즈 시 G-Buffer + Post-Processing 텍스처 정상 재생성
-- [x] 기존 Forward 셰이더(vertex.glsl, fragment.glsl)는 fallback으로 보존
+- [x] 금속/플라스틱 재질이 물리적으로 정확하게 렌더링됨 (5x5 구체 그리드) ✅
+- [x] Directional + Point 라이트가 PBR로 정확히 계산됨 ✅
+- [x] Bloom 효과가 밝은 영역에서 가시적 ✅
+- [x] ACES Tone Mapping + Gamma 보정 적용 ✅
+- [x] Sprite/Text 렌더링이 Deferred 전환 후에도 정상 동작 ✅
+- [x] 배경 clear color가 정상 표시됨 ✅
+- [x] TextRenderer 라벨로 PBR 파라미터 축 의미 확인 가능 ✅
+- [x] 기존 Forward 셰이더(vertex.glsl, fragment.glsl)는 fallback으로 보존 ✅
+- [x] 큐브맵 기반 IBL (Split-sum PBR + 디퓨즈 irradiance) ✅
+- [x] 스카이박스 렌더링 + CameraClearFlags ✅
+- [x] PostProcessing 모듈화 (BloomEffect + TonemapEffect 분리) ✅
+- [ ] 윈도우 리사이즈 시 G-Buffer + Post-Processing 텍스처 정상 재생성 (미확인)
 
 ---
 
 ## 다음 단계
-→ [Phase 8: AI 통합](Phase8_AIIntegration.md)
+Phase 8: AI 통합

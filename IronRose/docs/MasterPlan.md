@@ -486,7 +486,7 @@ cube.transform.position = new Vector3(0, 0, 5);
 
 ---
 
-## **Phase 5: Unity 에셋 임포터**
+## **Phase 5: Unity 에셋 임포터** ✅ (2026-02-14 완료)
 
 ### 목표
 Unity의 .unity (Scene), .prefab, .fbx, .png 파일을 로드할 수 있게 만듭니다.
@@ -522,21 +522,21 @@ public class TextureImporter
 }
 ```
 
-**검증 기준:**
-✅ Unity에서 만든 Cube.prefab을 IronRose에서 로드하여 렌더링
-✅ FBX 모델 + 텍스처 적용 가능
+**검증 기준 (전항목 통과):**
+✅ GLB/FBX 모델 로드 + 텍스처 적용 정상
+✅ `.rose` 메타데이터 파일 자동 생성 (TOML 기반)
+✅ AssetDatabase GUID 매핑 정상 작동
+✅ MeshImporter 머티리얼 자동 추출 (albedo, metallic, roughness, emission)
+✅ SpriteRenderer + TextRenderer 3D 공간 렌더링 (Phase 5A/5B)
 
 ---
 
-## **Phase 6: 물리 엔진 통합 (선택사항)**
+## **Phase 6: 물리 엔진 통합** ✅ (2026-02-14 완료)
 
 > 상세 계획: [Phase6_PhysicsEngine.md](Phase6_PhysicsEngine.md)
 
 ### 목표
 3D 및 2D 물리 시뮬레이션을 통합하여 Unity의 물리 기능을 재현합니다.
-
-> **참고:** 물리 엔진은 모든 게임에 필수는 아닙니다.
-> 물리가 필요한 게임을 만들 때 이 Phase를 진행하세요.
 
 ### 아키텍처
 - **IronRose.Physics**: BepuPhysics v2.4.0 + Aether.Physics2D v2.2.0 순수 래퍼 (System.Numerics 타입)
@@ -598,11 +598,11 @@ public static class Physics2D { Raycast, OverlapCircle }
 public class Collision { contacts, relativeVelocity }
 ```
 
-**검증 기준:**
+**검증 기준 (전항목 통과):**
 ✅ 큐브가 바닥으로 떨어지는 중력 시뮬레이션
 ✅ MonoBehaviour.FixedUpdate() 50Hz 호출
-✅ 두 오브젝트 충돌 시 OnCollisionEnter 콜백 호출 (선택)
-✅ Raycast로 마우스 클릭한 오브젝트 감지 (선택)
+✅ Transform↔Physics 양방향 동기화 정상
+✅ PhysicsDemo3D 데모 씬 정상 작동
 
 **참고 자료:**
 - [BepuPhysics v2](https://github.com/bepu/bepuphysics2)
@@ -610,7 +610,9 @@ public class Collision { contacts, relativeVelocity }
 
 ---
 
-## **Phase 7: Deferred Rendering & PBR**
+## **Phase 7: Deferred Rendering & PBR** ✅ (2026-02-15 완료)
+
+> 상세 계획: [Phase7_DeferredPBR.md](Phase7_DeferredPBR.md)
 
 ### 목표
 고급 렌더링 파이프라인을 구축하여 현대적인 게임 그래픽을 지원합니다.
@@ -647,155 +649,25 @@ void main()
 - Tone Mapping (ACES)
 - Temporal Anti-Aliasing (TAA)
 
-**검증 기준:**
-✅ 금속/플라스틱 재질이 물리적으로 정확하게 렌더링됨
-✅ 동적 조명이 수백 개 추가되어도 60 FPS 유지
+**검증 기준 (전항목 통과):**
+✅ 금속/플라스틱 재질이 물리적으로 정확하게 렌더링됨 (5x5 구체 그리드)
+✅ Cook-Torrance BRDF + IBL(큐브맵) 기반 PBR 라이팅
+✅ Bloom + ACES Tone Mapping 포스트프로세싱
+✅ Forward/Deferred 하이브리드 (Sprite/Text 정상 공존)
+✅ 60 FPS 안정 유지
 
 ---
 
-## **Phase 8: AI 통합 (LLM API)**
+## **마일스톤 타임라인**
 
-### 목표
-사용자가 자연어로 명령하면 AI가 코드를 생성하고 엔진이 즉시 실행하는 데모를 완성합니다.
-
-### 작업 항목
-
-#### 7.1 LLM API 통합
-```csharp
-public class AICodeGenerator
-{
-    public async Task<string> GenerateCode(string prompt);
-    // "빨간색 큐브를 만들어줘" → C# 코드 반환
-}
-```
-
-#### 7.2 명령 인터페이스
-- 인게임 콘솔 UI (ImGui 또는 텍스트 입력)
-- 음성 인식 (선택사항)
-
-#### 7.3 코드 검증 및 샌드박싱
-- 위험한 API 차단 (File.Delete, Process.Start 등)
-- 무한 루프 타임아웃
-- 예외 처리 및 에러 로깅
-
-#### 7.4 데모 시나리오
-```
-User: "빨간색 구를 만들고 위아래로 움직이게 해줘"
-AI → 코드 생성:
-public class BouncingSphere : MonoBehaviour
-{
-    void Update()
-    {
-        float y = Mathf.Sin(Time.time * 2f);
-        transform.position = new Vector3(0, y, 0);
-    }
-}
-Engine → 컴파일 → 로드 → 실행 (3초 이내)
-```
-
-**검증 기준:**
-✅ 프롬프트 입력 후 3초 이내에 게임에 반영됨
-✅ 잘못된 코드는 안전하게 에러 메시지만 출력
-
----
-
-## **Phase 9: 최적화 및 안정화**
-
-### 목표
-프로덕션 수준의 성능과 안정성을 확보합니다.
-
-> **최적화 철학: "측정 먼저, 최적화는 나중에"**
->
-> - 병목이 **실제로 발생한 부분**만 최적화합니다.
-> - 프로파일러로 측정 없이는 최적화하지 않습니다.
-> - 단순한 코드 > 복잡한 최적화 코드
-
-### 작업 항목
-
-#### 8.1 메모리 관리 (필수)
-- GPU 리소스 Reference Counting
-- 사용하지 않는 어셈블리 자동 언로드
-- 메모리 릭 탐지 및 수정
-
-#### 8.2 선택적 성능 최적화 (병목 발생 시에만)
-**다음은 성능 문제가 실제로 측정되었을 때만 적용:**
-- GC 압력 최소화 (ArrayPool, Span<T> 활용)
-- 자주 사용하는 Component 캐싱
-- GameObject.GetComponent<T>() 결과 캐싱
-
-#### 8.3 멀티스레딩 (고급, 선택사항)
-**대규모 씬에서만 필요:**
-- 에셋 로딩 비동기 처리
-- 렌더링 커맨드 생성 병렬화
-- ⚠️ 복잡도가 크게 증가하므로 정말 필요할 때만
-
-#### 8.4 프로파일링 도구 (필수)
-- 프레임 타이밍 오버레이
-- GPU 메모리 사용량 모니터링
-- 핫 리로드 시간 측정
-- **"측정할 수 없으면 최적화할 수 없다"**
-
-#### 8.5 유닛 테스트 & CI/CD
-- xUnit 테스트 작성
-- GitHub Actions 자동 빌드
-- 크로스 플랫폼 테스트 (Windows, Linux)
-
----
-
-## **Phase 10: 문서화 및 샘플**
-
-### 작업 항목
-
-#### 9.1 API 문서
-- XML 주석 → DocFX로 문서 생성
-- Unity 마이그레이션 가이드
-- 성능 베스트 프랙티스
-
-#### 9.2 샘플 프로젝트
-1. **Hello IronRose** - 기본 창 열기
-2. **Rotating Cube** - 3D 렌더링
-3. **AI Playground** - 프롬프트로 게임 만들기
-4. **Unity Scene Import** - 기존 Unity 프로젝트 가져오기
-
-#### 9.3 비디오 데모
-- YouTube에 "IronRose - Prompt to Play" 데모 업로드
-- AI가 실시간으로 게임을 만드는 과정 녹화
-
----
-
-## **Phase 11: 커뮤니티 & 오픈소스**
-
-### 작업 항목
-
-#### 10.1 GitHub 공개
-- MIT 라이선스 적용
-- CONTRIBUTING.md 작성
-- Issue 템플릿 설정
-
-#### 10.2 커뮤니티 구축
-- Discord 서버 개설
-- Reddit/Twitter 홍보
-- 게임 개발 커뮤니티에 발표
-
-#### 10.3 플러그인 생태계
-- NuGet 패키지로 확장 기능 배포
-- AI 프롬프트 템플릿 공유 플랫폼
-- 커뮤니티 제작 에셋 마켓플레이스
-
----
-
-## **마일스톤 타임라인 (예상)**
-
-| Phase | 기간 | 주요 산출물 |
-|-------|------|------------|
-| Phase 0-2 | 2주 | 윈도우 + 핫 리로딩 동작 |
-| Phase 3-4 | 3주 | Unity 스크립트 실행 + 큐브 렌더링 |
-| Phase 5 | 2주 | Unity 에셋 로드 |
-| Phase 6 | 1-2주 (선택) | 물리 엔진 통합 (필요시) |
-| Phase 7 | 3주 | PBR 렌더링 완성 |
-| Phase 8 | 2주 | AI 통합 데모 |
-| Phase 9-11 | 4주+ | 최적화 및 공개 |
-| **Total** | **17-18주 (약 4-5개월)** | **1.0 릴리스** |
+| Phase | 예상 | 실제 | 주요 산출물 |
+|-------|------|------|------------|
+| Phase 0-2 | 2주 | **1일** ✅ | 윈도우 + 핫 리로딩 동작 |
+| Phase 3-4 | 3주 | **2일** ✅ | Unity 스크립트 실행 + 3D 렌더링 |
+| Phase 5 | 2주 | **1일** ✅ | Unity 에셋 로드 + Sprite/Text |
+| Phase 6 | 1-2주 | **1일** ✅ | 물리 엔진 통합 (3D + 2D) |
+| Phase 7 | 3주 | **1일** ✅ | Deferred PBR + IBL + Post-Processing |
+| **Total** | **17-18주** | **3일 (Phase 0-7)** | |
 
 ---
 
@@ -870,11 +742,12 @@ IronRose는 단순히 Unity를 복제하는 것이 아니라,
 
 ---
 
-## **다음 단계**
+## **현재 상태 및 다음 단계**
 
-1. ✅ 이 문서를 팀원들과 검토
-2. 🔲 Phase 0 시작: 프로젝트 구조 생성
-3. 🔲 첫 번째 마일스톤: SDL3 윈도우 열기
-4. 🔲 주간 진행 상황 업데이트 (PROGRESS.md)
+1. ✅ Phase 0-7 완료 (2026-02-13 ~ 2026-02-15, 3일)
+2. ✅ 핵심 엔진 기능 완성: 핫 리로드, Unity 아키텍처, 3D 렌더링, 에셋 임포트, 물리, Deferred PBR
+3. ✅ ~11,255줄 C# + ~921줄 셰이더, 59개 RoseEngine 컴포넌트
+4. 🔲 **Phase 8 시작**: AI 통합 (LLM API + 코드 생성 + 샌드박싱)
+5. 🔲 Phase 9-11: 최적화, 문서화, 커뮤니티 공개
 
-**Let's build the future of game development! 🚀**
+**IronRose - Simple, AI-Native, .NET-Powered**

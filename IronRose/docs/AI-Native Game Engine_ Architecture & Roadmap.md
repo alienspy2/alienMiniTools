@@ -1,31 +1,39 @@
-# **AI-Native.NET 10 게임 엔진 아키텍처 설계 보고서**
+# **IronRose: AI-Native .NET 10 게임 엔진 아키텍처 설계 보고서**
+
+> **"Iron for Strength, Rose for Beauty"**
+> 현재 상태: Phase 7 완료 (2026-02-15) - Deferred PBR + IBL + Physics + Hot Reload
 
 ## **1\. 프로젝트 비전: The "Prompt-to-Play" Engine**
 
-본 프로젝트는 기존의 게임 엔진(Unity, Unreal)이 가진 무거운 에디터 중심의 워크플로우를 탈피하고, **AI(LLM)가 코드를 생성하고 엔진이 이를 즉시 컴파일하여 실행하는** 새로운 패러다임을 제시합니다..NET 10의 최신 기술을 활용하여 유니티의 방대한 API 생태계를 흡수하되, 내부적으로는 가볍고 빠른 최신 렌더링/메모리 아키텍처를 지향합니다.
+본 프로젝트는 기존의 게임 엔진(Unity, Unreal)이 가진 무거운 에디터 중심의 워크플로우를 탈피하고, **AI(LLM)가 코드를 생성하고 엔진이 이를 즉시 컴파일하여 실행하는** 새로운 패러다임을 제시합니다. .NET 10의 최신 기술을 활용하여 유니티의 방대한 API 생태계를 흡수하되, 내부적으로는 가볍고 빠른 최신 렌더링/메모리 아키텍처를 지향합니다.
 
-## **2\. 엔진 네이밍 추천**
+## **2\. 엔진 이름: IronRose**
 
-AI와의 협업, 실시간 코드 주입, 그리고 유니티를 대체한다는 의미를 담아 다음과 같은 이름을 제안합니다.
+**IronRose** — "Iron for Strength, Rose for Beauty"
 
-| 이름 | 의미 및 브랜딩 |
-| :---- | :---- |
-| **Synapse (시냅스)** | 뇌의 신호 전달 경로처럼, AI의 코드(생각)가 엔진(몸)으로 즉시 전달되어 실행됨을 의미합니다. |
-| **LiveWire (라이브와이어)** | 코드가 멈추지 않고(Live) 계속해서 연결(Wire)되고 수정되는 역동적인 핫 리로딩 환경을 강조합니다. |
-| **Mimic (미믹)** | 유니티의 API와 생태계를 완벽하게 모방(Mimic)하면서도 더 가볍고 빠르다는 의미를 가집니다. |
-| **Flux 3D** | 데이터와 코드가 고정되지 않고 끊임없이 흐르는(Flux) 유동적인 개발 환경을 상징합니다. |
-| **Runtime 10** | 에디터보다 **런타임** 자체에 집중하며,.NET **10** 기반의 차세대 엔진임을 직관적으로 보여줍니다. |
+금속(Iron)의 강건한 성능과 장미(Rose)의 아름다운 렌더링을 결합한 이름.
+`RoseEngine` 네임스페이스로 Unity API 호환성을 제공합니다.
 
 ## ---
 
 **3\. 핵심 아키텍처: 기술 스택 및 구조**
 
-### **3.1 기반 기술 (Foundation)**
+### **3.1 기반 기술 (Foundation) — 전부 구현 완료**
 
-* **Runtime:**.NET 10 (Preview/RC) \- AOT 컴파일과 JIT의 이점을 혼합하여 사용.  
-* **Windowing/Input:** **Silk.NET (SDL3)** \- 가장 가볍고 호환성이 좋은 SDL3를 통해 윈도우 생성 및 입력을 처리합니다.\[13\]  
-* **Rendering:** **Veldrid** (Vulkan Backend 주력) \- 저수준 그래픽 API를 직접 다루지 않고도 Vulkan의 성능을 활용합니다.1  
-* **Scripting:** **Roslyn (Microsoft.CodeAnalysis)** \- 런타임에 C\# 코드를 파싱하고 컴파일하여 메모리에 로드합니다.
+| 레이어 | 기술 | 용도 | 상태 |
+|--------|------|------|------|
+| **Runtime** | .NET 10.0 | JIT + AOT 가능 런타임 | ✅ |
+| **Windowing** | Silk.NET.Windowing (GLFW) | 크로스 플랫폼 윈도우 | ✅ |
+| **Input** | Silk.NET.Input | 키보드/마우스/게임패드 | ✅ |
+| **Graphics** | Veldrid (Vulkan 백엔드) | 저수준 GPU 추상화 | ✅ |
+| **Shader** | Veldrid.SPIRV | GLSL 450 → Vulkan SPIR-V | ✅ |
+| **Scripting** | Roslyn (Microsoft.CodeAnalysis) | 런타임 C# 컴파일 | ✅ |
+| **Asset Import** | AssimpNet | FBX/GLB/OBJ 3D 모델 로드 | ✅ |
+| **Image** | SixLabors.ImageSharp 3.1.12 | PNG/JPG 텍스처 로딩 | ✅ |
+| **YAML** | YamlDotNet | Unity Scene/Prefab 파싱 | ✅ |
+| **Physics 3D** | BepuPhysics v2.4.0 | 3D 리지드바디 물리 | ✅ |
+| **Physics 2D** | Aether.Physics2D v2.2.0 | 2D 리지드바디 물리 | ✅ |
+| **Serialization** | Tomlyn | TOML 상태 직렬화 | ✅ |
 
 ## ---
 
@@ -96,26 +104,35 @@ AI(LLM)는 인터넷상의 방대한 유니티 코드로 학습되어 있습니�
 
 ## ---
 
-**5\. 렌더링 파이프라인: Deferred Rendering & PBR**
+**5\. 렌더링 파이프라인: Forward/Deferred 하이브리드 + PBR** ✅ 구현 완료
 
-성능과 확장성을 위해 지연 렌더링(Deferred Rendering)만을 지원하며, 물리 기반 렌더링(PBR)을 기본으로 합니다.
+Forward(Sprite, Text, 투명)와 Deferred(불투명 3D 메시)를 결합한 하이브리드 렌더링 파이프라인.
 
-### **5.1 G-Buffer 설계 (Veldrid Framebuffer)**
+### **5.1 G-Buffer 설계 (구현 완료)**
 
-R8G8B8A8\_UNorm 같은 포맷을 사용하여 최소 3\~4개의 RenderTarget을 구성합니다.\[15\]
+| Render Target | 포맷 | 채널 데이터 |
+| :---- | :---- | :---- |
+| **RT0 (Albedo)** | R8G8B8A8_UNorm | RGB: Base Color, A: Alpha |
+| **RT1 (Normal)** | R16G16B16A16_Float | RGB: World Normal [-1,1], A: Roughness |
+| **RT2 (Material)** | R8G8B8A8_UNorm | R: Metallic, G: Occlusion, B: Emission intensity |
+| **RT3 (WorldPos)** | R16G16B16A16_Float | RGB: World Position, A: 1.0 (geometry marker) |
+| **Depth** | D32_Float_S8_UInt | Hardware Depth |
 
-| Render Target | 채널 (RGBA) 데이터 |
-| :---- | :---- |
-| **RT0 (Albedo)** | RGB: Base Color, A: Transmission/Alpha |
-| **RT1 (Normal)** | RGB: World Normal (Octahedron encoding 권장), A: Smoothness |
-| **RT2 (Material)** | R: Metallic, G: Occlusion, B: Emission, A: Unused |
-| **Depth** | D32\_Float\_S8\_UInt (Hardware Depth) |
+> RT1은 R16G16B16A16_Float로 [-1,1] 노멀 정밀도 보존 (R8 인코딩의 banding 방지).
+> RT3에 World Position 직접 기록 (depth 복원 대신 — 정밀도 + 안정성 우수).
 
-### **5.2 렌더링 패스 (Passes)**
+### **5.2 렌더링 패스 (구현 완료)**
 
-1. **Geometry Pass:** 모든 메시를 그려 G-Buffer를 채웁니다. Veldrid.SPIRV를 통해 GLSL/HLSL 셰이더를 Vulkan SPIR-V로 변환하여 사용합니다.11  
-2. **Lighting Pass:** 화면 전체 Quad를 그리며 G-Buffer를 샘플링하여 조명을 계산합니다. 수천 개의 동적 광원을 처리하기 위해 **Tiled Deferred** 또는 **Clustered Lighting** 기법을 적용할 수 있습니다.  
-3. **Post-Processing:** Bloom, ToneMapping, TAA 등을 Compute Shader나 Fragment Shader로 처리합니다.
+```
+1. Geometry Pass    → G-Buffer에 불투명 3D 메시 기록 (4 MRT + depth)
+2. Lighting Pass    → G-Buffer → HDR 텍스처 (Cook-Torrance PBR + IBL)
+3. Skybox Pass      → 큐브맵 기반 스카이박스 렌더링
+4. Forward Pass     → HDR 텍스처에 Sprite/Text/Wireframe 추가
+5. Post-Processing  → Bloom (threshold + Gaussian blur) + ACES Tone Mapping → Swapchain
+```
+
+**PBR BRDF**: Cook-Torrance (GGX Distribution + Schlick Fresnel + Smith Geometry)
+**IBL**: 큐브맵 기반 Split-sum approximation + 디퓨즈 irradiance
 
 ## ---
 
@@ -131,12 +148,27 @@ C\#의 GC에만 의존하면 GPU 메모리 해제 시점이 불명확하므로, 
 
 ## ---
 
-**7\. 향후 확장 로드맵**
+**7\. 개발 이력 및 향후 로드맵**
 
-1. **Phase 1 (Skeleton):** SDL3 윈도우 \+ Veldrid Clear 화면 \+ Roslyn으로 "Hello World" 스크립트 핫 리로딩 성공.
-2. **Phase 2 (Unity Architecture):** GameObject, Component, MonoBehaviour 클래스를 Unity와 동일하게 구현. 유니티 큐브 프리팹 로드.
-3. **Phase 3 (Rendering):** Deferred G-Buffer 구현 및 PBR 라이팅 적용.
-4. **Phase 4 (AI Integration):** LLM API를 연동하여 런타임에 "빨간색 큐브를 만들어줘"라고 입력하면 코드가 생성되어 실행되는 데모 완성.
+### 완료된 단계 (2026-02-13 ~ 2026-02-15)
+1. ✅ **Phase 0-2**: 프로젝트 구조 + Vulkan 윈도우 + Roslyn 핫 리로딩 + Engine 핫 리로드
+2. ✅ **Phase 3**: Unity Architecture (GameObject, Component, MonoBehaviour, InputSystem) + 호환성 확장 (59개 컴포넌트)
+3. ✅ **Phase 4**: 3D Forward Rendering (Mesh, Camera, Light, Texture2D, Primitives)
+4. ✅ **Phase 5**: 에셋 임포터 (AssimpNet, ImageSharp, YAML, SpriteRenderer, TextRenderer)
+5. ✅ **Phase 6**: 물리 엔진 (BepuPhysics 3D + Aether.Physics2D, FixedUpdate 50Hz)
+6. ✅ **Phase 7**: Deferred PBR (G-Buffer, Cook-Torrance, IBL, Bloom, ACES Tone Mapping)
+
+### 다음 단계
+7. 🔲 **Phase 8 (AI Integration):** LLM API 연동, 런타임 코드 생성, 샌드박싱
+8. 🔲 **Phase 9 (Optimization):** GPU 리소스 관리, 프로파일링, GC 압력 최적화
+9. 🔲 **Phase 10 (Documentation):** API 문서, 샘플 프로젝트, 비디오 데모
+10. 🔲 **Phase 11 (Community):** GitHub 공개, NuGet, Discord
+
+### 코드 통계
+- **~11,255줄** C# 소스 + **~921줄** GLSL 셰이더
+- **59개** RoseEngine 컴포넌트 (Unity API ~80% 호환)
+- **14개** 셰이더 파일 (Forward + Deferred + Post-Processing)
+- **7개** 데모 씬 (FrozenCode)
 
 #### **참고 자료**
 

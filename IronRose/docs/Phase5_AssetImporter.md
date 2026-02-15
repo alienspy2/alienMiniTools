@@ -1,4 +1,6 @@
-# Phase 5: Unity 에셋 임포터
+# Phase 5: Unity 에셋 임포터 ✅ (2026-02-14 완료)
+
+> **커밋**: `d43a185` (에셋 파이프라인), `ba8c715` (SpriteRenderer + TextRenderer), `0fa6f56` (머티리얼 추출)
 
 ## 목표
 Unity의 .unity (Scene), .prefab, .fbx, .glb, .png 파일을 로드할 수 있게 만듭니다.

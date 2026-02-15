@@ -176,19 +176,51 @@ Console.WriteLine($"[Physics] Timestep: {deltaTime:F4}s");
 ```
 IronRose/
 ├── .claude/
-│   ├── commands/              # Claude 커스텀 커맨드
-│   ├── test_commands.json     # AI 자동화 명령
-│   └── test_outputs/          # 테스트 결과물 (스크린샷 등)
-├── Shaders/                   # 셰이더 파일
+│   ├── commands/                    # Claude 커스텀 커맨드 (digest.md 등)
+│   └── test_outputs/                # 테스트 결과물 (스크린샷 등)
+├── Assets/                          # 게임 에셋
+│   └── Textures/                    # IBL 큐브맵, 텍스처 + .rose 메타데이터
+├── Shaders/                         # GLSL 셰이더 (14파일)
+│   ├── vertex.glsl, fragment.glsl   # Forward 렌더링
+│   ├── deferred_geometry.*          # G-Buffer Geometry Pass
+│   ├── deferred_lighting.*          # PBR Lighting Pass
+│   ├── skybox.*                     # 스카이박스/IBL
+│   ├── bloom_*.frag, gaussian_blur.frag  # Post-Processing
+│   ├── tonemap*.frag               # ACES Tone Mapping
+│   └── fullscreen.vert              # Fullscreen triangle
 ├── src/
-│   ├── IronRose.Engine/       # 엔진 코어 (라이브러리)
-│   ├── IronRose.Demo/         # 실행 진입점 및 데모 스크립트
-│   ├── IronRose.Rendering/    # 렌더링 파이프라인
-│   ├── IronRose.Scripting/    # 스크립팅 시스템
-│   ├── IronRose.Physics/      # 물리 엔진
-│   ├── IronRose.AssetPipeline/ # 에셋 파이프라인
-│   └── IronRose.Contracts/    # 공통 인터페이스
-└── docs/                      # 문서
+│   ├── IronRose.Engine/             # 엔진 코어 (EXE 진입점)
+│   │   ├── EngineCore.cs            # 엔진 업데이트/렌더 오케스트레이션
+│   │   ├── RenderSystem.cs          # Forward/Deferred 하이브리드 렌더링
+│   │   ├── RoseEngine/              # Unity 호환 API (59파일, ~5500줄)
+│   │   │   ├── 수학: Vector3, Vector2, Vector4, Quaternion, Color, Matrix4x4, Mathf
+│   │   │   ├── 코어: GameObject, Component, Transform, MonoBehaviour, SceneManager, Object
+│   │   │   ├── 렌더링: Camera, Light, Mesh, MeshFilter, MeshRenderer, Material, Texture2D, Shader
+│   │   │   ├── 입력: Input(레거시), InputSystem/(액션 기반, 7파일)
+│   │   │   ├── 물리: Rigidbody, Rigidbody2D, Collider(3D+2D), Collision, ForceMode
+│   │   │   ├── 2D: Sprite, SpriteRenderer, Font, TextRenderer, Rect
+│   │   │   ├── IBL: Cubemap, RenderSettings
+│   │   │   └── 유틸: Random, Debug, Time, Screen, Application, Resources, Attributes, Coroutine
+│   │   ├── AssetPipeline/           # 에셋 임포트 (7파일)
+│   │   │   ├── AssetDatabase.cs, MeshImporter.cs, TextureImporter.cs
+│   │   │   ├── PrefabImporter.cs, GlbTextureExtractor.cs
+│   │   │   └── RoseMetadata.cs, UnityYamlParser.cs
+│   │   └── Physics/
+│   │       └── PhysicsManager.cs    # PhysicsWorld3D/2D 통합
+│   ├── IronRose.Demo/              # 데모 실행 파일
+│   │   ├── FrozenCode/              # 안정된 데모 씬 (6개)
+│   │   └── LiveCode/                # 핫 리로드 실험 스크립트
+│   ├── IronRose.Rendering/         # 렌더링 파이프라인
+│   │   ├── GBuffer.cs, GraphicsManager.cs, ShaderCompiler.cs
+│   │   └── PostProcessing/          # BloomEffect, TonemapEffect, PostProcessStack
+│   ├── IronRose.Physics/           # 물리 래퍼 (Engine 미참조)
+│   │   ├── PhysicsWorld3D.cs        # BepuPhysics v2.4.0
+│   │   └── PhysicsWorld2D.cs        # Aether.Physics2D v2.2.0
+│   ├── IronRose.Scripting/         # Roslyn 런타임 컴파일
+│   └── IronRose.Contracts/         # 플러그인 API 계약
+├── Screenshots/                     # 테스트 스크린샷
+├── reference/                       # 참고 구현 (Unity IBL 등)
+└── docs/                            # 문서 (18개 마크다운 파일)
 ```
 
 ---
